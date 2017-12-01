@@ -3,6 +3,8 @@
 
 #define MAX_OUTPUTS (4)
 
+typedef void (* mygpuspec_output_callback_t)(int output_product);
+
 // Structure for holding the context.
 typedef struct {
   unsigned int No; // Number of output products (max MAX_OUTPUTS)
@@ -11,6 +13,10 @@ typedef struct {
   unsigned int Ntpb; // Number of time samples per block
   unsigned int Nts[MAX_OUTPUTS]; // Array of Nt values
   unsigned int Nas[MAX_OUTPUTS]; // Array of Na values
+  // output_callback is a pointer to a user-supplied output callback function.
+  // This function will be called when one of of the output power buffers in
+  // h_pwrbuf[] has new data to be written to disk.
+  mygpuspec_output_callback_t output_callback;
 
   // Fields above here should be specified by client.  Fields below here are
   // managed by library.  The Nb field and the host pointers below will be used
