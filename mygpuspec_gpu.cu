@@ -299,3 +299,29 @@ void mygpuspec_cleanup(mygpuspec_context * ctx)
     ctx->gpu_ctx = NULL;
   }
 }
+
+// Copy `ctx->h_blkbuf` to block `b % ctx->Nb` in GPU input buffer.
+// Returns 0 on success, non-zero on error.
+int mygpuspec_copy_block_to_gpu(mygpuspec_context * ctx, unsigned int b)
+{
+  cudaError_t rc;
+  mygpuspec_gpu_context * gpu_ctx = (mygpuspec_gpu_context *)ctx->gpu_ctx;
+
+  // TODO Store in GPU context?
+  size_t width = ctx->Ntpb * ctx->Np * sizeof(char2);
+
+  rc = cudaMemcpy2D(gpu_ctx->d_fft_in + (b % ctx->Nb) * width / sizeof(char2),
+                    ctx->Nb * width, // dpitch
+                    ctx->h_blkbuf,   // *src
+                    width,           // spitch
+                    width,           // width
+                    ctx->Nc,         // height
+                    cudaMemcpyHostToDevice);
+
+  if(rc != cudaSuccess) {
+    PRINT_ERRMSG(rc);
+    return 1;
+  }
+
+  return 0;
+}

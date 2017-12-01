@@ -44,6 +44,7 @@ extern "C" {
 
 // Sets ctx->Ntmax.
 // Allocates host and device buffers based on the ctx->N values.
+// Allocated buffers are not cleared, except for the power outbut buffers.
 // Allocates and sets the ctx->mygpuspec_gpu_ctx field.
 // Creates CuFFT plans.
 // Returns 0 on success, non-zero on error.
@@ -54,6 +55,10 @@ int mygpuspec_initialize(mygpuspec_context * ctx);
 // Destroys CuFFT plans.
 // Returns 0 on success, non-zero on error.
 void mygpuspec_cleanup(mygpuspec_context * ctx);
+
+// Copy `ctx->h_blkbuf` to block `b % ctx->Nb` in GPU input buffer.
+// Returns 0 on success, non-zero on error.
+int mygpuspec_copy_block_to_gpu(mygpuspec_context * ctx, unsigned int b);
 
 #ifdef __cplusplus
 }
