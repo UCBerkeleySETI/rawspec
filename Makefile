@@ -4,7 +4,8 @@ CC=gcc
 HOST_COMPILER ?= $(CC)
 NVCC          := $(CUDA_PATH)/bin/nvcc -ccbin $(HOST_COMPILER)
 
-NVCC_FLAGS = -m64 -I$(CUDA_PATH)/samples/common/inc
+CFLAGS = -ggdb
+NVCC_FLAGS = -m64 -g -I$(CUDA_PATH)/samples/common/inc
 
 CUDA_SHARED_LIBS = -lcufft
 CUDA_STATIC_LIBS = -lcufft_static -lculibos
