@@ -34,17 +34,14 @@ endif
 
 all: mygpuspec
 
-single_fft: single_fft.o
-batch_fft: batch_fft.o
-interleave_fft: interleave_fft.o
-callback_fft: callback_fft.o
-texture_fft: texture_fft.o
-power_fft: power_fft.o
+# TODO Replace with auto-generated dependencies
+mygpuspec.o: mygpuspec.h
+mygpuspec_gpu.o: mygpuspec.h
 
 %.o: %.cu
 	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) -dc $(GENCODE_FLAGS) -o $@ -c $<
 
-# mygpuspec_gpu use callbacks so it requires static CUDA linkage
+# mygpuspec_gpu uses CuFFT callbacks so it requires static CUDA linkage
 mygpuspec: mygpuspec.o mygpuspec_gpu.o
 	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ $(CUDA_STATIC_LIBS)
 
