@@ -70,13 +70,20 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
     return 1;
   }
 
-  // Set ctx->Ntmax
+  // Validate Ntpb
+  if(ctx->Ntpb == 0) {
+    fprintf(stderr, "number of time samples per block cannot be zero\n");
+    return 1;
+  }
+
+  // Set ctx->Ntmax and ctx->Nb
   ctx->Ntmax = 0;
   for(i=0; i<ctx->No; i++) {
     if(ctx->Ntmax < ctx->Nts[i]) {
       ctx->Ntmax = ctx->Nts[i];
     }
   }
+  ctx->Nb = ctx->Ntmax / ctx->Ntpb;
 
   // Null out all pointers
   ctx->h_blkbuf = NULL;

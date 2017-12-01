@@ -13,8 +13,10 @@ typedef struct {
   unsigned int Nas[MAX_OUTPUTS]; // Array of Na values
 
   // Fields above here should be specified by client.  Fields below here are
-  // managed by library.  The host pointers below will be used
+  // managed by library.  The Nb field and the host pointers below will be used
   // to pass data to and from the GPU.
+
+  unsigned int Nb; // Number of blocks needed for complete input buffer
 
   // Host pointer to block buffer.
   // The size, in bytes, is Nc * Ntpb * Np * 2.
