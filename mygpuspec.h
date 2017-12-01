@@ -11,11 +11,22 @@ typedef struct {
   unsigned int Ntpb; // Number of time samples per block
   unsigned int Nts[MAX_OUTPUTS]; // Array of Nt values
   unsigned int Nas[MAX_OUTPUTS]; // Array of Na values
-  // Fields above here should be specified by client
-  // Fields below here are managed by library
+
+  // Fields above here should be specified by client.  Fields below here are
+  // managed by library.  The host pointers below will be used
+  // to pass data to and from the GPU.
+
+  // Host pointer to block buffer.
+  // The size, in bytes, is Nc * Ntpb * Np * 2.
+  char * h_blkbuf;
+
+  // Host pointers to the output power buffers.
+  // The sizes, in bytes, will be Nc * Nts[i].
+  float * h_pwrbuf[MAX_OUTPUTS];
+
+  // Fields below here are not normally needed at all by the client
+
   unsigned int Ntmax; // Maximum Nt value
-  char * h_blkbuf; // Host pointer to block buffer
-  float * h_pwrbuf[MAX_OUTPUTS]; // Host pointer to array of power buffers
   void * gpu_ctx; // Host pointer to GPU specific context
 } mygpuspec_context;
 
