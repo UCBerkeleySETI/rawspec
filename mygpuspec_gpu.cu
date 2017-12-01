@@ -1,14 +1,26 @@
-#include "mygpuspec_gpu.h"
+#include "mygpuspec.h"
 
-#if 0
-#include <cuda_runtime.h>
 #include <cufft.h>
 #include <cufftXt.h>
-//#include <helper_functions.h>
 #include <helper_cuda.h>
 
+#define NO_PLAN ((cufftHandle)-1)
+
+#define PRINT_ERRMSG(error)                  \
+  fprintf(stderr, "got error %s at %s:%d\n", \
+      _cudaGetErrorEnum(error),  \
+      __FILE__, __LINE__)
+
+// CPU context structure
+typedef struct {
+  char2 * d_fft_in; // Device pointer to FFT input buffer
+  cufftComplex * d_fft_out[4]; // Array of device pointers to FFT output buffers
+  float * d_pwr_out[4]; // Array of device pointers to power buffers
+  cufftHandle plan[4]; // Array of handles to FFT plans
+} mygpuspec_gpu_context;
+
 // Texture declarations
-texture<char, 1, cudaReadModeNormalizedFloat> char_tex;
+texture<char, 2, cudaReadModeNormalizedFloat> char_tex;
 
 __device__ cufftComplex load_callback(void *p_v_in, 
                                       size_t offset, 
@@ -17,8 +29,8 @@ __device__ cufftComplex load_callback(void *p_v_in,
 {
   cufftComplex c;
   offset += (cufftComplex *)p_v_in - (cufftComplex *)p_v_user;
-  c.x = tex1Dfetch(char_tex, 2*offset  );
-  c.y = tex1Dfetch(char_tex, 2*offset+1);
+  c.x = tex2D(char_tex, ((2*offset  ) & 0x7fff), ((  offset  ) >> 14));
+  c.y = tex2D(char_tex, ((2*offset+1) & 0x7fff), ((2*offset+1) >> 15));
   return c;
 }
 
@@ -32,158 +44,251 @@ __device__ void store_callback(void *p_v_out,
   ((float *)p_v_user)[offset] += pwr;
 }
 
-__device__ cufftCallbackLoadC d_pcb_load_callback = load_callback;
-__device__ cufftCallbackStoreC d_pcb_store_callback = store_callback;
+__device__ cufftCallbackLoadC d_cufft_load_callback = load_callback;
+__device__ cufftCallbackStoreC d_cufft_store_callback = store_callback;
 
-int runTest(int argc, char **argv)
+// Sets ctx->Ntmax.
+// Allocates host and device buffers based on the ctx->N values.
+// Allocates and sets the ctx->mygpuspec_gpu_ctx field.
+// Creates CuFFT plans.
+// Returns 0 on success, non-zero on error.
+int mygpuspec_initialize(mygpuspec_context * ctx)
 {
-  int i, j;
+  int i;
+  size_t inbuf_size;
+  cudaError_t cuda_rc;
+  cufftResult cufft_rc;
 
-  // Pointers to host memory buffers
-  char2 * h_pc2_in;
-  float * h_pf_out;
+  // Host copies of cufft callback pointers
+  cufftCallbackLoadC h_cufft_load_callback;
+  cufftCallbackStoreC h_cufft_store_callback;
 
-  // Pointers to device memory buffers
-  cufftComplex * d_pc2_in;  // FFT input buffer  (char2 really)
-  cufftComplex * d_pf2_out; // FFT output buffer (must be full sized and can't integrate in it)
-  float        * d_pf_out;  // Power output buffer (integrate power here)
-
-  // FFT plan related variables
-  const int Nt   = 512; // FFT size
-  const int Nb   = 3;   // batch size 
-  const int Ni   = 2;   // interleave size
-  const int Nti  = Nt * Ni;
-  const int Ntb  = Nt * Nb;
-  const int Ntbi = Nt * Nb * Ni;
-  int Nt_ = Nt; // So we can make a non-const (int *) from it
-  cufftHandle plan;
-  size_t work_size = 0;
-
-  // Host copies of callback pointers
-  cufftCallbackLoadC h_pcb_load_callback;
-  cufftCallbackStoreC h_pcb_store_callback;
-
-  // Allocate host memory
-  h_pc2_in  = (char2 *)malloc(Ntbi*sizeof(char2));
-  h_pf_out  = (float *)malloc(Ntb *sizeof(float));
-  if(!h_pc2_in || !h_pf_out) {
-    fprintf(stderr, "could not allocate host memory\n");
+  // Validate ctx->No
+  if(ctx->No == 0 || ctx->No > MAX_OUTPUTS) {
+    fprintf(stderr, "output products must be in range [1..%d], not %d\n",
+        MAX_OUTPUTS, ctx->No);
     return 1;
   }
 
-  // Allocate device memory
-  checkCudaErrors(cudaMalloc((void **)&d_pc2_in,  Ntbi*sizeof(char2)));
-  checkCudaErrors(cudaMalloc((void **)&d_pf2_out, Ntb *sizeof(float2)));
-  checkCudaErrors(cudaMalloc((void **)&d_pf_out,  Ntb *sizeof(float)));
-  // Clear power output buffer
-  checkCudaErrors(cudaMemset(d_pf_out, 0, Ntb*sizeof(float)));
+  // Set ctx->Ntmax
+  ctx->Ntmax = 0;
+  for(i=0; i<ctx->No; i++) {
+    if(ctx->Ntmax < ctx->Nts[i]) {
+      ctx->Ntmax = ctx->Nts[i];
+    }
+  }
+
+  // Null out all pointers
+  ctx->h_blkbuf = NULL;
+  for(i=0; i < MAX_OUTPUTS; i++) {
+    ctx->h_pwrbuf[i] = NULL;
+  }
+  ctx->gpu_ctx = NULL;
+
+  // Alllocate host buffers
+
+  // Block buffer can use write combining
+  cuda_rc = cudaHostAlloc(&ctx->h_blkbuf,
+                     ctx->Ntpb*ctx->Np*ctx->Nc*sizeof(char2),
+                     cudaHostAllocWriteCombined);
+  if(cuda_rc != cudaSuccess) {
+    PRINT_ERRMSG(cuda_rc);
+    return 1;
+  }
+
+  for(i=0; i < ctx->No; i++) {
+    // TODO For small Nt values, it's probbaly more efficient to buffer
+    // multiple power spectra in the output buffer, but this requires a little
+    // more overhead so it is deferred for now.
+    cuda_rc = cudaHostAlloc(&ctx->h_pwrbuf[i],
+                       ctx->Nts[i]*ctx->Nc*sizeof(float),
+                       cudaHostAllocDefault);
+    if(cuda_rc != cudaSuccess) {
+      PRINT_ERRMSG(cuda_rc);
+      mygpuspec_cleanup(ctx);
+      return 1;
+    }
+  }
+
+  // Allocate GPU context
+  mygpuspec_gpu_context * gpu_ctx = (mygpuspec_gpu_context *)malloc(sizeof(mygpuspec_gpu_context));
+
+  if(!gpu_ctx) {
+    mygpuspec_cleanup(ctx);
+    return 1;
+  }
+
+  // Store pointer to gpu_ctx in ctx
+  ctx->gpu_ctx = gpu_ctx;
+
+  // NULL out pointers (and invalidate plans)
+  gpu_ctx->d_fft_in = NULL;
+  for(i=0; i<MAX_OUTPUTS; i++) {
+    gpu_ctx->d_fft_out[i] = NULL;
+    gpu_ctx->d_pwr_out[i] = NULL;
+    gpu_ctx->plan[i] = NO_PLAN;
+  }
+
+  // Allocate buffers
+
+  // FFT input buffer
+  // The input buffer is padded to the next multiple of 32KB to facilitate 2D
+  // texture lookups by treating the input buffer as a 2D array that is 32KB
+  // wide.
+  inbuf_size = ctx->Ntmax*ctx->Np*ctx->Nc*sizeof(char2);
+  if((inbuf_size & 0x7fff) != 0) {
+    // Round up to next multiple of 32KB
+    inbuf_size = (inbuf_size & ~0x7fff) + 0x8000;
+  }
+
+  cuda_rc = cudaMalloc(&gpu_ctx->d_fft_in, inbuf_size);
+  if(cuda_rc != cudaSuccess) {
+    PRINT_ERRMSG(cuda_rc);
+    mygpuspec_cleanup(ctx);
+    return 1;
+  }
 
   // Bind texture to device input buffer
-  checkCudaErrors(cudaBindTexture(NULL, char_tex, d_pc2_in, Ntbi*sizeof(char2)));
+  // Width is 32KB, height is inbuf_size/32KB, pitch is 32KB
+  cuda_rc = cudaBindTexture2D(NULL, char_tex, gpu_ctx->d_fft_in,
+                              1<<15, inbuf_size>>15, 1<<15);
+  if(cuda_rc != cudaSuccess) {
+    PRINT_ERRMSG(cuda_rc);
+    mygpuspec_cleanup(ctx);
+    return 1;
+  }
 
-  // Allocate plan memory
-  checkCudaErrors(cufftCreate(&plan));
-  // Make the plan
-  checkCudaErrors(cufftMakePlanMany(plan,      // plan handle
-                                    1,         // rank
-                                    &Nt_,      // *n
-                                    &Nt_,      // *inembed (unused for 1d)
-                                    Ni,        // istride
-                                    Nti,       // idist
-                                    &Nt_,      // *onembed (unused for 1d)
-                                    1,         // ostride
-                                    Nt,        // odist
-                                    CUFFT_C2C, // type
-                                    Nb,        // batch
-                                    &work_size // worksize
-                                   ));
-
-  printf("Temporary buffer size %li bytes\n", work_size);
-
-  // Setup the callbacks
-  cudaMemcpyFromSymbol(&h_pcb_load_callback, 
-                       d_pcb_load_callback, 
-                       sizeof(h_pcb_load_callback));
-
-  cudaMemcpyFromSymbol(&h_pcb_store_callback, 
-                       d_pcb_store_callback, 
-                       sizeof(h_pcb_store_callback));
-
-  // Now associate the callbacks with the plan.
-  cufftResult status = cufftXtSetCallback(plan,
-                                          (void **)&h_pcb_load_callback,
-                                          CUFFT_CB_LD_COMPLEX,
-                                          (void **)&d_pc2_in);
-  if (status == CUFFT_LICENSE_ERROR)
-  {
-      printf("Apparently, using CUFFT callbacks requires a valid license file.\n");
-      printf("The file was either not found, out of date, or otherwise invalid.\n");
+  // For each output product
+  for(i=0; i < ctx->No; i++) {
+    // FFT output buffer
+    cuda_rc = cudaMalloc(&gpu_ctx->d_fft_out[i], ctx->Nts[i]*ctx->Nc*sizeof(cufftComplex));
+    if(cuda_rc != cudaSuccess) {
+      PRINT_ERRMSG(cuda_rc);
+      mygpuspec_cleanup(ctx);
       return 1;
-  }
-  checkCudaErrors(cufftXtSetCallback(plan,
-                                     (void **)&h_pcb_load_callback,
-                                     CUFFT_CB_LD_COMPLEX,
-                                     (void **)&d_pc2_in));
-
-  checkCudaErrors(cufftXtSetCallback(plan,
-                                     (void **)&h_pcb_store_callback,
-                                     CUFFT_CB_ST_COMPLEX,
-                                     (void **)&d_pf_out));
-
-  // Populate input data
-  memset(h_pc2_in, 0, Ntbi * sizeof(char2));
-  for(i=0; i<Nt; i++) {
-    // Even samples, odd bins
-    h_pc2_in[2*(i       )].x = round(127*cos(2*M_PI*1*i/Nt)); // Bin 1
-    h_pc2_in[2*(i       )].y = round(127*sin(2*M_PI*1*i/Nt)); // Bin 1
-    h_pc2_in[2*(i +   Nt)].x = round(127*cos(2*M_PI*3*i/Nt)); // Bin 3
-    h_pc2_in[2*(i +   Nt)].y = round(127*sin(2*M_PI*3*i/Nt)); // Bin 3
-    h_pc2_in[2*(i + 2*Nt)].x = round(127*cos(2*M_PI*5*i/Nt)); // Bin 5;
-    h_pc2_in[2*(i + 2*Nt)].y = round(127*sin(2*M_PI*5*i/Nt)); // Bin 5;
-
-    // Odd samples, even bind, half power relative to even samples
-    h_pc2_in[2*(i       )+1].x = round(89.8*cos(2*M_PI*2*i/Nt)); // Bin 2
-    h_pc2_in[2*(i       )+1].y = round(89.8*sin(2*M_PI*2*i/Nt)); // Bin 2
-    h_pc2_in[2*(i +   Nt)+1].x = round(89.8*cos(2*M_PI*4*i/Nt)); // Bin 4
-    h_pc2_in[2*(i +   Nt)+1].y = round(89.8*sin(2*M_PI*4*i/Nt)); // Bin 4
-    h_pc2_in[2*(i + 2*Nt)+1].x = round(89.8*cos(2*M_PI*6*i/Nt)); // Bin 6;
-    h_pc2_in[2*(i + 2*Nt)+1].y = round(89.8*sin(2*M_PI*6*i/Nt)); // Bin 6;
+    }
+    // Power output buffer
+    cuda_rc = cudaMalloc(&gpu_ctx->d_pwr_out[i], ctx->Nts[i]*ctx->Nc*sizeof(float));
+    if(cuda_rc != cudaSuccess) {
+      PRINT_ERRMSG(cuda_rc);
+      mygpuspec_cleanup(ctx);
+      return 1;
+    }
+    // Clear power output buffer
+    cuda_rc = cudaMemset(gpu_ctx->d_pwr_out[i], 0, ctx->Nts[i]*ctx->Nc*sizeof(float));
+    if(cuda_rc != cudaSuccess) {
+      PRINT_ERRMSG(cuda_rc);
+      mygpuspec_cleanup(ctx);
+      return 1;
+    }
   }
 
-  // Copy data to GPU
-  checkCudaErrors(cudaMemcpy(d_pc2_in, h_pc2_in, Ntbi*sizeof(char2),
-                             cudaMemcpyHostToDevice));
-
-  for(j=0; j<Ni; j++) {
-    // Do FFT, integrating all interleaved outputs together
-    checkCudaErrors(cufftExecC2C(plan, d_pc2_in+j, d_pf2_out, CUFFT_FORWARD));
+  // Get host pointers to cufft callbacks
+  cuda_rc = cudaMemcpyFromSymbol(&h_cufft_load_callback, 
+                                 d_cufft_load_callback, 
+                                 sizeof(h_cufft_load_callback));
+  if(cuda_rc != cudaSuccess) {
+    PRINT_ERRMSG(cuda_rc);
+    mygpuspec_cleanup(ctx);
+    return 1;
   }
 
-  // Copy data back from the GPU
-  checkCudaErrors(cudaMemcpy(h_pf_out, d_pf_out, Ntb*sizeof(float),
-                             cudaMemcpyDeviceToHost));
-
-  // Show output
-  for(i=0; i<17; i++) {
-    printf("%3d", i);
-    printf("  %+11.8f",   h_pf_out[i     ]/(512*512));
-    printf("  %+11.8f",   h_pf_out[i+  Nt]/(512*512));
-    printf("  %+11.8f\n", h_pf_out[i+2*Nt]/(512*512));
+  cuda_rc = cudaMemcpyFromSymbol(&h_cufft_store_callback, 
+                                 d_cufft_store_callback, 
+                                 sizeof(h_cufft_store_callback));
+  if(cuda_rc != cudaSuccess) {
+    PRINT_ERRMSG(cuda_rc);
+    mygpuspec_cleanup(ctx);
+    return 1;
   }
-  printf("\n");
 
-  //Destroy CUFFT plan
-  checkCudaErrors(cufftDestroy(plan));
+  // Generate FFT plans and associate callbacks
+  for(i=0; i < ctx->No; i++) {
+    // Make the plan
+    cufft_rc = cufftPlanMany(&gpu_ctx->plan[i],   // *plan handle
+                             1,                   // rank
+                             (int *)&ctx->Nts[i], // *n
+                             (int *)&ctx->Nts[i], // *inembed (unused for 1d)
+                             ctx->Np,             // istride
+                             ctx->Nts[i]*ctx->Np, // idist
+                             (int *)&ctx->Nts[i], // *onembed (unused for 1d)
+                             1,                   // ostride
+                             ctx->Nts[i],         // odist
+                             CUFFT_C2C,           // type
+                             ctx->Nc              // batch
+                            );
 
-  // Ub-bind texture from device input buffer
-  cudaUnbindTexture(char_tex);
+    if(cufft_rc != CUFFT_SUCCESS) {
+      PRINT_ERRMSG(cufft_rc);
+      mygpuspec_cleanup(ctx);
+      return 1;
+    }
 
-  // Free device memory
-  checkCudaErrors(cudaFree(d_pf2_out));
-  checkCudaErrors(cudaFree(d_pc2_in));
-  free(h_pf_out);
-  free(h_pc2_in);
+    // Now associate the callbacks with the plan.
+    cufft_rc = cufftXtSetCallback(gpu_ctx->plan[i],
+                                  (void **)&h_cufft_load_callback,
+                                  CUFFT_CB_LD_COMPLEX,
+                                  (void **)&gpu_ctx->d_fft_in);
+    if(cufft_rc != CUFFT_SUCCESS) {
+      PRINT_ERRMSG(cufft_rc);
+      mygpuspec_cleanup(ctx);
+      return 1;
+    }
+
+    cufft_rc = cufftXtSetCallback(gpu_ctx->plan[i],
+                                  (void **)&h_cufft_store_callback,
+                                  CUFFT_CB_ST_COMPLEX,
+                                  (void **)&gpu_ctx->d_pwr_out[i]);
+    if(cufft_rc != CUFFT_SUCCESS) {
+      PRINT_ERRMSG(cufft_rc);
+      mygpuspec_cleanup(ctx);
+      return 1;
+    }
+  }
 
   return 0;
 }
-#endif // 0
+
+// Frees host and device buffers based on the ctx->N values.
+// Frees and sets the ctx->mygpuspec_gpu_ctx field.
+// Destroys CuFFT plans.
+void mygpuspec_cleanup(mygpuspec_context * ctx)
+{
+  int i;
+  mygpuspec_gpu_context * gpu_ctx;
+
+  if(ctx->h_blkbuf) {
+    cudaFreeHost(ctx->h_blkbuf);
+    ctx->h_blkbuf = NULL;
+  }
+
+  for(i=0; i<MAX_OUTPUTS; i++) {
+    if(ctx->h_pwrbuf[i]) {
+      cudaFreeHost(ctx->h_pwrbuf[i]);
+      ctx->h_pwrbuf[i] = NULL;
+    }
+  }
+
+  if(ctx->gpu_ctx) {
+    gpu_ctx = (mygpuspec_gpu_context *)ctx->gpu_ctx;
+
+    if(gpu_ctx->d_fft_in) {
+      cudaFree(gpu_ctx->d_fft_in);
+    }
+
+    for(i=0; i<MAX_OUTPUTS; i++) {
+      if(gpu_ctx->d_fft_out[i]) {
+        cudaFree(gpu_ctx->d_fft_out[i]);
+      }
+      if(gpu_ctx->d_pwr_out[i]) {
+        cudaFree(gpu_ctx->d_pwr_out[i]);
+      }
+      if(gpu_ctx->plan[i] != NO_PLAN) {
+        cufftDestroy(gpu_ctx->plan[i]);
+      }
+    }
+
+    free(ctx->gpu_ctx);
+    ctx->gpu_ctx = NULL;
+  }
+}
