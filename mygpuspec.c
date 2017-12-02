@@ -26,6 +26,7 @@ int main(int argc, char * argv[])
   ctx.Nts[0] = (1<<20);
   ctx.Nts[1] = (1<<3);
   ctx.Nts[2] = (1<<10);
+  ctx.Nb = 0;
 
   if(mygpuspec_initialize(&ctx)) {
     fprintf(stderr, "initialization failed\n");

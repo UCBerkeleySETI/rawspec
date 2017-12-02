@@ -13,16 +13,16 @@ typedef struct {
   unsigned int Ntpb; // Number of time samples per block
   unsigned int Nts[MAX_OUTPUTS]; // Array of Nt values
   unsigned int Nas[MAX_OUTPUTS]; // Array of Na values
+  // Nb is the number of input blocks per GPU input buffer.
+  // Set to zero to have it calculated as Ntmax/Ntpb.
+  unsigned int Nb;
   // output_callback is a pointer to a user-supplied output callback function.
   // This function will be called when one of of the output power buffers in
   // h_pwrbuf[] has new data to be written to disk.
   mygpuspec_output_callback_t output_callback;
 
   // Fields above here should be specified by client.  Fields below here are
-  // managed by library.  The Nb field and the host pointers below will be used
-  // to pass data to and from the GPU.
-
-  unsigned int Nb; // Number of blocks needed for complete input buffer
+  // managed by library.
 
   // Host pointer to block buffer.
   // The size, in bytes, is Nc * Ntpb * Np * 2.

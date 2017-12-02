@@ -76,14 +76,59 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
     return 1;
   }
 
-  // Set ctx->Ntmax and ctx->Nb
+
+  // Determine Ntmax (and validate Nts)
   ctx->Ntmax = 0;
   for(i=0; i<ctx->No; i++) {
+    if(ctx->Nts[i] == 0) {
+      fprintf(stderr, "Nts[%d] cannot be 0\n", i);
+      return 1;
+    }
     if(ctx->Ntmax < ctx->Nts[i]) {
       ctx->Ntmax = ctx->Nts[i];
     }
   }
-  ctx->Nb = ctx->Ntmax / ctx->Ntpb;
+  // Validate that all Nts are factors of Ntmax.  This constraint helps
+  // simplify input buffer management.
+  for(i=0; i<ctx->No; i++) {
+    if(ctx->Ntmax % ctx->Nts[i] != 0) {
+      fprintf(stderr, "Nts[%d] (%u) is not a factor of Ntmax (%u)\n",
+          i, ctx->Nts[i], ctx->Ntmax);
+      return 1;
+    }
+  }
+
+  // Validate/calculate Nb
+  // If ctx->Nb is given by caller (i.e. is non-zero)
+  if(ctx->Nb != 0) {
+    // Validate that Ntmax is a factor of (Nb * Ntpb)
+    if((ctx->Nb * ctx->Ntpb) % ctx->Ntmax != 0) {
+      fprintf(stderr,
+          "Ntmax (%u) is not a factor of Nb*Ntpb (%u * %u = %u)\n",
+          ctx->Ntmax, ctx->Nb, ctx->Ntpb, ctx->Nb*ctx->Ntpb);
+      return 1;
+    }
+  } else {
+    // Calculate Nb
+    // If Ntmax is less than one block
+    if(ctx->Ntmax < ctx->Ntpb) {
+      // Validate that Ntmax is a factor of Ntpb
+      if(ctx->Ntpb % ctx->Ntmax != 0) {
+        fprintf(stderr, "Ntmax (%u) is not a factor of Ntpb (%u)\n",
+            ctx->Ntmax, ctx->Ntpb);
+        return 1;
+      }
+      ctx->Nb = 1;
+    } else {
+      // Validate that Ntpb is factor of Ntmax
+      if(ctx->Ntmax % ctx->Ntpb != 0) {
+        fprintf(stderr, "Ntpb (%u) is not a factor of Nmax (%u)\n",
+            ctx->Ntpb, ctx->Ntmax);
+        return 1;
+      }
+      ctx->Nb = ctx->Ntmax / ctx->Ntpb;
+    }
+  }
 
   // Null out all pointers
   ctx->h_blkbuf = NULL;
