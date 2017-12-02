@@ -26,6 +26,10 @@ typedef struct {
   unsigned int Nss[MAX_OUTPUTS];
   // Array of cudaStream_t values
   cudaStream_t stream[MAX_OUTPUTS];
+  // Array of `na` values.  `na` is the number of accumulated spectra thus far
+  // for a given output product.  Not to be confused with `Na`, the number of
+  // spectra to accumulate for a given output product.
+  unsigned int nas[MAX_OUTPUTS];
 } mygpuspec_gpu_context;
 
 // Texture declarations
@@ -191,6 +195,7 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
     gpu_ctx->d_pwr_out[i] = NULL;
     gpu_ctx->plan[i] = NO_PLAN;
     gpu_ctx->stream[i] = NO_STREAM;
+    gpu_ctx->nas[i] = 0;
   }
 
   // Calculate Ns values.
@@ -316,11 +321,18 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
     }
   }
 
-  // Create streams
+  // Create streams and associate with plans
   for(i=0; i < ctx->No; i++) {
     cuda_rc = cudaStreamCreate(&gpu_ctx->stream[i]);
     if(cuda_rc != cudaSuccess) {
       PRINT_ERRMSG(cuda_rc);
+      mygpuspec_cleanup(ctx);
+      return 1;
+    }
+
+    cufft_rc = cufftSetStream(gpu_ctx->plan[i], gpu_ctx->stream[i]);
+    if(cufft_rc != CUFFT_SUCCESS) {
+      PRINT_ERRMSG(cufft_rc);
       mygpuspec_cleanup(ctx);
       return 1;
     }
@@ -405,6 +417,91 @@ int mygpuspec_copy_blocks_to_gpu(mygpuspec_context * ctx)
       return 1;
     }
   }
+
+  return 0;
+}
+
+// Launches FFTs of data in input buffer.  Whenever an output product
+// integration is complete, the power spectrum is copied to the host power
+// output buffer and the user provided callback, if any, is called.  This
+// function returns zero on success or non-zero if an error is encountered.
+//
+// Processing occurs asynchronously.  Use `mygpuspec_check_for_completion` to
+// see how many output products have completed or
+// `mygpuspec_wait_for_completion` to wait for all output products to be
+// complete.  New data should NOT be copied to the GPU until
+// `mygpuspec_check_for_completion` returns `ctx->No` or
+// `mygpuspec_wait_for_completion` returns 0.
+int mygpuspec_start_processing(mygpuspec_context * ctx)
+{
+  int i;
+  int a;
+  int s;
+  int p;
+  int Na;
+  cufftHandle plan;
+  cudaStream_t stream;
+  cudaError_t cuda_rc;
+  cufftResult cufft_rc;
+  mygpuspec_gpu_context * gpu_ctx = (mygpuspec_gpu_context *)ctx->gpu_ctx;
+
+  // For each output product
+  for(i=0; i < ctx->No; i++) {
+    // Get plan and stream
+    plan   = gpu_ctx->plan[i];
+    stream = gpu_ctx->stream[i];
+
+    // Get number of spectra accumulated thus far from previous input buffers.
+    a = gpu_ctx->nas[i];
+
+    // Get number of spectra to accumulate per dump
+    Na = ctx->Nas[i];
+
+    printf("queueing %u spectra for output product %d\n", gpu_ctx->Nss[i], i);
+
+    // For each spectrum for this output product and current input buffer
+    for(s=0; s < gpu_ctx->Nss[i]; s++) {
+      // For each polarization
+      for(p=0; p < ctx->Np; p++) {
+        // Add FFT to stream
+        cufft_rc = cufftExecC2C(plan,
+                                ((cufftComplex *)gpu_ctx->d_fft_in) + p,
+                                gpu_ctx->d_fft_out[i],
+                                CUFFT_FORWARD);
+
+        if(cufft_rc != CUFFT_SUCCESS) {
+          PRINT_ERRMSG(cufft_rc);
+          return 1;
+        }
+      }
+
+      // If integration is complete.  Note that `a` should "never" be greater
+      // than `Na`, but we use ">=" in an attempt to be more robust to bugs.
+      if(++a >= Na) {
+        // Copy data to host power buffer
+        // TODO
+
+        // Add stream callback
+        // TODO
+
+        // Add power buffer clearing cudaMemset call to stream
+        cuda_rc = cudaMemsetAsync(gpu_ctx->d_pwr_out[i], 0,
+                                  ctx->Nts[i]*ctx->Nc*sizeof(float),
+                                  stream);
+
+        if(cuda_rc != cudaSuccess) {
+          PRINT_ERRMSG(cuda_rc);
+          return 1;
+        }
+
+        // Reinitialize a
+        a = 0;
+      }
+    } // For each spectrum
+
+    // Save current value of a
+    gpu_ctx->nas[i] = a;
+  } // For each output product
 
   return 0;
 }

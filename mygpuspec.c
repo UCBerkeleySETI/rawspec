@@ -26,6 +26,11 @@ int main(int argc, char * argv[])
   ctx.Nts[0] = (1<<20);
   ctx.Nts[1] = (1<<3);
   ctx.Nts[2] = (1<<10);
+  // One dump per output product
+  ctx.Nas[0] = (1<<(20 - 20));
+  ctx.Nas[1] = (1<<(20 -  3));
+  ctx.Nas[2] = (1<<(20 - 20));
+  // Auto-calculate Nb
   ctx.Nb = 0;
 
   if(mygpuspec_initialize(&ctx)) {
@@ -48,6 +53,11 @@ int main(int argc, char * argv[])
         blocsize * ctx.Nb / (double)elapsed_ns);
   }
 
+  printf("starting processing...");
+  fflush(stdout);
+  mygpuspec_start_processing(&ctx);
+  printf("done\n");
+
   printf("number of output products NOT processing: %d\n",
       mygpuspec_check_for_completion(&ctx));
 
@@ -55,6 +65,9 @@ int main(int argc, char * argv[])
   fflush(stdout);
   mygpuspec_wait_for_completion(&ctx);
   printf("done\n");
+
+  printf("number of output products NOT processing: %d\n",
+      mygpuspec_check_for_completion(&ctx));
 
   printf("sleeping for 10 seconds...");
   fflush(stdout);

@@ -62,6 +62,19 @@ void mygpuspec_cleanup(mygpuspec_context * ctx);
 // Returns 0 on success, non-zero on error.
 int mygpuspec_copy_blocks_to_gpu(mygpuspec_context * ctx);
 
+// Launches FFTs of data in input buffer.  Whenever an output product
+// integration is complete, the power spectrum is copied to the host power
+// output buffer and the user provided callback, if any, is called.  This
+// function returns zero on success or non-zero if an error is encountered.
+//
+// Processing occurs asynchronously.  Use `mygpuspec_check_for_completion` to
+// see how many output products have completed or
+// `mygpuspec_wait_for_completion` to wait for all output products to be
+// complete.  New data should NOT be copied to the GPU until
+// `mygpuspec_check_for_completion` returns `ctx->No` or
+// `mygpuspec_wait_for_completion` returns 0.
+int mygpuspec_start_processing(mygpuspec_context * ctx);
+
 // Returns the number of output products that are complete for the current
 // input buffer.  More precisely, it returns the number of output products that
 // are no longer processing (or never were processing) the input buffer.
