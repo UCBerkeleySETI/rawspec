@@ -36,9 +36,7 @@ int main(int argc, char * argv[])
 
   clock_gettime(CLOCK_MONOTONIC, &ts_start);
 
-  for(i=0; i < ctx.Nb; i++) {
-    mygpuspec_copy_block_to_gpu(&ctx, i);
-  }
+  mygpuspec_copy_blocks_to_gpu(&ctx);
 
   clock_gettime(CLOCK_MONOTONIC, &ts_stop);
   elapsed_ns = ELAPSED_NS(ts_start, ts_stop);

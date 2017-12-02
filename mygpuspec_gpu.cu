@@ -131,21 +131,23 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
   }
 
   // Null out all pointers
-  ctx->h_blkbuf = NULL;
+  ctx->h_blkbufs = NULL;
   for(i=0; i < MAX_OUTPUTS; i++) {
     ctx->h_pwrbuf[i] = NULL;
   }
   ctx->gpu_ctx = NULL;
 
   // Alllocate host buffers
-
-  // Block buffer can use write combining
-  cuda_rc = cudaHostAlloc(&ctx->h_blkbuf,
-                     ctx->Ntpb*ctx->Np*ctx->Nc*sizeof(char2),
-                     cudaHostAllocWriteCombined);
-  if(cuda_rc != cudaSuccess) {
-    PRINT_ERRMSG(cuda_rc);
-    return 1;
+  ctx->h_blkbufs = (char **)malloc(ctx->Nb * sizeof(char *));
+  for(i=0; i < ctx->Nb; i++) {
+    // Block buffer can use write combining
+    cuda_rc = cudaHostAlloc(&ctx->h_blkbufs[i],
+                       ctx->Ntpb*ctx->Np*ctx->Nc*sizeof(char2),
+                       cudaHostAllocWriteCombined);
+    if(cuda_rc != cudaSuccess) {
+      PRINT_ERRMSG(cuda_rc);
+      return 1;
+    }
   }
 
   for(i=0; i < ctx->No; i++) {
@@ -309,9 +311,12 @@ void mygpuspec_cleanup(mygpuspec_context * ctx)
   int i;
   mygpuspec_gpu_context * gpu_ctx;
 
-  if(ctx->h_blkbuf) {
-    cudaFreeHost(ctx->h_blkbuf);
-    ctx->h_blkbuf = NULL;
+  if(ctx->h_blkbufs) {
+    for(i=0; i < ctx->Nb; i++) {
+      cudaFreeHost(ctx->h_blkbufs[i]);
+    }
+    free(ctx->h_blkbufs);
+    ctx->h_blkbufs = NULL;
   }
 
   for(i=0; i<MAX_OUTPUTS; i++) {
@@ -345,27 +350,30 @@ void mygpuspec_cleanup(mygpuspec_context * ctx)
   }
 }
 
-// Copy `ctx->h_blkbuf` to block `b % ctx->Nb` in GPU input buffer.
+// Copy `ctx->h_blkbufs` to GPU input buffer.
 // Returns 0 on success, non-zero on error.
-int mygpuspec_copy_block_to_gpu(mygpuspec_context * ctx, unsigned int b)
+int mygpuspec_copy_blocks_to_gpu(mygpuspec_context * ctx)
 {
+  int b;
   cudaError_t rc;
   mygpuspec_gpu_context * gpu_ctx = (mygpuspec_gpu_context *)ctx->gpu_ctx;
 
   // TODO Store in GPU context?
   size_t width = ctx->Ntpb * ctx->Np * sizeof(char2);
 
-  rc = cudaMemcpy2D(gpu_ctx->d_fft_in + (b % ctx->Nb) * width / sizeof(char2),
-                    ctx->Nb * width, // dpitch
-                    ctx->h_blkbuf,   // *src
-                    width,           // spitch
-                    width,           // width
-                    ctx->Nc,         // height
-                    cudaMemcpyHostToDevice);
+  for(b=0; b < ctx->Nb; b++) {
+    rc = cudaMemcpy2D(gpu_ctx->d_fft_in + b * width / sizeof(char2),
+                      ctx->Nb * width,   // dpitch
+                      ctx->h_blkbufs[b], // *src
+                      width,             // spitch
+                      width,             // width
+                      ctx->Nc,           // height
+                      cudaMemcpyHostToDevice);
 
-  if(rc != cudaSuccess) {
-    PRINT_ERRMSG(rc);
-    return 1;
+    if(rc != cudaSuccess) {
+      PRINT_ERRMSG(rc);
+      return 1;
+    }
   }
 
   return 0;

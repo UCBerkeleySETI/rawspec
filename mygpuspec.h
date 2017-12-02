@@ -24,9 +24,9 @@ typedef struct {
   // Fields above here should be specified by client.  Fields below here are
   // managed by library.
 
-  // Host pointer to block buffer.
+  // Array of host pointers to Nb block buffers.
   // The size, in bytes, is Nc * Ntpb * Np * 2.
-  char * h_blkbuf;
+  char ** h_blkbufs;
 
   // Host pointers to the output power buffers.
   // The sizes, in bytes, will be Nc * Nts[i].
@@ -56,9 +56,9 @@ int mygpuspec_initialize(mygpuspec_context * ctx);
 // Returns 0 on success, non-zero on error.
 void mygpuspec_cleanup(mygpuspec_context * ctx);
 
-// Copy `ctx->h_blkbuf` to block `b % ctx->Nb` in GPU input buffer.
+// Copy `ctx->h_blkbufs` to GPU input buffer.
 // Returns 0 on success, non-zero on error.
-int mygpuspec_copy_block_to_gpu(mygpuspec_context * ctx, unsigned int b);
+int mygpuspec_copy_blocks_to_gpu(mygpuspec_context * ctx);
 
 #ifdef __cplusplus
 }
