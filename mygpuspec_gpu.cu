@@ -22,8 +22,8 @@ typedef struct {
 // Texture declarations
 texture<char, 2, cudaReadModeNormalizedFloat> char_tex;
 
-__device__ cufftComplex load_callback(void *p_v_in, 
-                                      size_t offset, 
+__device__ cufftComplex load_callback(void *p_v_in,
+                                      size_t offset,
                                       void *p_v_user,
                                       void *p_v_shared)
 {
@@ -34,8 +34,8 @@ __device__ cufftComplex load_callback(void *p_v_in,
   return c;
 }
 
-__device__ void store_callback(void *p_v_out, 
-                               size_t offset, 
+__device__ void store_callback(void *p_v_out,
+                               size_t offset,
                                cufftComplex element,
                                void *p_v_user,
                                void *p_v_shared)
@@ -236,8 +236,8 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
   }
 
   // Get host pointers to cufft callbacks
-  cuda_rc = cudaMemcpyFromSymbol(&h_cufft_load_callback, 
-                                 d_cufft_load_callback, 
+  cuda_rc = cudaMemcpyFromSymbol(&h_cufft_load_callback,
+                                 d_cufft_load_callback,
                                  sizeof(h_cufft_load_callback));
   if(cuda_rc != cudaSuccess) {
     PRINT_ERRMSG(cuda_rc);
@@ -245,8 +245,8 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
     return 1;
   }
 
-  cuda_rc = cudaMemcpyFromSymbol(&h_cufft_store_callback, 
-                                 d_cufft_store_callback, 
+  cuda_rc = cudaMemcpyFromSymbol(&h_cufft_store_callback,
+                                 d_cufft_store_callback,
                                  sizeof(h_cufft_store_callback));
   if(cuda_rc != cudaSuccess) {
     PRINT_ERRMSG(cuda_rc);
