@@ -48,6 +48,14 @@ int main(int argc, char * argv[])
         blocsize * ctx.Nb / (double)elapsed_ns);
   }
 
+  printf("number of output products NOT processing: %d\n",
+      mygpuspec_check_for_completion(&ctx));
+
+  printf("waiting for completion...");
+  fflush(stdout);
+  mygpuspec_wait_for_completion(&ctx);
+  printf("done\n");
+
   printf("sleeping for 10 seconds...");
   fflush(stdout);
   sleep(10);

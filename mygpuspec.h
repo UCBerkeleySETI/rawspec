@@ -47,18 +47,29 @@ extern "C" {
 // Allocated buffers are not cleared, except for the power outbut buffers.
 // Allocates and sets the ctx->mygpuspec_gpu_ctx field.
 // Creates CuFFT plans.
+// Creates streams.
 // Returns 0 on success, non-zero on error.
 int mygpuspec_initialize(mygpuspec_context * ctx);
 
 // Frees host and device buffers based on the ctx->N values.
 // Frees and sets the ctx->mygpuspec_gpu_ctx field.
 // Destroys CuFFT plans.
+// Destroys streams.
 // Returns 0 on success, non-zero on error.
 void mygpuspec_cleanup(mygpuspec_context * ctx);
 
 // Copy `ctx->h_blkbufs` to GPU input buffer.
 // Returns 0 on success, non-zero on error.
 int mygpuspec_copy_blocks_to_gpu(mygpuspec_context * ctx);
+
+// Returns the number of output products that are complete for the current
+// input buffer.  More precisely, it returns the number of output products that
+// are no longer processing (or never were processing) the input buffer.
+unsigned int mygpuspec_check_for_completion(mygpuspec_context * ctx);
+
+// Waits for any pending output products to be compete processing the current
+// input buffer.  Returns zero when complete, non-zero on error.
+int mygpuspec_wait_for_completion(mygpuspec_context * ctx);
 
 #ifdef __cplusplus
 }

@@ -4,7 +4,8 @@
 #include <cufftXt.h>
 #include <helper_cuda.h>
 
-#define NO_PLAN ((cufftHandle)-1)
+#define NO_PLAN   ((cufftHandle)-1)
+#define NO_STREAM ((cudaStream_t)-1)
 
 #define PRINT_ERRMSG(error)                  \
   fprintf(stderr, "got error %s at %s:%d\n", \
@@ -23,6 +24,8 @@ typedef struct {
   cufftHandle plan[MAX_OUTPUTS];
   // Array of Ns values (number of specta (FFTs) per input buffer for Nt)
   unsigned int Nss[MAX_OUTPUTS];
+  // Array of cudaStream_t values
+  cudaStream_t stream[MAX_OUTPUTS];
 } mygpuspec_gpu_context;
 
 // Texture declarations
@@ -57,6 +60,7 @@ __device__ cufftCallbackStoreC d_cufft_store_callback = store_callback;
 // Allocates host and device buffers based on the ctx->N values.
 // Allocates and sets the ctx->mygpuspec_gpu_ctx field.
 // Creates CuFFT plans.
+// Creates streams.
 // Returns 0 on success, non-zero on error.
 int mygpuspec_initialize(mygpuspec_context * ctx)
 {
@@ -81,7 +85,6 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
     fprintf(stderr, "number of time samples per block cannot be zero\n");
     return 1;
   }
-
 
   // Determine Ntmax (and validate Nts)
   ctx->Ntmax = 0;
@@ -187,6 +190,7 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
     gpu_ctx->d_fft_out[i] = NULL;
     gpu_ctx->d_pwr_out[i] = NULL;
     gpu_ctx->plan[i] = NO_PLAN;
+    gpu_ctx->stream[i] = NO_STREAM;
   }
 
   // Calculate Ns values.
@@ -312,12 +316,23 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
     }
   }
 
+  // Create streams
+  for(i=0; i < ctx->No; i++) {
+    cuda_rc = cudaStreamCreate(&gpu_ctx->stream[i]);
+    if(cuda_rc != cudaSuccess) {
+      PRINT_ERRMSG(cuda_rc);
+      mygpuspec_cleanup(ctx);
+      return 1;
+    }
+  }
+
   return 0;
 }
 
 // Frees host and device buffers based on the ctx->N values.
 // Frees and sets the ctx->mygpuspec_gpu_ctx field.
 // Destroys CuFFT plans.
+// Destroys streams.
 void mygpuspec_cleanup(mygpuspec_context * ctx)
 {
   int i;
@@ -355,6 +370,9 @@ void mygpuspec_cleanup(mygpuspec_context * ctx)
       if(gpu_ctx->plan[i] != NO_PLAN) {
         cufftDestroy(gpu_ctx->plan[i]);
       }
+      if(gpu_ctx->stream[i] != NO_STREAM) {
+        cudaStreamDestroy(gpu_ctx->stream[i]);
+      }
     }
 
     free(ctx->gpu_ctx);
@@ -384,6 +402,44 @@ int mygpuspec_copy_blocks_to_gpu(mygpuspec_context * ctx)
 
     if(rc != cudaSuccess) {
       PRINT_ERRMSG(rc);
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+// Returns the number of output products that are complete for the current
+// input buffer.  More precisely, it returns the number of output products that
+// are no longer processing (or never were processing) the input buffer.
+unsigned int mygpuspec_check_for_completion(mygpuspec_context * ctx)
+{
+  int i;
+  int num_complete = 0;
+  cudaError_t rc;
+  mygpuspec_gpu_context * gpu_ctx = (mygpuspec_gpu_context *)ctx->gpu_ctx;
+
+  for(i=0; i<ctx->No; i++) {
+    rc = cudaStreamQuery(gpu_ctx->stream[i]);
+    if(rc == cudaSuccess) {
+      num_complete++;
+    }
+  }
+
+  return num_complete;
+}
+
+// Waits for any pending output products to be compete processing the current
+// input buffer.  Returns zero when complete, non-zero on error.
+int mygpuspec_wait_for_completion(mygpuspec_context * ctx)
+{
+  int i;
+  cudaError_t rc;
+  mygpuspec_gpu_context * gpu_ctx = (mygpuspec_gpu_context *)ctx->gpu_ctx;
+
+  for(i=0; i < ctx->No; i++) {
+    rc = cudaStreamSynchronize(gpu_ctx->stream[i]);
+    if(rc != cudaSuccess) {
       return 1;
     }
   }
