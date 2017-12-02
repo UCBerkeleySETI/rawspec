@@ -13,10 +13,16 @@
 
 // CPU context structure
 typedef struct {
-  char2 * d_fft_in; // Device pointer to FFT input buffer
-  cufftComplex * d_fft_out[4]; // Array of device pointers to FFT output buffers
-  float * d_pwr_out[4]; // Array of device pointers to power buffers
-  cufftHandle plan[4]; // Array of handles to FFT plans
+  // Device pointer to FFT input buffer
+  char2 * d_fft_in;
+  // Array of device pointers to FFT output buffers
+  cufftComplex * d_fft_out[MAX_OUTPUTS];
+  // Array of device pointers to power buffers
+  float * d_pwr_out[MAX_OUTPUTS];
+  // Array of handles to FFT plans
+  cufftHandle plan[MAX_OUTPUTS];
+  // Array of Ns values (number of specta (FFTs) per input buffer for Nt)
+  unsigned int Nss[MAX_OUTPUTS];
 } mygpuspec_gpu_context;
 
 // Texture declarations
@@ -181,6 +187,12 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
     gpu_ctx->d_fft_out[i] = NULL;
     gpu_ctx->d_pwr_out[i] = NULL;
     gpu_ctx->plan[i] = NO_PLAN;
+  }
+
+  // Calculate Ns values.
+  // Ns[i] is number of specta (FFTs) per input buffer for Nt[i]
+  for(i=0; i < ctx->No; i++) {
+    gpu_ctx->Nss[i] = (ctx->Nb * ctx->Ntpb) / ctx->Nts[i];
   }
 
   // Allocate buffers
