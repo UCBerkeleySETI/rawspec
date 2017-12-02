@@ -34,17 +34,19 @@ int main(int argc, char * argv[])
   }
   printf("initialization succeeded\n");
 
-  clock_gettime(CLOCK_MONOTONIC, &ts_start);
+  for(i=0; i<4; i++) {
+    clock_gettime(CLOCK_MONOTONIC, &ts_start);
 
-  mygpuspec_copy_blocks_to_gpu(&ctx);
+    mygpuspec_copy_blocks_to_gpu(&ctx);
 
-  clock_gettime(CLOCK_MONOTONIC, &ts_stop);
-  elapsed_ns = ELAPSED_NS(ts_start, ts_stop);
+    clock_gettime(CLOCK_MONOTONIC, &ts_stop);
+    elapsed_ns = ELAPSED_NS(ts_start, ts_stop);
 
-  printf("copied %u bytes in %.6f sec (%.3f GBps)\n",
-      blocsize * ctx.Nb,
-      elapsed_ns / 1e9,
-      blocsize * ctx.Nb / (double)elapsed_ns);
+    printf("copied %u bytes in %.6f sec (%.3f GBps)\n",
+        blocsize * ctx.Nb,
+        elapsed_ns / 1e9,
+        blocsize * ctx.Nb / (double)elapsed_ns);
+  }
 
   printf("sleeping for 10 seconds...");
   fflush(stdout);
