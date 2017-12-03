@@ -60,6 +60,19 @@ __device__ void store_callback(void *p_v_out,
 __device__ cufftCallbackLoadC d_cufft_load_callback = load_callback;
 __device__ cufftCallbackStoreC d_cufft_store_callback = store_callback;
 
+#include <time.h> // For nanosleep
+
+// Stream callback function that is called right after an output product's GPU
+// power buffer has been copied to the host power buffer.
+static void CUDART_CB dump_callback(cudaStream_t stream,
+                                    cudaError_t status,
+                                    void *data)
+{
+  struct timespec ts_100ms = {10, 100 * 1000 * 1000};
+  printf("Inside callback %ld\n", (long int)data);
+  nanosleep(&ts_100ms, NULL);
+}
+
 // Sets ctx->Ntmax.
 // Allocates host and device buffers based on the ctx->N values.
 // Allocates and sets the ctx->mygpuspec_gpu_ctx field.
@@ -323,7 +336,7 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
 
   // Create streams and associate with plans
   for(i=0; i < ctx->No; i++) {
-    cuda_rc = cudaStreamCreate(&gpu_ctx->stream[i]);
+    cuda_rc = cudaStreamCreateWithFlags(&gpu_ctx->stream[i], cudaStreamNonBlocking);
     if(cuda_rc != cudaSuccess) {
       PRINT_ERRMSG(cuda_rc);
       mygpuspec_cleanup(ctx);
@@ -478,11 +491,47 @@ int mygpuspec_start_processing(mygpuspec_context * ctx)
       // If integration is complete.  Note that `a` should "never" be greater
       // than `Na`, but we use ">=" in an attempt to be more robust to bugs.
       if(++a >= Na) {
-        // Copy data to host power buffer
-        // TODO
+        // Copy data to host power buffer.  This is done is two 2D copies to
+        // get channel 0 in the center of the spectrum.  Special care is taken
+        // in the unlikely event that Nt is odd.
+        cuda_rc = cudaMemcpy2DAsync(ctx->h_pwr_out[i] + ctx->Nt[i]/2, // *dst
+                                    ctx->Nt[i] * sizeof(float),       // dpitch
+                                    ctx->d_pwr_out[i],                // *src
+                                    ctx->Nt[i] * sizeof(float),       // spitch
+                                    (ctx->Nt[i]+1)/2 * sizeof(float), // width
+                                    ctx->Nc,                          // height
+                                    cudaMemcpyDeviceToHost,
+                                    stream);
+
+        if(cuda_rc != cudaSuccess) {
+          PRINT_ERRMSG(cuda_rc);
+          mygpuspec_cleanup(ctx);
+          return 1;
+        }
+
+        cuda_rc = cudaMemcpy2DAsync(ctx->h_pwr_out[i],                    // *dst
+                                    ctx->Nt[i] * sizeof(float),           // dpitch
+                                    ctx->d_pwr_out[i] + (ctx->Nt[i]+1/2), // *src
+                                    ctx->Nt[i] * sizeof(float),           // spitch
+                                    ctx->Nt[i]/2 * sizeof(float),         // width
+                                    ctx->Nc,                              // height
+                                    cudaMemcpyDeviceToHost,
+                                    stream);
+
+        if(cuda_rc != cudaSuccess) {
+          PRINT_ERRMSG(cuda_rc);
+          mygpuspec_cleanup(ctx);
+          return 1;
+        }
 
         // Add stream callback
-        // TODO
+        cuda_rc = cudaStreamAddCallback(stream, dump_callback,
+                                        (void *)(long int)i, 0);
+
+        if(cuda_rc != cudaSuccess) {
+          PRINT_ERRMSG(cuda_rc);
+          return 1;
+        }
 
         // Add power buffer clearing cudaMemset call to stream
         cuda_rc = cudaMemsetAsync(gpu_ctx->d_pwr_out[i], 0,
