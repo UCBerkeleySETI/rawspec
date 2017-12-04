@@ -54,11 +54,13 @@ __device__ void store_callback(void *p_v_out,
                                void *p_v_shared)
 {
   float pwr = element.x * element.x + element.y * element.y;
-  ((float *)p_v_user)[offset] += pwr;
+  ((float *)p_v_user)[offset] = pwr;
 }
 
 __device__ cufftCallbackLoadC d_cufft_load_callback = load_callback;
 __device__ cufftCallbackStoreC d_cufft_store_callback = store_callback;
+
+// TODO Accumulate kernel
 
 #include <time.h> // For nanosleep
 
@@ -68,7 +70,7 @@ static void CUDART_CB dump_callback(cudaStream_t stream,
                                     cudaError_t status,
                                     void *data)
 {
-  struct timespec ts_100ms = {10, 100 * 1000 * 1000};
+  struct timespec ts_100ms = {0, 100 * 1000 * 1000};
   printf("Inside callback %ld\n", (long int)data);
   nanosleep(&ts_100ms, NULL);
 }
@@ -212,7 +214,8 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
   }
 
   // Calculate Ns values.
-  // Ns[i] is number of specta (FFTs) per input buffer for Nt[i]
+  // Ns[i] is number of specta (FFTs) per coarse channel for one input buffer
+  // for Nt[i] points per spectra.
   for(i=0; i < ctx->No; i++) {
     gpu_ctx->Nss[i] = (ctx->Nb * ctx->Ntpb) / ctx->Nts[i];
   }
@@ -223,7 +226,7 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
   // The input buffer is padded to the next multiple of 32KB to facilitate 2D
   // texture lookups by treating the input buffer as a 2D array that is 32KB
   // wide.
-  inbuf_size = ctx->Ntmax*ctx->Np*ctx->Nc*sizeof(char2);
+  inbuf_size = ctx->Nb*ctx->Ntpb*ctx->Np*ctx->Nc*sizeof(char2);
   if((inbuf_size & 0x7fff) != 0) {
     // Round up to next multiple of 32KB
     inbuf_size = (inbuf_size & ~0x7fff) + 0x8000;
@@ -249,21 +252,21 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
   // For each output product
   for(i=0; i < ctx->No; i++) {
     // FFT output buffer
-    cuda_rc = cudaMalloc(&gpu_ctx->d_fft_out[i], ctx->Nts[i]*ctx->Nc*sizeof(cufftComplex));
+    cuda_rc = cudaMalloc(&gpu_ctx->d_fft_out[i], ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(cufftComplex));
     if(cuda_rc != cudaSuccess) {
       PRINT_ERRMSG(cuda_rc);
       mygpuspec_cleanup(ctx);
       return 1;
     }
     // Power output buffer
-    cuda_rc = cudaMalloc(&gpu_ctx->d_pwr_out[i], ctx->Nts[i]*ctx->Nc*sizeof(float));
+    cuda_rc = cudaMalloc(&gpu_ctx->d_pwr_out[i], ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
     if(cuda_rc != cudaSuccess) {
       PRINT_ERRMSG(cuda_rc);
       mygpuspec_cleanup(ctx);
       return 1;
     }
     // Clear power output buffer
-    cuda_rc = cudaMemset(gpu_ctx->d_pwr_out[i], 0, ctx->Nts[i]*ctx->Nc*sizeof(float));
+    cuda_rc = cudaMemset(gpu_ctx->d_pwr_out[i], 0, ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
     if(cuda_rc != cudaSuccess) {
       PRINT_ERRMSG(cuda_rc);
       mygpuspec_cleanup(ctx);
@@ -293,17 +296,17 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
   // Generate FFT plans and associate callbacks
   for(i=0; i < ctx->No; i++) {
     // Make the plan
-    cufft_rc = cufftPlanMany(&gpu_ctx->plan[i],   // *plan handle
-                             1,                   // rank
-                             (int *)&ctx->Nts[i], // *n
-                             (int *)&ctx->Nts[i], // *inembed (unused for 1d)
-                             ctx->Np,             // istride
-                             ctx->Nts[i]*ctx->Np, // idist
-                             (int *)&ctx->Nts[i], // *onembed (unused for 1d)
-                             1,                   // ostride
-                             ctx->Nts[i],         // odist
-                             CUFFT_C2C,           // type
-                             ctx->Nc              // batch
+    cufft_rc = cufftPlanMany(&gpu_ctx->plan[i],      // *plan handle
+                             1,                      // rank
+                             (int *)&ctx->Nts[i],    // *n
+                             (int *)&ctx->Nts[i],    // *inembed (unused for 1d)
+                             ctx->Np,                // istride
+                             ctx->Nts[i]*ctx->Np,    // idist
+                             (int *)&ctx->Nts[i],    // *onembed (unused for 1d)
+                             1,                      // ostride
+                             ctx->Nts[i],            // odist
+                             CUFFT_C2C,              // type
+                             gpu_ctx->Nss[i]*ctx->Nc // batch
                             );
 
     if(cufft_rc != CUFFT_SUCCESS) {
@@ -470,10 +473,6 @@ int mygpuspec_start_processing(mygpuspec_context * ctx)
     // Get number of spectra to accumulate per dump
     Na = ctx->Nas[i];
 
-    printf("queueing %u spectra for output product %d\n", gpu_ctx->Nss[i], i);
-
-    // For each spectrum for this output product and current input buffer
-    for(s=0; s < gpu_ctx->Nss[i]; s++) {
       // For each polarization
       for(p=0; p < ctx->Np; p++) {
         // Add FFT to stream
@@ -488,6 +487,7 @@ int mygpuspec_start_processing(mygpuspec_context * ctx)
         }
       }
 
+#if 0
       // If integration is complete.  Note that `a` should "never" be greater
       // than `Na`, but we use ">=" in an attempt to be more robust to bugs.
       if(++a >= Na) {
@@ -545,11 +545,11 @@ int mygpuspec_start_processing(mygpuspec_context * ctx)
 
         // Reinitialize a
         a = 0;
-      }
-    } // For each spectrum
+      } // if integration is complete
 
     // Save current value of a
     gpu_ctx->nas[i] = a;
+#endif
   } // For each output product
 
   return 0;

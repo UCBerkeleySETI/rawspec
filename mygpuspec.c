@@ -29,7 +29,7 @@ int main(int argc, char * argv[])
   // One dump per output product
   ctx.Nas[0] = (1<<(20 - 20));
   ctx.Nas[1] = (1<<(20 -  3));
-  ctx.Nas[2] = (1<<(20 - 20));
+  ctx.Nas[2] = (1<<(20 - 10));
   // Auto-calculate Nb
   ctx.Nb = 0;
 
@@ -48,31 +48,32 @@ int main(int argc, char * argv[])
     elapsed_ns = ELAPSED_NS(ts_start, ts_stop);
 
     printf("copied %u bytes in %.6f sec (%.3f GBps)\n",
-        blocsize * ctx.Nb,
-        elapsed_ns / 1e9,
-        blocsize * ctx.Nb / (double)elapsed_ns);
+           blocsize * ctx.Nb,
+           elapsed_ns / 1e9,
+           blocsize * ctx.Nb / (double)elapsed_ns);
   }
 
-  printf("starting processing...");
-  fflush(stdout);
+  printf("starting processing\n");
+  clock_gettime(CLOCK_MONOTONIC, &ts_start);
+
   mygpuspec_start_processing(&ctx);
-  printf("done\n");
-
-  printf("number of output products NOT processing: %d\n",
-      mygpuspec_check_for_completion(&ctx));
-
-  printf("waiting for completion...");
-  fflush(stdout);
   mygpuspec_wait_for_completion(&ctx);
-  printf("done\n");
+
+  clock_gettime(CLOCK_MONOTONIC, &ts_stop);
+  printf("processing done\n");
 
   printf("number of output products NOT processing: %d\n",
-      mygpuspec_check_for_completion(&ctx));
+         mygpuspec_check_for_completion(&ctx));
 
+  printf("processed %lu blocks in %.3f ms\n", ctx.Nb,
+         ELAPSED_NS(ts_start, ts_stop) / 1e6);
+
+#if 0
   printf("sleeping for 10 seconds...");
   fflush(stdout);
   sleep(10);
   printf("done\n");
+#endif
 
   printf("cleaning up...");
   fflush(stdout);
