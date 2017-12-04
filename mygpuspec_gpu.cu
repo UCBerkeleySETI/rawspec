@@ -494,12 +494,12 @@ int mygpuspec_start_processing(mygpuspec_context * ctx)
         // Copy data to host power buffer.  This is done is two 2D copies to
         // get channel 0 in the center of the spectrum.  Special care is taken
         // in the unlikely event that Nt is odd.
-        cuda_rc = cudaMemcpy2DAsync(ctx->h_pwr_out[i] + ctx->Nt[i]/2, // *dst
-                                    ctx->Nt[i] * sizeof(float),       // dpitch
-                                    ctx->d_pwr_out[i],                // *src
-                                    ctx->Nt[i] * sizeof(float),       // spitch
-                                    (ctx->Nt[i]+1)/2 * sizeof(float), // width
-                                    ctx->Nc,                          // height
+        cuda_rc = cudaMemcpy2DAsync(ctx->h_pwrbuf[i] + ctx->Nts[i]/2,  // *dst
+                                    ctx->Nts[i] * sizeof(float),       // dpitch
+                                    gpu_ctx->d_pwr_out[i],             // *src
+                                    ctx->Nts[i] * sizeof(float),       // spitch
+                                    (ctx->Nts[i]+1)/2 * sizeof(float), // width
+                                    ctx->Nc,                           // height
                                     cudaMemcpyDeviceToHost,
                                     stream);
 
@@ -509,12 +509,12 @@ int mygpuspec_start_processing(mygpuspec_context * ctx)
           return 1;
         }
 
-        cuda_rc = cudaMemcpy2DAsync(ctx->h_pwr_out[i],                    // *dst
-                                    ctx->Nt[i] * sizeof(float),           // dpitch
-                                    ctx->d_pwr_out[i] + (ctx->Nt[i]+1/2), // *src
-                                    ctx->Nt[i] * sizeof(float),           // spitch
-                                    ctx->Nt[i]/2 * sizeof(float),         // width
-                                    ctx->Nc,                              // height
+        cuda_rc = cudaMemcpy2DAsync(ctx->h_pwrbuf[i],                          // *dst
+                                    ctx->Nts[i] * sizeof(float),               // dpitch
+                                    gpu_ctx->d_pwr_out[i] + (ctx->Nts[i]+1)/2, // *src
+                                    ctx->Nts[i] * sizeof(float),               // spitch
+                                    ctx->Nts[i]/2 * sizeof(float),             // width
+                                    ctx->Nc,                                   // height
                                     cudaMemcpyDeviceToHost,
                                     stream);
 
