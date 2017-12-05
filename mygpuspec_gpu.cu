@@ -549,6 +549,22 @@ int mygpuspec_start_processing(mygpuspec_context * ctx)
         return 1;
       }
     }
+
+    // If mulitple or single integration per input buffer
+    if(ctx->Nts[i]*ctx->Nas[i] <= ctx->Nb*ctx->Ntpb) {
+      // TODO If Nas[i] > 1 and Nts[i] > Nb*Ntpb
+        // TODO Call integration kernel (if Nas[i] > 1)
+      // TODO Copy to host buffer
+      // TODO Add stream callback
+    }
+    // Else multiple input buffers per integration
+    else {
+      // TODO If we're done
+        // TODO Copy to host buffer
+        // TODO Add stream callback
+        // TODO Clear GPU power buffer
+    }
+
   } // For each output product
 
 #if 0
