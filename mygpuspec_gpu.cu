@@ -57,8 +57,19 @@ __device__ void store_callback(void *p_v_out,
   ((float *)p_v_user)[offset] = pwr;
 }
 
+__device__ void accum_callback(void *p_v_out,
+                               size_t offset,
+                               cufftComplex element,
+                               void *p_v_user,
+                               void *p_v_shared)
+{
+  float pwr = element.x * element.x + element.y * element.y;
+  ((float *)p_v_user)[offset] += pwr;
+}
+
 __device__ cufftCallbackLoadC d_cufft_load_callback = load_callback;
 __device__ cufftCallbackStoreC d_cufft_store_callback = store_callback;
+__device__ cufftCallbackStoreC d_cufft_accum_callback = accum_callback;
 
 // TODO Accumulate kernel
 
@@ -91,6 +102,7 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
   // Host copies of cufft callback pointers
   cufftCallbackLoadC h_cufft_load_callback;
   cufftCallbackStoreC h_cufft_store_callback;
+  cufftCallbackStoreC h_cufft_accum_callback;
 
   // Validate ctx->No
   if(ctx->No == 0 || ctx->No > MAX_OUTPUTS) {
@@ -319,6 +331,15 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
     return 1;
   }
 
+  cuda_rc = cudaMemcpyFromSymbol(&h_cufft_accum_callback,
+                                 d_cufft_accum_callback,
+                                 sizeof(h_cufft_accum_callback));
+  if(cuda_rc != cudaSuccess) {
+    PRINT_ERRMSG(cuda_rc);
+    mygpuspec_cleanup(ctx);
+    return 1;
+  }
+
   // Generate FFT plans and associate callbacks
   for(i=0; i < ctx->No; i++) {
     // Make the plan
@@ -352,10 +373,21 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
       return 1;
     }
 
-    cufft_rc = cufftXtSetCallback(gpu_ctx->plan[i],
-                                  (void **)&h_cufft_store_callback,
-                                  CUFFT_CB_ST_COMPLEX,
-                                  (void **)&gpu_ctx->d_pwr_out[i]);
+    // If mulitple or exactly one integration per input buffer,
+    // no need to integrate over multiple input buffers.
+    if(ctx->Nts[i]*ctx->Nas[i] <= ctx->Nb*ctx->Ntpb) {
+      // Use the "store" callback
+      cufft_rc = cufftXtSetCallback(gpu_ctx->plan[i],
+                                    (void **)&h_cufft_store_callback,
+                                    CUFFT_CB_ST_COMPLEX,
+                                    (void **)&gpu_ctx->d_pwr_out[i]);
+    } else { // Multiple input buffers per integration
+      // Use the "accum" callback
+      cufft_rc = cufftXtSetCallback(gpu_ctx->plan[i],
+                                    (void **)&h_cufft_accum_callback,
+                                    CUFFT_CB_ST_COMPLEX,
+                                    (void **)&gpu_ctx->d_pwr_out[i]);
+    }
     if(cufft_rc != CUFFT_SUCCESS) {
       PRINT_ERRMSG(cufft_rc);
       mygpuspec_cleanup(ctx);
