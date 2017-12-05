@@ -65,7 +65,7 @@ int main(int argc, char * argv[])
   printf("number of output products NOT processing: %d\n",
          mygpuspec_check_for_completion(&ctx));
 
-  printf("processed %lu blocks in %.3f ms\n", ctx.Nb,
+  printf("processed %u blocks in %.3f ms\n", ctx.Nb,
          ELAPSED_NS(ts_start, ts_stop) / 1e6);
 
 #if 0
