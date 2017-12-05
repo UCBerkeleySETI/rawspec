@@ -536,19 +536,20 @@ int mygpuspec_start_processing(mygpuspec_context * ctx)
     // Get number of spectra to accumulate per dump
     Na = ctx->Nas[i];
 
-      // For each polarization
-      for(p=0; p < ctx->Np; p++) {
-        // Add FFT to stream
-        cufft_rc = cufftExecC2C(plan,
-                                ((cufftComplex *)gpu_ctx->d_fft_in) + p,
-                                gpu_ctx->d_fft_out[i],
-                                CUFFT_FORWARD);
+    // For each polarization
+    for(p=0; p < ctx->Np; p++) {
+      // Add FFT to stream
+      cufft_rc = cufftExecC2C(plan,
+                              ((cufftComplex *)gpu_ctx->d_fft_in) + p,
+                              gpu_ctx->d_fft_out[i],
+                              CUFFT_FORWARD);
 
-        if(cufft_rc != CUFFT_SUCCESS) {
-          PRINT_ERRMSG(cufft_rc);
-          return 1;
-        }
+      if(cufft_rc != CUFFT_SUCCESS) {
+        PRINT_ERRMSG(cufft_rc);
+        return 1;
       }
+    }
+  } // For each output product
 
 #if 0
       // If integration is complete.  Note that `a` should "never" be greater
@@ -613,7 +614,6 @@ int mygpuspec_start_processing(mygpuspec_context * ctx)
     // Save current value of a
     gpu_ctx->nas[i] = a;
 #endif
-  } // For each output product
 
   return 0;
 }
