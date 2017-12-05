@@ -11,7 +11,18 @@ typedef struct {
   unsigned int Np; // Number of polarizations
   unsigned int Nc; // Number of coarse channels
   unsigned int Ntpb; // Number of time samples per block
+
+  // Nts is an array of Nt values, one per output product.  The Nt value is the
+  // number of time samples per FFT for a given output product.  All Nt values
+  // must evenly divide the total number of time samples in the input buffer.
   unsigned int Nts[MAX_OUTPUTS]; // Array of Nt values
+  // Nas is an array of Na values, one per output product.  The Na value is the
+  // number of FFT spectra to accumulate per integration.
+  // Nt*Na < Nb*Ntpb : Multiple integrations per input buffer,
+  //                   must have integer integrations per input buffer
+  // Nt*Na = Nb*Ntpb : One integration per input buffer
+  // Nt*Na > Nb*Ntpb : Multiple input buffers per integration,
+  //                   must have integer input buffers per integration
   unsigned int Nas[MAX_OUTPUTS]; // Array of Na values
   // Nb is the number of input blocks per GPU input buffer.
   // Set to zero to have it calculated as Ntmax/Ntpb.

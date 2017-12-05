@@ -158,6 +158,32 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
     }
   }
 
+  // Validate Nas
+  for(i=0; i < ctx->No; i++) {
+    if(ctx->Nas[i] == 0) {
+      fprintf(stderr, "Nas[%d] cannot be 0\n", i);
+      return 1;
+    }
+    // If mulitple integrations per input buffer
+    if(ctx->Nts[i]*ctx->Nas[i] < ctx->Nb*ctx->Ntpb) {
+      // Must have integer integrations per input buffer
+      if((ctx->Nb * ctx->Ntpb) % (ctx->Nts[i] * ctx->Nas[i]) != 0) {
+        fprintf(stderr,
+            "Nts[%d] * Nas[%d] (%u * %u) must divide Nb * Ntpb (%u * %u)\n",
+            i, i, ctx->Nts[i], ctx->Nas[i], ctx->Nb, ctx->Ntpb);
+        return 1;
+      }
+    } else {
+      // Must have integer input buffers per integration
+      if((ctx->Nts[i] * ctx->Nas[i]) % (ctx->Nb * ctx->Ntpb) != 0) {
+        fprintf(stderr,
+            "Nb * Ntpb (%u * %u) must divide Nts[%d] * Nas[%d] (%u * %u)\n",
+            ctx->Nb, ctx->Ntpb, i, i, ctx->Nts[i], ctx->Nas[i]);
+        return 1;
+      }
+    }
+  }
+
   // Null out all pointers
   ctx->h_blkbufs = NULL;
   for(i=0; i < MAX_OUTPUTS; i++) {
