@@ -30,6 +30,8 @@ typedef struct {
   // for a given output product.  Not to be confused with `Na`, the number of
   // spectra to accumulate for a given output product.
   unsigned int nas[MAX_OUTPUTS];
+  // A count of the number of input buffers processed
+  unsigned int inbuf_count;
 } mygpuspec_gpu_context;
 
 // Texture declarations
@@ -237,6 +239,9 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
     gpu_ctx->stream[i] = NO_STREAM;
     gpu_ctx->nas[i] = 0;
   }
+
+  // Initialize inbuf_count
+  gpu_ctx->inbuf_count = 0;
 
   // Calculate Ns and allocate host power output buffers
   for(i=0; i < ctx->No; i++) {
@@ -514,27 +519,37 @@ int mygpuspec_copy_blocks_to_gpu(mygpuspec_context * ctx)
 int mygpuspec_start_processing(mygpuspec_context * ctx)
 {
   int i;
-  int a;
-  int s;
   int p;
-  int Na;
+  int d;
+  int Nd; // Number of spectra per dump
+  int Ni; // Number of input buffers per dump
+  float * dst;
+  size_t dpitch;
+  float * src;
+  size_t spitch;
+  size_t width;
+  size_t height;
   cufftHandle plan;
   cudaStream_t stream;
   cudaError_t cuda_rc;
   cufftResult cufft_rc;
   mygpuspec_gpu_context * gpu_ctx = (mygpuspec_gpu_context *)ctx->gpu_ctx;
 
+  // Increment inbuf_count
+  gpu_ctx->inbuf_count++;
+
   // For each output product
   for(i=0; i < ctx->No; i++) {
+    // Calculate Nd and Ni (TODO put these in ctx or gpu_ctx?)
+    Nd = gpu_ctx->Nss[i] / ctx->Nas[i];
+    if(Nd == 0) Nd = 1;
+
+    Ni = ctx->Nas[i] / gpu_ctx->Nss[i];
+    if(Ni == 0) Ni = 1;
+
     // Get plan and stream
     plan   = gpu_ctx->plan[i];
     stream = gpu_ctx->stream[i];
-
-    // Get number of spectra accumulated thus far from previous input buffers.
-    a = gpu_ctx->nas[i];
-
-    // Get number of spectra to accumulate per dump
-    Na = ctx->Nas[i];
 
     // For each polarization
     for(p=0; p < ctx->Np; p++) {
@@ -550,36 +565,35 @@ int mygpuspec_start_processing(mygpuspec_context * ctx)
       }
     }
 
-    // If mulitple or single integration per input buffer
-    if(ctx->Nts[i]*ctx->Nas[i] <= ctx->Nb*ctx->Ntpb) {
-      // TODO If Nas[i] > 1 and Nts[i] > Nb*Ntpb
-        // TODO Call integration kernel (if Nas[i] > 1)
-      // TODO Copy to host buffer
-      // TODO Add stream callback
-    }
-    // Else multiple input buffers per integration
-    else {
-      // TODO If we're done
-        // TODO Copy to host buffer
-        // TODO Add stream callback
-        // TODO Clear GPU power buffer
-    }
+    // If time to dump
+    if(gpu_ctx->inbuf_count % Ni == 0) {
+      // If accumulting multiple spectra
+      // and more than one spectrum fits in the input buffer
+      if(ctx->Nas[i] > 1
+      && ctx->Nas[i] * gpu_ctx->Nss[i] < ctx->Nb * ctx->Ntpb) {
+        // Integrate those "more than one" spectra together.
+        // TODO Call accumulate kernel
+      }
 
-  } // For each output product
+      // Copy integrated power spectra (or spectrum) to host.  This is done as
+      // two 2D copies to get channel 0 in the center of the spectrum.  Special
+      // care is taken in the unlikely event that Nt is odd.
+      src    = gpu_ctx->d_pwr_out[i];
+      dst    = ctx->h_pwrbuf[i];
+      spitch = gpu_ctx->Nss[i] * ctx->Nts[i] * sizeof(float);
+      dpitch = ctx->Nts[i] * sizeof(float);
+      height = ctx->Nc;
 
-#if 0
-      // If integration is complete.  Note that `a` should "never" be greater
-      // than `Na`, but we use ">=" in an attempt to be more robust to bugs.
-      if(++a >= Na) {
-        // Copy data to host power buffer.  This is done is two 2D copies to
-        // get channel 0 in the center of the spectrum.  Special care is taken
-        // in the unlikely event that Nt is odd.
-        cuda_rc = cudaMemcpy2DAsync(ctx->h_pwrbuf[i] + ctx->Nts[i]/2,  // *dst
-                                    ctx->Nts[i] * sizeof(float),       // dpitch
-                                    gpu_ctx->d_pwr_out[i],             // *src
-                                    ctx->Nts[i] * sizeof(float),       // spitch
-                                    (ctx->Nts[i]+1)/2 * sizeof(float), // width
-                                    ctx->Nc,                           // height
+      for(d=0; d<Nd; d++) {
+
+        // Lo to hi
+        width  = ((ctx->Nts[i]+1) / 2) * sizeof(float);
+        cuda_rc = cudaMemcpy2DAsync(dst + ctx->Nts[i]/2,
+                                    dpitch,
+                                    src,
+                                    spitch,
+                                    width,
+                                    height,
                                     cudaMemcpyDeviceToHost,
                                     stream);
 
@@ -589,12 +603,14 @@ int mygpuspec_start_processing(mygpuspec_context * ctx)
           return 1;
         }
 
-        cuda_rc = cudaMemcpy2DAsync(ctx->h_pwrbuf[i],                          // *dst
-                                    ctx->Nts[i] * sizeof(float),               // dpitch
-                                    gpu_ctx->d_pwr_out[i] + (ctx->Nts[i]+1)/2, // *src
-                                    ctx->Nts[i] * sizeof(float),               // spitch
-                                    ctx->Nts[i]/2 * sizeof(float),             // width
-                                    ctx->Nc,                                   // height
+        // Hi to lo
+        width  = (ctx->Nts[i] / 2) * sizeof(float);
+        cuda_rc = cudaMemcpy2DAsync(dst,
+                                    dpitch,
+                                    src + (ctx->Nts[i]+1) / 2,
+                                    spitch,
+                                    width,
+                                    height,
                                     cudaMemcpyDeviceToHost,
                                     stream);
 
@@ -604,32 +620,35 @@ int mygpuspec_start_processing(mygpuspec_context * ctx)
           return 1;
         }
 
-        // Add stream callback
-        cuda_rc = cudaStreamAddCallback(stream, dump_callback,
-                                        (void *)(long int)i, 0);
+        // Increment src and dst pointers
+        src += ctx->Nts[i] * ctx->Nas[i];
+        dst += ctx->Nts[i] * ctx->Nc;
+      }
 
-        if(cuda_rc != cudaSuccess) {
-          PRINT_ERRMSG(cuda_rc);
-          return 1;
-        }
+      // Add stream callback
+      cuda_rc = cudaStreamAddCallback(stream, dump_callback,
+                                      (void *)(long int)i, 0);
 
+      if(cuda_rc != cudaSuccess) {
+        PRINT_ERRMSG(cuda_rc);
+        return 1;
+      }
+
+      // If integration spans multiple input buffers
+      if(Ni > 1) {
         // Add power buffer clearing cudaMemset call to stream
         cuda_rc = cudaMemsetAsync(gpu_ctx->d_pwr_out[i], 0,
-                                  ctx->Nts[i]*ctx->Nc*sizeof(float),
+                                  Nd*ctx->Nts[i]*ctx->Nc*sizeof(float),
                                   stream);
 
         if(cuda_rc != cudaSuccess) {
           PRINT_ERRMSG(cuda_rc);
           return 1;
         }
+      }
 
-        // Reinitialize a
-        a = 0;
-      } // if integration is complete
-
-    // Save current value of a
-    gpu_ctx->nas[i] = a;
-#endif
+    } // If time to dump
+  } // For each output product
 
   return 0;
 }
