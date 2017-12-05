@@ -54,21 +54,22 @@ int main(int argc, char * argv[])
   }
 
   printf("starting processing\n");
-  clock_gettime(CLOCK_MONOTONIC, &ts_start);
 
-  mygpuspec_start_processing(&ctx);
-  mygpuspec_wait_for_completion(&ctx);
+  for(i=0; i<4; i++) {
+    clock_gettime(CLOCK_MONOTONIC, &ts_start);
 
-  clock_gettime(CLOCK_MONOTONIC, &ts_stop);
+    mygpuspec_start_processing(&ctx);
+    mygpuspec_wait_for_completion(&ctx);
+
+    clock_gettime(CLOCK_MONOTONIC, &ts_stop);
+
+    printf("processed %u blocks in %.3f ms\n", ctx.Nb,
+           ELAPSED_NS(ts_start, ts_stop) / 1e6);
+  }
+
   printf("processing done\n");
 
-  printf("number of output products NOT processing: %d\n",
-         mygpuspec_check_for_completion(&ctx));
-
-  printf("processed %u blocks in %.3f ms\n", ctx.Nb,
-         ELAPSED_NS(ts_start, ts_stop) / 1e6);
-
-#if 0
+#if 1
   printf("sleeping for 10 seconds...");
   fflush(stdout);
   sleep(10);
