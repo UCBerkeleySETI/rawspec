@@ -75,17 +75,13 @@ __device__ cufftCallbackStoreC d_cufft_accum_callback = accum_callback;
 
 // TODO Accumulate kernel
 
-#include <time.h> // For nanosleep
-
 // Stream callback function that is called right after an output product's GPU
 // power buffer has been copied to the host power buffer.
 static void CUDART_CB dump_callback(cudaStream_t stream,
                                     cudaError_t status,
                                     void *data)
 {
-  struct timespec ts_100ms = {0, 100 * 1000 * 1000};
-  printf("Inside callback %ld\n", (long int)data);
-  nanosleep(&ts_100ms, NULL);
+  printf("cb %ld\n", (long int)data);
 }
 
 // Sets ctx->Ntmax.
