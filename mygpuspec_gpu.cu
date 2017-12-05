@@ -96,6 +96,7 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
 {
   int i;
   size_t inbuf_size;
+  unsigned int Nd; // Number of spectra per dump (per output product)
   cudaError_t cuda_rc;
   cufftResult cufft_rc;
 
@@ -203,7 +204,7 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
   }
   ctx->gpu_ctx = NULL;
 
-  // Alllocate host buffers
+  // Alllocate host input block buffers
   ctx->h_blkbufs = (char **)malloc(ctx->Nb * sizeof(char *));
   for(i=0; i < ctx->Nb; i++) {
     // Block buffer can use write combining
@@ -212,20 +213,6 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
                        cudaHostAllocWriteCombined);
     if(cuda_rc != cudaSuccess) {
       PRINT_ERRMSG(cuda_rc);
-      return 1;
-    }
-  }
-
-  for(i=0; i < ctx->No; i++) {
-    // TODO For small Nt values, it's probbaly more efficient to buffer
-    // multiple power spectra in the output buffer, but this requires a little
-    // more overhead so it is deferred for now.
-    cuda_rc = cudaHostAlloc(&ctx->h_pwrbuf[i],
-                       ctx->Nts[i]*ctx->Nc*sizeof(float),
-                       cudaHostAllocDefault);
-    if(cuda_rc != cudaSuccess) {
-      PRINT_ERRMSG(cuda_rc);
-      mygpuspec_cleanup(ctx);
       return 1;
     }
   }
@@ -251,11 +238,29 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
     gpu_ctx->nas[i] = 0;
   }
 
-  // Calculate Ns values.
-  // Ns[i] is number of specta (FFTs) per coarse channel for one input buffer
-  // for Nt[i] points per spectra.
+  // Calculate Ns and allocate host power output buffers
   for(i=0; i < ctx->No; i++) {
+    // Ns[i] is number of specta (FFTs) per coarse channel for one input buffer
+    // for Nt[i] points per spectra.
     gpu_ctx->Nss[i] = (ctx->Nb * ctx->Ntpb) / ctx->Nts[i];
+
+    // Calculate number of spectra to dump at one time.
+    Nd = gpu_ctx->Nss[i] / ctx->Nas[i];
+    if(Nd == 0) {
+      Nd = 1;
+    }
+
+    // Host buffer needs to accommodate the number of integrations that will be
+    // dumped at one time (Nd).
+    cuda_rc = cudaHostAlloc(&ctx->h_pwrbuf[i],
+                       Nd*ctx->Nts[i]*ctx->Nc*sizeof(float),
+                       cudaHostAllocDefault);
+
+    if(cuda_rc != cudaSuccess) {
+      PRINT_ERRMSG(cuda_rc);
+      mygpuspec_cleanup(ctx);
+      return 1;
+    }
   }
 
   // Allocate buffers
