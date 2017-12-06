@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <stdint.h>
+#include <string.h>
 #include <time.h>
 
 #include "mygpuspec.h"
@@ -11,6 +12,7 @@
 int main(int argc, char * argv[])
 {
   int i;
+  int j;
   mygpuspec_context ctx;
 
   // Timing variables
@@ -33,11 +35,19 @@ int main(int argc, char * argv[])
   // Auto-calculate Nb
   ctx.Nb = 0;
 
+  // Initialize
   if(mygpuspec_initialize(&ctx)) {
     fprintf(stderr, "initialization failed\n");
     return 1;
   }
   printf("initialization succeeded\n");
+
+  // Setup input data
+  for(i=0; i<4; i++) {
+    memset(ctx.h_blkbufs[i], 0, blocsize);
+  }
+  // Set sample 8 of pol 0 to (1+0j)
+  ctx.h_blkbufs[0][8*2*2] = 127;
 
   for(i=0; i<4; i++) {
     clock_gettime(CLOCK_MONOTONIC, &ts_start);
@@ -69,12 +79,17 @@ int main(int argc, char * argv[])
 
   printf("processing done\n");
 
-#if 1
+  for(i=0; i<ctx.No; i++) {
+    for(j=0; j<4; j++) {
+      printf("output product %d chan %d %f\n", i, j, ctx.h_pwrbuf[i][j]);
+    }
+  }
+
+  // For checking mempry usage with nvidia-smi
   printf("sleeping for 10 seconds...");
   fflush(stdout);
   sleep(10);
   printf("done\n");
-#endif
 
   printf("cleaning up...");
   fflush(stdout);
