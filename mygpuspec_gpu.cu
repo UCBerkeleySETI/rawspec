@@ -99,10 +99,17 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
   cufftCallbackStoreC h_cufft_store_callback;
   cufftCallbackStoreC h_cufft_accum_callback;
 
-  // Validate ctx->No
+  // Validate No
   if(ctx->No == 0 || ctx->No > MAX_OUTPUTS) {
     fprintf(stderr, "output products must be in range [1..%d], not %d\n",
         MAX_OUTPUTS, ctx->No);
+    return 1;
+  }
+
+  // Validate Np
+  if(ctx->Np == 0 || ctx->Np > 2) {
+    fprintf(stderr,
+        "number of polarizations must be in range [1..2], not %d\n", ctx->Np);
     return 1;
   }
 
