@@ -26,10 +26,6 @@ typedef struct {
   unsigned int Nss[MAX_OUTPUTS];
   // Array of cudaStream_t values
   cudaStream_t stream[MAX_OUTPUTS];
-  // Array of `na` values.  `na` is the number of accumulated spectra thus far
-  // for a given output product.  Not to be confused with `Na`, the number of
-  // spectra to accumulate for a given output product.
-  unsigned int nas[MAX_OUTPUTS];
   // A count of the number of input buffers processed
   unsigned int inbuf_count;
 } mygpuspec_gpu_context;
@@ -233,7 +229,6 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
     gpu_ctx->d_pwr_out[i] = NULL;
     gpu_ctx->plan[i] = NO_PLAN;
     gpu_ctx->stream[i] = NO_STREAM;
-    gpu_ctx->nas[i] = 0;
   }
 
   // Initialize inbuf_count
