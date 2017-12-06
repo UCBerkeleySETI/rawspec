@@ -32,21 +32,28 @@ ifeq ($(Q),1)
 VERBOSE = @
 endif
 
-all: mygpuspec
+all: mygpuspec fileiotest
 
 # TODO Replace with auto-generated dependencies
 mygpuspec.o: mygpuspec.h
 mygpuspec_gpu.o: mygpuspec.h
+fileiotest.o: mygpuspec.h
 
 %.o: %.cu
 	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) -dc $(GENCODE_FLAGS) -o $@ -c $<
 
-# mygpuspec_gpu uses CuFFT callbacks so it requires static CUDA linkage
+# mygpuspec_gpu uses CuFFT callbacks so programs
+# linking with it require static # CUDA linkage
 mygpuspec: mygpuspec.o mygpuspec_gpu.o
 	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ $(CUDA_STATIC_LIBS)
 
+# mygpuspec_gpu uses CuFFT callbacks so programs
+# linking with it require static # CUDA linkage
+fileiotest: fileiotest.o mygpuspec_gpu.o
+	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ $(CUDA_STATIC_LIBS)
+
 clean:
-	rm -f *.o mygpuspec tags
+	rm -f *.o mygpuspec fileiotest tags
 
 tags:
 	ctags -R . $(CUDA_PATH)/samples/common/inc
