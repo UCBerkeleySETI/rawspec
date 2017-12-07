@@ -28,20 +28,26 @@ struct rawspec_context_s {
   // Nt*Na > Nb*Ntpb : Multiple input buffers per integration,
   //                   must have integer input buffers per integration
   unsigned int Nas[MAX_OUTPUTS]; // Array of Na values
-  // Nb is the number of input blocks per GPU input buffer.
-  // Set to zero to have it calculated as Ntmax/Ntpb.
-  unsigned int Nb;
+
   // dump_callback is a pointer to a user-supplied output callback function.
   // This function will be called when one of of the output power buffers in
   // h_pwrbuf[] has new data to be written to disk.
   rawspec_dump_callback_t dump_callback;
 
-  // Fields above here should be specified by client.  Fields below here are
-  // managed by library.
+  // Nb is the number of input blocks per GPU input buffer.
+  // Set to zero to NULL to have the library calculate Nb (as Ntmax/Ntpb).
+  unsigned int Nb;
 
-  // Array of host pointers to Nb block buffers.
-  // The size, in bytes, is Nc * Ntpb * Np * 2.
+  // Array of host pointers to Nb block buffers.  Set h_blkbufs to NULL to have
+  // the library allocate the host input block buffers.  For client managed
+  // buffers, the user must allocate and array of Nb pointers, initialize them
+  // to point to the caller allocated blocks, and set the Nb field of this
+  // structure.  The size of each host input block buffer is Nc * Ntpb * Np * 2
+  // (in bytes).
   char ** h_blkbufs;
+
+  // Fields above here should be specified by client.  Fields below here are
+  // managed by library (but can be used by the caller as needed).
 
   // Host pointers to the output power buffers.
   // The sizes, in bytes, will be Nc * Nts[i].
@@ -50,7 +56,7 @@ struct rawspec_context_s {
   // Fields below here are not normally needed at all by the client
 
   unsigned int Ntmax; // Maximum Nt value
-  void * gpu_ctx; // Host pointer to GPU specific context
+  void * gpu_ctx; // Host pointer to opaque/private GPU specific context
 };
 
 #ifdef __cplusplus
