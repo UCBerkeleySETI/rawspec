@@ -1,3 +1,7 @@
+PREFIX = /usr/local
+INCDIR = $(PREFIX)/include
+LIBDIR = $(PREFIX)/lib
+
 CUDA_PATH ?= /usr/local/cuda-8.0
 
 CC=gcc
@@ -52,6 +56,12 @@ mygpuspec: mygpuspec.o
 fileiotest: libgpuspec.so
 fileiotest: fileiotest.o
 	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ -L. -lgpuspec
+
+install: mygpuspec.h libgpuspec.so
+	mkdir -p $(INCDIR)
+	cp -p mygpuspec.h $(INCDIR)
+	mkdir -p $(LIBDIR)
+	cp -p libgpuspec.so $(LIBDIR)
 
 clean:
 	rm -f *.o *.so mygpuspec fileiotest tags
