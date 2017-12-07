@@ -543,22 +543,28 @@ void mygpuspec_cleanup(mygpuspec_context * ctx)
 
 // Copy `ctx->h_blkbufs` to GPU input buffer.
 // Returns 0 on success, non-zero on error.
-int mygpuspec_copy_blocks_to_gpu(mygpuspec_context * ctx)
+int mygpuspec_copy_blocks_to_gpu(mygpuspec_context * ctx,
+    off_t src_idx, off_t dst_idx, size_t num_blocks)
 {
   int b;
+  off_t sblk;
+  off_t dblk;
   cudaError_t rc;
   mygpuspec_gpu_context * gpu_ctx = (mygpuspec_gpu_context *)ctx->gpu_ctx;
 
   // TODO Store in GPU context?
   size_t width = ctx->Ntpb * ctx->Np * sizeof(char2);
 
-  for(b=0; b < ctx->Nb; b++) {
-    rc = cudaMemcpy2D(gpu_ctx->d_fft_in + b * width / sizeof(char2),
-                      ctx->Nb * width,   // dpitch
-                      ctx->h_blkbufs[b], // *src
-                      width,             // spitch
-                      width,             // width
-                      ctx->Nc,           // height
+  for(b=0; b < num_blocks; b++) {
+    sblk = (src_idx + b) % ctx->Nb;
+    dblk = (dst_idx + b) % ctx->Nb;
+
+    rc = cudaMemcpy2D(gpu_ctx->d_fft_in + dblk * width / sizeof(char2),
+                      ctx->Nb * width,      // dpitch
+                      ctx->h_blkbufs[sblk], // *src
+                      width,                // spitch
+                      width,                // width
+                      ctx->Nc,              // height
                       cudaMemcpyHostToDevice);
 
     if(rc != cudaSuccess) {

@@ -73,9 +73,11 @@ int mygpuspec_initialize(mygpuspec_context * ctx);
 // Returns 0 on success, non-zero on error.
 void mygpuspec_cleanup(mygpuspec_context * ctx);
 
-// Copy `ctx->h_blkbufs` to GPU input buffer.
+// Copy `num_blocks` consecutive blocks from `ctx->h_blkbufs` to GPU input
+// buffer.  Starts with source block `src_idx` to destination block `dst_idx`.
 // Returns 0 on success, non-zero on error.
-int mygpuspec_copy_blocks_to_gpu(mygpuspec_context * ctx);
+int mygpuspec_copy_blocks_to_gpu(mygpuspec_context * ctx,
+    off_t src_idx, off_t dst_idx, size_t num_blocks);
 
 // Launches FFTs of data in input buffer.  Whenever an output product
 // integration is complete, the power spectrum is copied to the host power

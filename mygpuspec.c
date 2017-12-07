@@ -61,7 +61,7 @@ int main(int argc, char * argv[])
   for(i=0; i<4; i++) {
     clock_gettime(CLOCK_MONOTONIC, &ts_start);
 
-    mygpuspec_copy_blocks_to_gpu(&ctx);
+    mygpuspec_copy_blocks_to_gpu(&ctx, 0, 0, ctx.Nb);
 
     clock_gettime(CLOCK_MONOTONIC, &ts_stop);
     elapsed_ns = ELAPSED_NS(ts_start, ts_stop);
