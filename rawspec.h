@@ -34,6 +34,11 @@ struct rawspec_context_s {
   // h_pwrbuf[] has new data to be written to disk.
   rawspec_dump_callback_t dump_callback;
 
+  // Pointer to user data.  This is intended for use by the client's dump
+  // callback function (e.g. to hold output file handles or network sockets).
+  // The rawsepc library does not do anything with this field.
+  void * user_data;
+
   // Nb is the number of input blocks per GPU input buffer.
   // Set to zero to NULL to have the library calculate Nb (as Ntmax/Ntpb).
   unsigned int Nb;
