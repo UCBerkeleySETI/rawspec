@@ -1,5 +1,5 @@
 fileiotest
-libgpuspec.so
-mygpuspec
+librawspec.so
+rawspectest
 tags
 *.o

@@ -4,13 +4,13 @@
 #include <string.h>
 #include <time.h>
 
-#include "mygpuspec.h"
+#include "rawspec.h"
 
 #define ELAPSED_NS(start,stop) \
   (((int64_t)stop.tv_sec-start.tv_sec)*1000*1000*1000+(stop.tv_nsec-start.tv_nsec))
 
 void
-dump_callback(mygpuspec_context * ctx, int output_product)
+dump_callback(rawspec_context * ctx, int output_product)
 {
   printf("cb %d\n", output_product);
 }
@@ -19,7 +19,7 @@ int main(int argc, char * argv[])
 {
   int i;
   int j;
-  mygpuspec_context ctx;
+  rawspec_context ctx;
 
   // Timing variables
   struct timespec ts_start, ts_stop;
@@ -45,7 +45,7 @@ int main(int argc, char * argv[])
   ctx.dump_callback = dump_callback;
 
   // Initialize
-  if(mygpuspec_initialize(&ctx)) {
+  if(rawspec_initialize(&ctx)) {
     fprintf(stderr, "initialization failed\n");
     return 1;
   }
@@ -61,7 +61,7 @@ int main(int argc, char * argv[])
   for(i=0; i<4; i++) {
     clock_gettime(CLOCK_MONOTONIC, &ts_start);
 
-    mygpuspec_copy_blocks_to_gpu(&ctx, 0, 0, ctx.Nb);
+    rawspec_copy_blocks_to_gpu(&ctx, 0, 0, ctx.Nb);
 
     clock_gettime(CLOCK_MONOTONIC, &ts_stop);
     elapsed_ns = ELAPSED_NS(ts_start, ts_stop);
@@ -77,8 +77,8 @@ int main(int argc, char * argv[])
   for(i=0; i<4; i++) {
     clock_gettime(CLOCK_MONOTONIC, &ts_start);
 
-    mygpuspec_start_processing(&ctx, -1);
-    mygpuspec_wait_for_completion(&ctx);
+    rawspec_start_processing(&ctx, -1);
+    rawspec_wait_for_completion(&ctx);
 
     clock_gettime(CLOCK_MONOTONIC, &ts_stop);
 
@@ -102,7 +102,7 @@ int main(int argc, char * argv[])
 
   printf("cleaning up...");
   fflush(stdout);
-  mygpuspec_cleanup(&ctx);
+  rawspec_cleanup(&ctx);
   printf("done\n");
 
   return 0;

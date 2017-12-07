@@ -10,7 +10,7 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 
-#include "mygpuspec.h"
+#include "rawspec.h"
 
 #define ELAPSED_NS(start,stop) \
   (((int64_t)stop.tv_sec-start.tv_sec)*1000*1000*1000+(stop.tv_nsec-start.tv_nsec))
@@ -21,7 +21,7 @@
 // 2. Direct I/O, no mmap
 // 3. Direct I/O, mmap
 
-void do_read(mygpuspec_context *ctx, int fd, size_t blocsize)
+void do_read(rawspec_context *ctx, int fd, size_t blocsize)
 {
   int i;
   size_t total_bytes_read = 1;
@@ -47,7 +47,7 @@ void do_read(mygpuspec_context *ctx, int fd, size_t blocsize)
          total_bytes_read / (double)elapsed_ns);
 }
 
-void do_memcpy(mygpuspec_context *ctx, int fd, size_t blocsize)
+void do_memcpy(rawspec_context *ctx, int fd, size_t blocsize)
 {
   int i;
   size_t file_size;
@@ -87,7 +87,7 @@ void do_memcpy(mygpuspec_context *ctx, int fd, size_t blocsize)
   munmap(din, file_size);
 }
 
-void do_mmap(mygpuspec_context *ctx, int fd, size_t blocsize)
+void do_mmap(rawspec_context *ctx, int fd, size_t blocsize)
 {
   int i;
   size_t file_size;
@@ -133,7 +133,7 @@ int main(int argc, char *argv[])
   int fd;
   int open_flags;
   size_t bytes_read;
-  mygpuspec_context ctx;
+  rawspec_context ctx;
 
   int blocsize = 92274688;
 
@@ -163,7 +163,7 @@ int main(int argc, char *argv[])
   }
   
   // Initialize
-  if(mygpuspec_initialize(&ctx)) {
+  if(rawspec_initialize(&ctx)) {
     fprintf(stderr, "initialization failed\n");
     return 1;
   }

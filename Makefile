@@ -36,35 +36,35 @@ ifeq ($(Q),1)
 VERBOSE = @
 endif
 
-all: mygpuspec fileiotest
+all: rawspectest fileiotest
 
 # TODO Replace with auto-generated dependencies
-mygpuspec.o: mygpuspec.h
-mygpuspec_gpu.o: mygpuspec.h
-fileiotest.o: mygpuspec.h
+rawspectest.o: rawspec.h
+rawspec_gpu.o: rawspec.h
+fileiotest.o: rawspec.h
 
 %.o: %.cu
 	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) -dc $(GENCODE_FLAGS) -o $@ -c $<
 	
-libgpuspec.so: mygpuspec_gpu.o
+librawspec.so: rawspec_gpu.o
 	$(VERBOSE) $(NVCC) -shared $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ $(CUDA_STATIC_LIBS)
 
-mygpuspec: libgpuspec.so
-mygpuspec: mygpuspec.o
-	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ -L. -lgpuspec
+rawspectest: librawspec.so
+rawspectest: rawspectest.o
+	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ -L. -lrawspec
 
-fileiotest: libgpuspec.so
+fileiotest: librawspec.so
 fileiotest: fileiotest.o
-	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ -L. -lgpuspec
+	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ -L. -lrawspec
 
-install: mygpuspec.h libgpuspec.so
+install: rawspec.h librawspec.so
 	mkdir -p $(INCDIR)
-	cp -p mygpuspec.h $(INCDIR)
+	cp -p rawspec.h $(INCDIR)
 	mkdir -p $(LIBDIR)
-	cp -p libgpuspec.so $(LIBDIR)
+	cp -p librawspec.so $(LIBDIR)
 
 clean:
-	rm -f *.o *.so mygpuspec fileiotest tags
+	rm -f *.o *.so rawspectest fileiotest tags
 
 tags:
 	ctags -R . $(CUDA_PATH)/samples/common/inc

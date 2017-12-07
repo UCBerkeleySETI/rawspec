@@ -4,13 +4,13 @@
 #define MAX_OUTPUTS (4)
 
 // Forward declaration
-typedef struct mygpuspec_context_s mygpuspec_context;
+typedef struct rawspec_context_s rawspec_context;
 
-typedef void (* mygpuspec_dump_callback_t)(mygpuspec_context * ctx,
+typedef void (* rawspec_dump_callback_t)(rawspec_context * ctx,
                                            int output_product);
 
 // Structure for holding the context.
-struct mygpuspec_context_s {
+struct rawspec_context_s {
   unsigned int No; // Number of output products (max MAX_OUTPUTS)
   unsigned int Np; // Number of polarizations
   unsigned int Nc; // Number of coarse channels
@@ -34,7 +34,7 @@ struct mygpuspec_context_s {
   // dump_callback is a pointer to a user-supplied output callback function.
   // This function will be called when one of of the output power buffers in
   // h_pwrbuf[] has new data to be written to disk.
-  mygpuspec_dump_callback_t dump_callback;
+  rawspec_dump_callback_t dump_callback;
 
   // Fields above here should be specified by client.  Fields below here are
   // managed by library.
@@ -60,23 +60,23 @@ extern "C" {
 // Sets ctx->Ntmax.
 // Allocates host and device buffers based on the ctx->N values.
 // Allocated buffers are not cleared, except for the power outbut buffers.
-// Allocates and sets the ctx->mygpuspec_gpu_ctx field.
+// Allocates and sets the ctx->rawspec_gpu_ctx field.
 // Creates CuFFT plans.
 // Creates streams.
 // Returns 0 on success, non-zero on error.
-int mygpuspec_initialize(mygpuspec_context * ctx);
+int rawspec_initialize(rawspec_context * ctx);
 
 // Frees host and device buffers based on the ctx->N values.
-// Frees and sets the ctx->mygpuspec_gpu_ctx field.
+// Frees and sets the ctx->rawspec_gpu_ctx field.
 // Destroys CuFFT plans.
 // Destroys streams.
 // Returns 0 on success, non-zero on error.
-void mygpuspec_cleanup(mygpuspec_context * ctx);
+void rawspec_cleanup(rawspec_context * ctx);
 
 // Copy `num_blocks` consecutive blocks from `ctx->h_blkbufs` to GPU input
 // buffer.  Starts with source block `src_idx` to destination block `dst_idx`.
 // Returns 0 on success, non-zero on error.
-int mygpuspec_copy_blocks_to_gpu(mygpuspec_context * ctx,
+int rawspec_copy_blocks_to_gpu(rawspec_context * ctx,
     off_t src_idx, off_t dst_idx, size_t num_blocks);
 
 // Launches FFTs of data in input buffer.  Whenever an output product
@@ -88,22 +88,22 @@ int mygpuspec_copy_blocks_to_gpu(mygpuspec_context * ctx,
 // is less than or equal to zero, an inverse (aka backward) transform is
 // performed, otherwise a forward transform is performed.
 //
-// Processing occurs asynchronously.  Use `mygpuspec_check_for_completion` to
+// Processing occurs asynchronously.  Use `rawspec_check_for_completion` to
 // see how many output products have completed or
-// `mygpuspec_wait_for_completion` to wait for all output products to be
+// `rawspec_wait_for_completion` to wait for all output products to be
 // complete.  New data should NOT be copied to the GPU until
-// `mygpuspec_check_for_completion` returns `ctx->No` or
-// `mygpuspec_wait_for_completion` returns 0.
-int mygpuspec_start_processing(mygpuspec_context * ctx, int fft_dir);
+// `rawspec_check_for_completion` returns `ctx->No` or
+// `rawspec_wait_for_completion` returns 0.
+int rawspec_start_processing(rawspec_context * ctx, int fft_dir);
 
 // Returns the number of output products that are complete for the current
 // input buffer.  More precisely, it returns the number of output products that
 // are no longer processing (or never were processing) the input buffer.
-unsigned int mygpuspec_check_for_completion(mygpuspec_context * ctx);
+unsigned int rawspec_check_for_completion(rawspec_context * ctx);
 
 // Waits for any pending output products to be compete processing the current
 // input buffer.  Returns zero when complete, non-zero on error.
-int mygpuspec_wait_for_completion(mygpuspec_context * ctx);
+int rawspec_wait_for_completion(rawspec_context * ctx);
 
 #ifdef __cplusplus
 }

@@ -1,4 +1,4 @@
-#include "mygpuspec.h"
+#include "rawspec.h"
 
 #include <cufft.h>
 #include <cufftXt.h>
@@ -14,7 +14,7 @@
 
 // Stream callback data structure
 typedef struct {
-  mygpuspec_context * ctx;
+  rawspec_context * ctx;
   int output_product;
 } dump_cb_data_t;
 
@@ -48,7 +48,7 @@ typedef struct {
   // Non-zero when caller is managing (i.e. allocating and freeing) the
   // buffers; zero when we are.
   int caller_managed;
-} mygpuspec_gpu_context;
+} rawspec_gpu_context;
 
 // Texture declarations
 texture<char, 2, cudaReadModeNormalizedFloat> char_tex;
@@ -123,7 +123,7 @@ static void CUDART_CB dump_stream_callback(cudaStream_t stream,
 // Creates CuFFT plans.
 // Creates streams.
 // Returns 0 on success, non-zero on error.
-int mygpuspec_initialize(mygpuspec_context * ctx)
+int rawspec_initialize(rawspec_context * ctx)
 {
   int i;
   size_t inbuf_size;
@@ -248,10 +248,10 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
   ctx->gpu_ctx = NULL;
 
   // Allocate GPU context
-  mygpuspec_gpu_context * gpu_ctx = (mygpuspec_gpu_context *)malloc(sizeof(mygpuspec_gpu_context));
+  rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)malloc(sizeof(rawspec_gpu_context));
 
   if(!gpu_ctx) {
-    mygpuspec_cleanup(ctx);
+    rawspec_cleanup(ctx);
     return 1;
   }
 
@@ -342,7 +342,7 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
 
     if(cuda_rc != cudaSuccess) {
       PRINT_ERRMSG(cuda_rc);
-      mygpuspec_cleanup(ctx);
+      rawspec_cleanup(ctx);
       return 1;
     }
   }
@@ -362,7 +362,7 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
   cuda_rc = cudaMalloc(&gpu_ctx->d_fft_in, inbuf_size);
   if(cuda_rc != cudaSuccess) {
     PRINT_ERRMSG(cuda_rc);
-    mygpuspec_cleanup(ctx);
+    rawspec_cleanup(ctx);
     return 1;
   }
 
@@ -372,7 +372,7 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
                               1<<15, inbuf_size>>15, 1<<15);
   if(cuda_rc != cudaSuccess) {
     PRINT_ERRMSG(cuda_rc);
-    mygpuspec_cleanup(ctx);
+    rawspec_cleanup(ctx);
     return 1;
   }
 
@@ -382,21 +382,21 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
     cuda_rc = cudaMalloc(&gpu_ctx->d_fft_out[i], ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(cufftComplex));
     if(cuda_rc != cudaSuccess) {
       PRINT_ERRMSG(cuda_rc);
-      mygpuspec_cleanup(ctx);
+      rawspec_cleanup(ctx);
       return 1;
     }
     // Power output buffer
     cuda_rc = cudaMalloc(&gpu_ctx->d_pwr_out[i], ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
     if(cuda_rc != cudaSuccess) {
       PRINT_ERRMSG(cuda_rc);
-      mygpuspec_cleanup(ctx);
+      rawspec_cleanup(ctx);
       return 1;
     }
     // Clear power output buffer
     cuda_rc = cudaMemset(gpu_ctx->d_pwr_out[i], 0, ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
     if(cuda_rc != cudaSuccess) {
       PRINT_ERRMSG(cuda_rc);
-      mygpuspec_cleanup(ctx);
+      rawspec_cleanup(ctx);
       return 1;
     }
   }
@@ -407,7 +407,7 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
                                  sizeof(h_cufft_load_callback));
   if(cuda_rc != cudaSuccess) {
     PRINT_ERRMSG(cuda_rc);
-    mygpuspec_cleanup(ctx);
+    rawspec_cleanup(ctx);
     return 1;
   }
 
@@ -416,7 +416,7 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
                                  sizeof(h_cufft_store_callback));
   if(cuda_rc != cudaSuccess) {
     PRINT_ERRMSG(cuda_rc);
-    mygpuspec_cleanup(ctx);
+    rawspec_cleanup(ctx);
     return 1;
   }
 
@@ -438,7 +438,7 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
 
     if(cufft_rc != CUFFT_SUCCESS) {
       PRINT_ERRMSG(cufft_rc);
-      mygpuspec_cleanup(ctx);
+      rawspec_cleanup(ctx);
       return 1;
     }
 
@@ -449,7 +449,7 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
                                   (void **)&gpu_ctx->d_fft_in);
     if(cufft_rc != CUFFT_SUCCESS) {
       PRINT_ERRMSG(cufft_rc);
-      mygpuspec_cleanup(ctx);
+      rawspec_cleanup(ctx);
       return 1;
     }
 
@@ -459,7 +459,7 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
                                   (void **)&gpu_ctx->d_pwr_out[i]);
     if(cufft_rc != CUFFT_SUCCESS) {
       PRINT_ERRMSG(cufft_rc);
-      mygpuspec_cleanup(ctx);
+      rawspec_cleanup(ctx);
       return 1;
     }
   }
@@ -469,14 +469,14 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
     cuda_rc = cudaStreamCreateWithFlags(&gpu_ctx->stream[i], cudaStreamNonBlocking);
     if(cuda_rc != cudaSuccess) {
       PRINT_ERRMSG(cuda_rc);
-      mygpuspec_cleanup(ctx);
+      rawspec_cleanup(ctx);
       return 1;
     }
 
     cufft_rc = cufftSetStream(gpu_ctx->plan[i], gpu_ctx->stream[i]);
     if(cufft_rc != CUFFT_SUCCESS) {
       PRINT_ERRMSG(cufft_rc);
-      mygpuspec_cleanup(ctx);
+      rawspec_cleanup(ctx);
       return 1;
     }
   }
@@ -485,13 +485,13 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
 }
 
 // Frees host and device buffers based on the ctx->N values.
-// Frees and sets the ctx->mygpuspec_gpu_ctx field.
+// Frees and sets the ctx->rawspec_gpu_ctx field.
 // Destroys CuFFT plans.
 // Destroys streams.
-void mygpuspec_cleanup(mygpuspec_context * ctx)
+void rawspec_cleanup(rawspec_context * ctx)
 {
   int i;
-  mygpuspec_gpu_context * gpu_ctx;
+  rawspec_gpu_context * gpu_ctx;
 
   for(i=0; i<MAX_OUTPUTS; i++) {
     if(ctx->h_pwrbuf[i]) {
@@ -501,7 +501,7 @@ void mygpuspec_cleanup(mygpuspec_context * ctx)
   }
 
   if(ctx->gpu_ctx) {
-    gpu_ctx = (mygpuspec_gpu_context *)ctx->gpu_ctx;
+    gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
 
     if(gpu_ctx->caller_managed) {
       for(i=0; i < ctx->Nb; i++) {
@@ -543,14 +543,14 @@ void mygpuspec_cleanup(mygpuspec_context * ctx)
 
 // Copy `ctx->h_blkbufs` to GPU input buffer.
 // Returns 0 on success, non-zero on error.
-int mygpuspec_copy_blocks_to_gpu(mygpuspec_context * ctx,
+int rawspec_copy_blocks_to_gpu(rawspec_context * ctx,
     off_t src_idx, off_t dst_idx, size_t num_blocks)
 {
   int b;
   off_t sblk;
   off_t dblk;
   cudaError_t rc;
-  mygpuspec_gpu_context * gpu_ctx = (mygpuspec_gpu_context *)ctx->gpu_ctx;
+  rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
 
   // TODO Store in GPU context?
   size_t width = ctx->Ntpb * ctx->Np * sizeof(char2);
@@ -585,13 +585,13 @@ int mygpuspec_copy_blocks_to_gpu(mygpuspec_context * ctx,
 // is less than or equal to zero, an inverse (aka backward) transform is
 // performed, otherwise a forward transform is performed.
 //
-// Processing occurs asynchronously.  Use `mygpuspec_check_for_completion` to
+// Processing occurs asynchronously.  Use `rawspec_check_for_completion` to
 // see how many output products have completed or
-// `mygpuspec_wait_for_completion` to wait for all output products to be
+// `rawspec_wait_for_completion` to wait for all output products to be
 // complete.  New data should NOT be copied to the GPU until
-// `mygpuspec_check_for_completion` returns `ctx->No` or
-// `mygpuspec_wait_for_completion` returns 0.
-int mygpuspec_start_processing(mygpuspec_context * ctx, int fft_dir)
+// `rawspec_check_for_completion` returns `ctx->No` or
+// `rawspec_wait_for_completion` returns 0.
+int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
 {
   int i;
   int p;
@@ -606,7 +606,7 @@ int mygpuspec_start_processing(mygpuspec_context * ctx, int fft_dir)
   cudaStream_t stream;
   cudaError_t cuda_rc;
   cufftResult cufft_rc;
-  mygpuspec_gpu_context * gpu_ctx = (mygpuspec_gpu_context *)ctx->gpu_ctx;
+  rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
 
   // Increment inbuf_count
   gpu_ctx->inbuf_count++;
@@ -674,7 +674,7 @@ int mygpuspec_start_processing(mygpuspec_context * ctx, int fft_dir)
 
         if(cuda_rc != cudaSuccess) {
           PRINT_ERRMSG(cuda_rc);
-          mygpuspec_cleanup(ctx);
+          rawspec_cleanup(ctx);
           return 1;
         }
 
@@ -691,7 +691,7 @@ int mygpuspec_start_processing(mygpuspec_context * ctx, int fft_dir)
 
         if(cuda_rc != cudaSuccess) {
           PRINT_ERRMSG(cuda_rc);
-          mygpuspec_cleanup(ctx);
+          rawspec_cleanup(ctx);
           return 1;
         }
 
@@ -728,12 +728,12 @@ int mygpuspec_start_processing(mygpuspec_context * ctx, int fft_dir)
 // Returns the number of output products that are complete for the current
 // input buffer.  More precisely, it returns the number of output products that
 // are no longer processing (or never were processing) the input buffer.
-unsigned int mygpuspec_check_for_completion(mygpuspec_context * ctx)
+unsigned int rawspec_check_for_completion(rawspec_context * ctx)
 {
   int i;
   int num_complete = 0;
   cudaError_t rc;
-  mygpuspec_gpu_context * gpu_ctx = (mygpuspec_gpu_context *)ctx->gpu_ctx;
+  rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
 
   for(i=0; i<ctx->No; i++) {
     rc = cudaStreamQuery(gpu_ctx->stream[i]);
@@ -747,11 +747,11 @@ unsigned int mygpuspec_check_for_completion(mygpuspec_context * ctx)
 
 // Waits for any pending output products to be compete processing the current
 // input buffer.  Returns zero when complete, non-zero on error.
-int mygpuspec_wait_for_completion(mygpuspec_context * ctx)
+int rawspec_wait_for_completion(rawspec_context * ctx)
 {
   int i;
   cudaError_t rc;
-  mygpuspec_gpu_context * gpu_ctx = (mygpuspec_gpu_context *)ctx->gpu_ctx;
+  rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
 
   for(i=0; i < ctx->No; i++) {
     rc = cudaStreamSynchronize(gpu_ctx->stream[i]);
