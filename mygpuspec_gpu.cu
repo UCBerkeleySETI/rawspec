@@ -58,7 +58,31 @@ __device__ void store_callback(void *p_v_out,
 __device__ cufftCallbackLoadC d_cufft_load_callback = load_callback;
 __device__ cufftCallbackStoreC d_cufft_store_callback = store_callback;
 
-// TODO Accumulate kernel
+#define MAX_THREADS (1024)
+
+// Accumulate kernel
+__global__ void accumulate(float * pwr_buf, unsigned int Na, size_t xpitch, size_t ypitch, size_t zpitch)
+{
+  unsigned int i;
+
+  // TODO Add check for past end of spectrum
+
+  off_t offset0 = blockIdx.z * zpitch
+                + blockIdx.y * ypitch
+                + blockIdx.x * MAX_THREADS
+                + threadIdx.x;
+
+  off_t offset = offset0;
+
+  float sum = pwr_buf[offset];
+
+  for(i=1; i<Na; i++) {
+    offset += xpitch;
+    sum += pwr_buf[offset];
+  }
+
+  pwr_buf[offset0] = sum;
+}
 
 // Stream callback function that is called right after an output product's GPU
 // power buffer has been copied to the host power buffer.
@@ -495,6 +519,8 @@ int mygpuspec_start_processing(mygpuspec_context * ctx)
   size_t spitch;
   size_t width;
   size_t height;
+  dim3 grid;    // TODO put in gpu_ctx?
+  int nthreads; // TODO put in gpu_ctx?
   cufftHandle plan;
   cudaStream_t stream;
   cudaError_t cuda_rc;
@@ -537,8 +563,20 @@ int mygpuspec_start_processing(mygpuspec_context * ctx)
       // and more than one spectrum fits in the input buffer
       if(ctx->Nas[i] > 1
       && ctx->Nas[i] * gpu_ctx->Nss[i] < ctx->Nb * ctx->Ntpb) {
-        // Integrate those "more than one" spectra together.
-        // TODO Call accumulate kernel
+        // Integrate those "more than one" spectra together using the
+        // accumulate kernel.
+        nthreads = ctx->Nts[i] < MAX_THREADS ? ctx->Nts[i]
+                                             : MAX_THREADS;
+
+        grid.x = (ctx->Nts[i] + MAX_THREADS - 1) / MAX_THREADS;
+        grid.y = Nd;
+        grid.z = ctx->Nc;
+
+        accumulate<<<grid, nthreads, 0, stream>>>(gpu_ctx->d_pwr_out[i],
+                                                  ctx->Nas[i],
+                                                  ctx->Nts[i],
+                                                  ctx->Nas[i]*ctx->Nts[i],
+                                                  ctx->Nb*ctx->Ntpb);
       }
 
       // Copy integrated power spectra (or spectrum) to host.  This is done as
