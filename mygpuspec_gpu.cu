@@ -44,6 +44,10 @@ typedef struct {
   unsigned int inbuf_count;
   // Array of dump_cb_data_t structures for dump callback
   dump_cb_data_t dump_cb_data[MAX_OUTPUTS];
+  // Flag indicating that the caller is managing the input block buffers
+  // Non-zero when caller is managing (i.e. allocating and freeing) the
+  // buffers; zero when we are.
+  int caller_managed;
 } mygpuspec_gpu_context;
 
 // Texture declarations
@@ -182,6 +186,13 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
       return 1;
     }
   } else {
+    // Cannot calculate Nb for caller-managed h_blkbufs
+    if(ctx->h_blkbufs) {
+      fprintf(stderr,
+          "Must specify number of input blocks when caller-managed\n");
+      return 1;
+    }
+
     // Calculate Nb
     // If Ntmax is less than one block
     if(ctx->Ntmax < ctx->Ntpb) {
@@ -231,24 +242,10 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
 
   // Null out all pointers
   // TODO Add support for client managed host buffers
-  ctx->h_blkbufs = NULL;
   for(i=0; i < MAX_OUTPUTS; i++) {
     ctx->h_pwrbuf[i] = NULL;
   }
   ctx->gpu_ctx = NULL;
-
-  // Alllocate host input block buffers
-  ctx->h_blkbufs = (char **)malloc(ctx->Nb * sizeof(char *));
-  for(i=0; i < ctx->Nb; i++) {
-    // Block buffer can use write combining
-    cuda_rc = cudaHostAlloc(&ctx->h_blkbufs[i],
-                       ctx->Ntpb*ctx->Np*ctx->Nc*sizeof(char2),
-                       cudaHostAllocWriteCombined);
-    if(cuda_rc != cudaSuccess) {
-      PRINT_ERRMSG(cuda_rc);
-      return 1;
-    }
-  }
 
   // Allocate GPU context
   mygpuspec_gpu_context * gpu_ctx = (mygpuspec_gpu_context *)malloc(sizeof(mygpuspec_gpu_context));
@@ -274,6 +271,41 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
 
   // Initialize inbuf_count
   gpu_ctx->inbuf_count = 0;
+
+  if(!ctx->h_blkbufs) {
+    // Remember that we (not the caller) are managing these buffers
+    // (i.e. we will need to free them when cleaning up).
+    gpu_ctx->caller_managed = 0;
+
+    // Alllocate host input block buffers
+    ctx->h_blkbufs = (char **)malloc(ctx->Nb * sizeof(char *));
+    for(i=0; i < ctx->Nb; i++) {
+      // Block buffer can use write combining
+      cuda_rc = cudaHostAlloc(&ctx->h_blkbufs[i],
+                         ctx->Ntpb*ctx->Np*ctx->Nc*sizeof(char2),
+                         cudaHostAllocWriteCombined);
+      if(cuda_rc != cudaSuccess) {
+        PRINT_ERRMSG(cuda_rc);
+        return 1;
+      }
+    }
+  } else {
+    // Remember that the caller is managing these buffers
+    // (i.e. we will only need to unregister them when cleaning up).
+    gpu_ctx->caller_managed = 1;
+
+    // Register these buffers with CUDA.  It is the caller's responsibility to
+    // ensure that the blocks meet memory alignment requirements, etc.
+    for(i=0; i < ctx->Nb; i++) {
+      cuda_rc = cudaHostRegister(&ctx->h_blkbufs[i],
+                         ctx->Ntpb*ctx->Np*ctx->Nc*sizeof(char2),
+                         cudaHostRegisterDefault);
+      if(cuda_rc != cudaSuccess) {
+        PRINT_ERRMSG(cuda_rc);
+        return 1;
+      }
+    }
+  }
 
   // Calculate Ns and allocate host power output buffers
   for(i=0; i < ctx->No; i++) {
@@ -461,14 +493,6 @@ void mygpuspec_cleanup(mygpuspec_context * ctx)
   int i;
   mygpuspec_gpu_context * gpu_ctx;
 
-  if(ctx->h_blkbufs) {
-    for(i=0; i < ctx->Nb; i++) {
-      cudaFreeHost(ctx->h_blkbufs[i]);
-    }
-    free(ctx->h_blkbufs);
-    ctx->h_blkbufs = NULL;
-  }
-
   for(i=0; i<MAX_OUTPUTS; i++) {
     if(ctx->h_pwrbuf[i]) {
       cudaFreeHost(ctx->h_pwrbuf[i]);
@@ -478,6 +502,20 @@ void mygpuspec_cleanup(mygpuspec_context * ctx)
 
   if(ctx->gpu_ctx) {
     gpu_ctx = (mygpuspec_gpu_context *)ctx->gpu_ctx;
+
+    if(gpu_ctx->caller_managed) {
+      for(i=0; i < ctx->Nb; i++) {
+        cudaHostUnregister(ctx->h_blkbufs[i]);
+      }
+    } else {
+      if(ctx->h_blkbufs) {
+        for(i=0; i < ctx->Nb; i++) {
+          cudaFreeHost(ctx->h_blkbufs[i]);
+        }
+        free(ctx->h_blkbufs);
+        ctx->h_blkbufs = NULL;
+      }
+    }
 
     if(gpu_ctx->d_fft_in) {
       cudaFree(gpu_ctx->d_fft_in);

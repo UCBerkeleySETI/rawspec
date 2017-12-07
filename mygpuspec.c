@@ -38,8 +38,9 @@ int main(int argc, char * argv[])
   ctx.Nas[0] = (1<<(20 - 20));
   ctx.Nas[1] = (1<<(20 -  3));
   ctx.Nas[2] = (1<<(20 - 10));
-  // Auto-calculate Nb
+  // Auto-calculate Nb and let library manage input block buffers
   ctx.Nb = 0;
+  ctx.h_blkbufs = NULL;
   // Dump callback
   ctx.dump_callback = dump_callback;
 
