@@ -26,6 +26,14 @@ typedef struct {
   unsigned int Nss[MAX_OUTPUTS];
   // Array of cudaStream_t values
   cudaStream_t stream[MAX_OUTPUTS];
+  // Array of grids for accumulate kernel
+  dim3 grid[MAX_OUTPUTS];
+  // Array of number of threads to use per block for accumulate kernel
+  int nthreads[MAX_OUTPUTS];
+  // Array of Nd values (number of spectra per dump)
+  unsigned int Nds[MAX_OUTPUTS];
+  // Array of Ni values (number of input buffers per dump)
+  unsigned int Nis[MAX_OUTPUTS];
   // A count of the number of input buffers processed
   unsigned int inbuf_count;
 } mygpuspec_gpu_context;
@@ -103,7 +111,6 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
 {
   int i;
   size_t inbuf_size;
-  unsigned int Nd; // Number of spectra per dump (per output product)
   cudaError_t cuda_rc;
   cufftResult cufft_rc;
 
@@ -259,16 +266,31 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
     // for Nt[i] points per spectra.
     gpu_ctx->Nss[i] = (ctx->Nb * ctx->Ntpb) / ctx->Nts[i];
 
-    // Calculate number of spectra to dump at one time.
-    Nd = gpu_ctx->Nss[i] / ctx->Nas[i];
-    if(Nd == 0) {
-      Nd = 1;
+    // Calculate number of spectra per dump
+    gpu_ctx->Nds[i] = gpu_ctx->Nss[i] / ctx->Nas[i];
+    if(gpu_ctx->Nds[i] == 0) {
+      gpu_ctx->Nds[i] = 1;
     }
+
+    // Calculate number of input buffers per dump
+    gpu_ctx->Nis[i] = ctx->Nas[i] / gpu_ctx->Nss[i];
+    if(gpu_ctx->Nis[i] == 0) {
+      gpu_ctx->Nis[i] = 1;
+    }
+
+    // Calculate grid dimensions
+    gpu_ctx->grid[i].x = (ctx->Nts[i] + MAX_THREADS - 1) / MAX_THREADS;
+    gpu_ctx->grid[i].y = gpu_ctx->Nds[i];
+    gpu_ctx->grid[i].z = ctx->Nc;
+
+    // Calculate number of threads per block
+    gpu_ctx->nthreads[i] = ctx->Nts[i] < MAX_THREADS ? ctx->Nts[i]
+                                                     : MAX_THREADS;
 
     // Host buffer needs to accommodate the number of integrations that will be
     // dumped at one time (Nd).
     cuda_rc = cudaHostAlloc(&ctx->h_pwrbuf[i],
-                       Nd*ctx->Nts[i]*ctx->Nc*sizeof(float),
+                       gpu_ctx->Nds[i]*ctx->Nts[i]*ctx->Nc*sizeof(float),
                        cudaHostAllocDefault);
 
     if(cuda_rc != cudaSuccess) {
@@ -511,16 +533,12 @@ int mygpuspec_start_processing(mygpuspec_context * ctx)
   int i;
   int p;
   int d;
-  int Nd; // Number of spectra per dump
-  int Ni; // Number of input buffers per dump
   float * dst;
   size_t dpitch;
   float * src;
   size_t spitch;
   size_t width;
   size_t height;
-  dim3 grid;    // TODO put in gpu_ctx?
-  int nthreads; // TODO put in gpu_ctx?
   cufftHandle plan;
   cudaStream_t stream;
   cudaError_t cuda_rc;
@@ -532,12 +550,6 @@ int mygpuspec_start_processing(mygpuspec_context * ctx)
 
   // For each output product
   for(i=0; i < ctx->No; i++) {
-    // Calculate Nd and Ni (TODO put these in ctx or gpu_ctx?)
-    Nd = gpu_ctx->Nss[i] / ctx->Nas[i];
-    if(Nd == 0) Nd = 1;
-
-    Ni = ctx->Nas[i] / gpu_ctx->Nss[i];
-    if(Ni == 0) Ni = 1;
 
     // Get plan and stream
     plan   = gpu_ctx->plan[i];
@@ -558,25 +570,21 @@ int mygpuspec_start_processing(mygpuspec_context * ctx)
     }
 
     // If time to dump
-    if(gpu_ctx->inbuf_count % Ni == 0) {
+    if(gpu_ctx->inbuf_count % gpu_ctx->Nis[i] == 0) {
       // If accumulting multiple spectra
       // and more than one spectrum fits in the input buffer
       if(ctx->Nas[i] > 1
       && ctx->Nas[i] * gpu_ctx->Nss[i] < ctx->Nb * ctx->Ntpb) {
         // Integrate those "more than one" spectra together using the
         // accumulate kernel.
-        nthreads = ctx->Nts[i] < MAX_THREADS ? ctx->Nts[i]
-                                             : MAX_THREADS;
 
-        grid.x = (ctx->Nts[i] + MAX_THREADS - 1) / MAX_THREADS;
-        grid.y = Nd;
-        grid.z = ctx->Nc;
-
-        accumulate<<<grid, nthreads, 0, stream>>>(gpu_ctx->d_pwr_out[i],
-                                                  ctx->Nas[i],
-                                                  ctx->Nts[i],
-                                                  ctx->Nas[i]*ctx->Nts[i],
-                                                  ctx->Nb*ctx->Ntpb);
+        accumulate<<<gpu_ctx->grid[i],
+                     gpu_ctx->nthreads[i],
+                     0, stream>>>(gpu_ctx->d_pwr_out[i],
+                                  ctx->Nas[i],
+                                  ctx->Nts[i],
+                                  ctx->Nas[i]*ctx->Nts[i],
+                                  ctx->Nb*ctx->Ntpb);
       }
 
       // Copy integrated power spectra (or spectrum) to host.  This is done as
@@ -588,7 +596,7 @@ int mygpuspec_start_processing(mygpuspec_context * ctx)
       dpitch = ctx->Nts[i] * sizeof(float);
       height = ctx->Nc;
 
-      for(d=0; d<Nd; d++) {
+      for(d=0; d<gpu_ctx->Nds[i]; d++) {
 
         // Lo to hi
         width  = ((ctx->Nts[i]+1) / 2) * sizeof(float);
@@ -640,7 +648,7 @@ int mygpuspec_start_processing(mygpuspec_context * ctx)
 
       // Add power buffer clearing cudaMemset call to stream
       cuda_rc = cudaMemsetAsync(gpu_ctx->d_pwr_out[i], 0,
-                                Nd*ctx->Nts[i]*ctx->Nc*sizeof(float),
+                                gpu_ctx->Nds[i]*ctx->Nts[i]*ctx->Nc*sizeof(float),
                                 stream);
 
       if(cuda_rc != cudaSuccess) {
