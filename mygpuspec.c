@@ -9,6 +9,12 @@
 #define ELAPSED_NS(start,stop) \
   (((int64_t)stop.tv_sec-start.tv_sec)*1000*1000*1000+(stop.tv_nsec-start.tv_nsec))
 
+void
+dump_callback(mygpuspec_context * ctx, int output_product)
+{
+  printf("cb %d\n", output_product);
+}
+
 int main(int argc, char * argv[])
 {
   int i;
@@ -34,6 +40,8 @@ int main(int argc, char * argv[])
   ctx.Nas[2] = (1<<(20 - 10));
   // Auto-calculate Nb
   ctx.Nb = 0;
+  // Dump callback
+  ctx.dump_callback = dump_callback;
 
   // Initialize
   if(mygpuspec_initialize(&ctx)) {

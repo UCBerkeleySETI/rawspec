@@ -3,10 +3,14 @@
 
 #define MAX_OUTPUTS (4)
 
-typedef void (* mygpuspec_output_callback_t)(int output_product);
+// Forward declaration
+typedef struct mygpuspec_context_s mygpuspec_context;
+
+typedef void (* mygpuspec_dump_callback_t)(mygpuspec_context * ctx,
+                                           int output_product);
 
 // Structure for holding the context.
-typedef struct {
+struct mygpuspec_context_s {
   unsigned int No; // Number of output products (max MAX_OUTPUTS)
   unsigned int Np; // Number of polarizations
   unsigned int Nc; // Number of coarse channels
@@ -27,10 +31,10 @@ typedef struct {
   // Nb is the number of input blocks per GPU input buffer.
   // Set to zero to have it calculated as Ntmax/Ntpb.
   unsigned int Nb;
-  // output_callback is a pointer to a user-supplied output callback function.
+  // dump_callback is a pointer to a user-supplied output callback function.
   // This function will be called when one of of the output power buffers in
   // h_pwrbuf[] has new data to be written to disk.
-  mygpuspec_output_callback_t output_callback;
+  mygpuspec_dump_callback_t dump_callback;
 
   // Fields above here should be specified by client.  Fields below here are
   // managed by library.
@@ -47,7 +51,7 @@ typedef struct {
 
   unsigned int Ntmax; // Maximum Nt value
   void * gpu_ctx; // Host pointer to GPU specific context
-} mygpuspec_context;
+};
 
 #ifdef __cplusplus
 extern "C" {

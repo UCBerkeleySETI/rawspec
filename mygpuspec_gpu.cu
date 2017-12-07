@@ -12,6 +12,12 @@
       _cudaGetErrorEnum(error),  \
       __FILE__, __LINE__)
 
+// Stream callback data structure
+typedef struct {
+  mygpuspec_context * ctx;
+  int output_product;
+} dump_cb_data_t;
+
 // CPU context structure
 typedef struct {
   // Device pointer to FFT input buffer
@@ -36,6 +42,8 @@ typedef struct {
   unsigned int Nis[MAX_OUTPUTS];
   // A count of the number of input buffers processed
   unsigned int inbuf_count;
+  // Array of dump_cb_data_t structures for dump callback
+  dump_cb_data_t dump_cb_data[MAX_OUTPUTS];
 } mygpuspec_gpu_context;
 
 // Texture declarations
@@ -94,16 +102,20 @@ __global__ void accumulate(float * pwr_buf, unsigned int Na, size_t xpitch, size
 
 // Stream callback function that is called right after an output product's GPU
 // power buffer has been copied to the host power buffer.
-static void CUDART_CB dump_callback(cudaStream_t stream,
-                                    cudaError_t status,
-                                    void *data)
+static void CUDART_CB dump_stream_callback(cudaStream_t stream,
+                                           cudaError_t status,
+                                           void *data)
 {
-  printf("cb %ld\n", (long int)data);
+  dump_cb_data_t * dump_cb_data = (dump_cb_data_t *)data;
+  if(dump_cb_data->ctx->dump_callback) {
+    dump_cb_data->ctx->dump_callback(dump_cb_data->ctx,
+                                     dump_cb_data->output_product);
+  }
 }
 
 // Sets ctx->Ntmax.
 // Allocates host and device buffers based on the ctx->N values.
-// Allocates and sets the ctx->mygpuspec_gpu_ctx field.
+// Allocates and sets the ctx->gpu_ctx field.
 // Creates CuFFT plans.
 // Creates streams.
 // Returns 0 on success, non-zero on error.
@@ -255,6 +267,8 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
     gpu_ctx->d_pwr_out[i] = NULL;
     gpu_ctx->plan[i] = NO_PLAN;
     gpu_ctx->stream[i] = NO_STREAM;
+    gpu_ctx->dump_cb_data[i].ctx = ctx;
+    gpu_ctx->dump_cb_data[i].output_product = i;
   }
 
   // Initialize inbuf_count
@@ -638,8 +652,8 @@ int mygpuspec_start_processing(mygpuspec_context * ctx)
       }
 
       // Add stream callback
-      cuda_rc = cudaStreamAddCallback(stream, dump_callback,
-                                      (void *)(long int)i, 0);
+      cuda_rc = cudaStreamAddCallback(stream, dump_stream_callback,
+                                      (void *)&gpu_ctx->dump_cb_data[i], 0);
 
       if(cuda_rc != cudaSuccess) {
         PRINT_ERRMSG(cuda_rc);
