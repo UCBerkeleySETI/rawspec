@@ -76,7 +76,7 @@ int main(int argc, char * argv[])
   for(i=0; i<4; i++) {
     clock_gettime(CLOCK_MONOTONIC, &ts_start);
 
-    mygpuspec_start_processing(&ctx);
+    mygpuspec_start_processing(&ctx, -1);
     mygpuspec_wait_for_completion(&ctx);
 
     clock_gettime(CLOCK_MONOTONIC, &ts_stop);

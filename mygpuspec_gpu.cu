@@ -230,6 +230,7 @@ int mygpuspec_initialize(mygpuspec_context * ctx)
   }
 
   // Null out all pointers
+  // TODO Add support for client managed host buffers
   ctx->h_blkbufs = NULL;
   for(i=0; i < MAX_OUTPUTS; i++) {
     ctx->h_pwrbuf[i] = NULL;
@@ -536,13 +537,17 @@ int mygpuspec_copy_blocks_to_gpu(mygpuspec_context * ctx)
 // output buffer and the user provided callback, if any, is called.  This
 // function returns zero on success or non-zero if an error is encountered.
 //
+// The direction of the FFT is determined by the fft_dir parameter.  If fft_dir
+// is less than or equal to zero, an inverse (aka backward) transform is
+// performed, otherwise a forward transform is performed.
+//
 // Processing occurs asynchronously.  Use `mygpuspec_check_for_completion` to
 // see how many output products have completed or
 // `mygpuspec_wait_for_completion` to wait for all output products to be
 // complete.  New data should NOT be copied to the GPU until
 // `mygpuspec_check_for_completion` returns `ctx->No` or
 // `mygpuspec_wait_for_completion` returns 0.
-int mygpuspec_start_processing(mygpuspec_context * ctx)
+int mygpuspec_start_processing(mygpuspec_context * ctx, int fft_dir)
 {
   int i;
   int p;
@@ -575,7 +580,7 @@ int mygpuspec_start_processing(mygpuspec_context * ctx)
       cufft_rc = cufftExecC2C(plan,
                               ((cufftComplex *)gpu_ctx->d_fft_in) + p,
                               gpu_ctx->d_fft_out[i],
-                              CUFFT_FORWARD);
+                              fft_dir <= 0 ? CUFFT_INVERSE : CUFFT_FORWARD);
 
       if(cufft_rc != CUFFT_SUCCESS) {
         PRINT_ERRMSG(cufft_rc);
