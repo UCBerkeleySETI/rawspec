@@ -24,7 +24,8 @@
 void do_read(mygpuspec_context *ctx, int fd, size_t blocsize)
 {
   int i;
-  size_t bytes_read = 0;
+  size_t total_bytes_read = 1;
+  size_t bytes_read = 1;
 
   // Timing variables
   struct timespec ts_start, ts_stop;
@@ -32,53 +33,99 @@ void do_read(mygpuspec_context *ctx, int fd, size_t blocsize)
 
   clock_gettime(CLOCK_MONOTONIC, &ts_start);
 
-  for(i=0; i<ctx->Nb; i++) {
-    bytes_read += read(fd, ctx->h_blkbufs[i], blocsize);
+  while(bytes_read) {
+    bytes_read = read(fd, ctx->h_blkbufs[i++ % ctx->Nb], blocsize);
+    total_bytes_read += bytes_read;
   }
 
   clock_gettime(CLOCK_MONOTONIC, &ts_stop);
   elapsed_ns = ELAPSED_NS(ts_start, ts_stop);
 
   printf("read %lu bytes in %.6f sec (%.3f GBps)\n",
-         bytes_read,
+         total_bytes_read,
          elapsed_ns / 1e9,
-         bytes_read / (double)elapsed_ns);
-
-  if(bytes_read != ctx->Nb * blocsize) {
-    printf("not all blocks fully populated\n");
-  }
+         total_bytes_read / (double)elapsed_ns);
 }
 
-void do_mmap(mygpuspec_context *ctx, int fd, size_t blocsize)
+void do_memcpy(mygpuspec_context *ctx, int fd, size_t blocsize)
 {
   int i;
+  size_t file_size;
+  int num_blocks;
+  char * din;
+  size_t total_bytes_read = 1;
 
   // Timing variables
   struct timespec ts_start, ts_stop;
   uint64_t elapsed_ns=0;
 
+  file_size = lseek(fd, 0, SEEK_END);
+  num_blocks = file_size / blocsize;
+
   clock_gettime(CLOCK_MONOTONIC, &ts_start);
 
-  for(i=0; i<ctx->Nb; i++) {
-    if(mmap(ctx->h_blkbufs[i], blocsize, PROT_READ,
-         MAP_PRIVATE | MAP_FIXED | MAP_POPULATE,
-         fd, (i+4)*blocsize) == MAP_FAILED) {
-      perror("mmap");
-    }
+  din = mmap(0, file_size, PROT_READ, MAP_PRIVATE | MAP_POPULATE, fd, 0);
+  if( din == MAP_FAILED) {
+    perror("mmap");
+    return;
+  }
+
+  for(i=0; i<num_blocks; i++) {
+    memcpy(ctx->h_blkbufs[i % ctx->Nb], din+i*blocsize, blocsize);
+    total_bytes_read += blocsize;
   }
 
   clock_gettime(CLOCK_MONOTONIC, &ts_stop);
   elapsed_ns = ELAPSED_NS(ts_start, ts_stop);
 
-  printf("mmap'd %lu bytes in %.6f sec (%.3f GBps)\n",
-         ctx->Nb*blocsize,
+
+  printf("memcpy'd %lu bytes in %.6f sec (%.3f GBps)\n",
+         total_bytes_read,
          elapsed_ns / 1e9,
-         ctx->Nb*blocsize / (double)elapsed_ns);
+         total_bytes_read / (double)elapsed_ns);
+
+  munmap(din, file_size);
+}
+
+void do_mmap(mygpuspec_context *ctx, int fd, size_t blocsize)
+{
+  int i;
+  size_t file_size;
+  int num_blocks;
+  size_t total_bytes_read = 1;
+
+  // Timing variables
+  struct timespec ts_start, ts_stop;
+  uint64_t elapsed_ns=0;
+
+  file_size = lseek(fd, 0, SEEK_END);
+  num_blocks = file_size / blocsize;
+
+  clock_gettime(CLOCK_MONOTONIC, &ts_start);
+
+  for(i=0; i<num_blocks; i++) {
+    if(mmap(ctx->h_blkbufs[i % ctx->Nb], blocsize, PROT_READ,
+            MAP_PRIVATE | MAP_FIXED | MAP_POPULATE,
+            fd, i*blocsize) == MAP_FAILED) {
+      perror("mmap");
+      break;
+    }
+    total_bytes_read += blocsize;
+  }
+
+  clock_gettime(CLOCK_MONOTONIC, &ts_stop);
+  elapsed_ns = ELAPSED_NS(ts_start, ts_stop);
+
+  perror("mmap");
+
+  printf("mmap'd %lu bytes in %.6f sec (%.3f GBps)\n",
+         total_bytes_read,
+         elapsed_ns / 1e9,
+         total_bytes_read / (double)elapsed_ns);
 
   for(i=0; i<ctx->Nb; i++) {
     munmap(ctx->h_blkbufs[i], blocsize);
   }
-
 }
 
 int main(int argc, char *argv[])
@@ -132,9 +179,11 @@ int main(int argc, char *argv[])
 
   if(argc>2 && strstr(argv[2], "read")) {
     do_read(&ctx, fd, blocsize);
+  } else if(argc>2 && strstr(argv[2], "memcpy")) {
+    do_memcpy(&ctx, fd, blocsize);
+  } else {
+    do_mmap(&ctx, fd, blocsize);
   }
-
-  do_mmap(&ctx, fd, blocsize);
 
   return 0;
 }
