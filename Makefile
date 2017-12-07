@@ -5,7 +5,7 @@ HOST_COMPILER ?= $(CC)
 NVCC          := $(CUDA_PATH)/bin/nvcc -ccbin $(HOST_COMPILER)
 
 CFLAGS = -ggdb
-NVCC_FLAGS = -m64 -g -I$(CUDA_PATH)/samples/common/inc
+NVCC_FLAGS = -m64 -g -Xcompiler=-fPIC -I$(CUDA_PATH)/samples/common/inc
 
 CUDA_SHARED_LIBS = -lcufft
 CUDA_STATIC_LIBS = -lcufft_static -lculibos
@@ -41,19 +41,20 @@ fileiotest.o: mygpuspec.h
 
 %.o: %.cu
 	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) -dc $(GENCODE_FLAGS) -o $@ -c $<
+	
+libgpuspec.so: mygpuspec_gpu.o
+	$(VERBOSE) $(NVCC) -shared $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ $(CUDA_STATIC_LIBS)
 
-# mygpuspec_gpu uses CuFFT callbacks so programs
-# linking with it require static # CUDA linkage
-mygpuspec: mygpuspec.o mygpuspec_gpu.o
-	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ $(CUDA_STATIC_LIBS)
+mygpuspec: libgpuspec.so
+mygpuspec: mygpuspec.o
+	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ -L. -lgpuspec
 
-# mygpuspec_gpu uses CuFFT callbacks so programs
-# linking with it require static # CUDA linkage
-fileiotest: fileiotest.o mygpuspec_gpu.o
-	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ $(CUDA_STATIC_LIBS)
+fileiotest: libgpuspec.so
+fileiotest: fileiotest.o
+	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ -L. -lgpuspec
 
 clean:
-	rm -f *.o mygpuspec fileiotest tags
+	rm -f *.o *.so mygpuspec fileiotest tags
 
 tags:
 	ctags -R . $(CUDA_PATH)/samples/common/inc
