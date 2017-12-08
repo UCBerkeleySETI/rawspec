@@ -1,5 +1,6 @@
 fileiotest
 librawspec.so
+rawspec
 rawspectest
 tags
 *.o

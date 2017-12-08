@@ -36,9 +36,10 @@ ifeq ($(Q),1)
 VERBOSE = @
 endif
 
-all: rawspectest fileiotest
+all: rawspec rawspectest fileiotest
 
 # TODO Replace with auto-generated dependencies
+rawspec.o: rawspec.h fitshead.h
 rawspectest.o: rawspec.h
 rawspec_gpu.o: rawspec.h
 fileiotest.o: rawspec.h
@@ -48,6 +49,10 @@ fileiotest.o: rawspec.h
 	
 librawspec.so: rawspec_gpu.o
 	$(VERBOSE) $(NVCC) -shared $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ $(CUDA_STATIC_LIBS)
+
+rawspec: librawspec.so
+rawspec: rawspec.o hget.o
+	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ -L. -lrawspec
 
 rawspectest: librawspec.so
 rawspectest: rawspectest.o
@@ -64,7 +69,7 @@ install: rawspec.h librawspec.so
 	cp -p librawspec.so $(LIBDIR)
 
 clean:
-	rm -f *.o *.so rawspectest fileiotest tags
+	rm -f *.o *.so rawspec rawspectest fileiotest tags
 
 tags:
 	ctags -R . $(CUDA_PATH)/samples/common/inc
