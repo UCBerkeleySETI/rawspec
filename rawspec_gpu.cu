@@ -725,6 +725,39 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
   return 0;
 }
 
+// Waits for any processing to finish, then clears output power buffers and
+// resets inbuf_count to 0.  Returns 0 on success, non-zero on error.
+int rawspec_reset_integration(rawspec_context * ctx)
+{
+  int i;
+  cudaError_t cuda_rc;
+  rawspec_gpu_context * gpu_ctx;
+
+  // Mae sure gpu_ctx exists
+  if(!ctx->gpu_ctx) {
+    return 1;
+  }
+  gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
+
+  // Wait for any/all pending work to complete
+  rawspec_wait_for_completion(ctx);
+
+  // For each output product
+  for(i=0; i < ctx->No; i++) {
+    // Clear power output buffer
+    cuda_rc = cudaMemset(gpu_ctx->d_pwr_out[i], 0, ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
+    if(cuda_rc != cudaSuccess) {
+      PRINT_ERRMSG(cuda_rc);
+      return 0;
+    }
+  }
+
+  // Reset inbuf_count
+  gpu_ctx->inbuf_count = 0;
+
+  return 0;
+}
+
 // Returns the number of output products that are complete for the current
 // input buffer.  More precisely, it returns the number of output products that
 // are no longer processing (or never were processing) the input buffer.

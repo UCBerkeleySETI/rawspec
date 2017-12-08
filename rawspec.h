@@ -109,6 +109,10 @@ int rawspec_copy_blocks_to_gpu(rawspec_context * ctx,
 // `rawspec_wait_for_completion` returns 0.
 int rawspec_start_processing(rawspec_context * ctx, int fft_dir);
 
+// Waits for any processing to finish, then clears output power buffers and
+// resets inbuf_count to 0.  Returns 0 on success, non-zero on error.
+int rawspec_reset_integration(rawspec_context * ctx);
+
 // Returns the number of output products that are complete for the current
 // input buffer.  More precisely, it returns the number of output products that
 // are no longer processing (or never were processing) the input buffer.
