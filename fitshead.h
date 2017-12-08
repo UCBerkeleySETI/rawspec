@@ -32,7 +32,7 @@
 #ifndef _fitshead_h_
 #define _fitshead_h_
 
-#include <sys/types.h>
+#include <stdint.h>
 
 #ifdef __cplusplus /* C++ prototypes */
 extern "C" {
@@ -51,6 +51,14 @@ extern "C" {
         const char* keyword,    /* FITS keyword */
         const char* wchar,      /* WCS to use (A-Z or null) */
         int* val);              /* integer value (returned) */
+    int hgeti8(                 /* Extract int value from FITS header */
+        const char* hstring,    /* FITS header string */
+        const char* keyword,    /* FITS keyword */
+        int64_t* val);          /* integer value (returned) */
+    int hgetu8(                 /* Extract int value from FITS header */
+        const char* hstring,    /* FITS header string */
+        const char* keyword,    /* FITS keyword */
+        uint64_t* val);         /* integer value (returned) */
     int hgeti4(                 /* Extract int value from FITS header */
         const char* hstring,    /* FITS header string */
         const char* keyword,    /* FITS keyword */
