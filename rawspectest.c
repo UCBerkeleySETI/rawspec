@@ -49,7 +49,8 @@ int main(int argc, char * argv[])
     fprintf(stderr, "initialization failed\n");
     return 1;
   }
-  printf("initialization succeeded\n");
+  printf("initialization succeeded, RAWSPEC_BLOCSIZE=%u\n",
+         RAWSPEC_BLOCSIZE(&ctx));
 
   // Setup input data
   for(i=0; i<4; i++) {

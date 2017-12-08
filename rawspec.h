@@ -3,6 +3,8 @@
 
 #define MAX_OUTPUTS (4)
 
+#define RAWSPEC_BLOCSIZE(pctx) ((pctx)->Nc * (pctx)->Ntpb * (pctx)->Np * 2)
+
 // Forward declaration
 typedef struct rawspec_context_s rawspec_context;
 
