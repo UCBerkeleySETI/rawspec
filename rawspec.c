@@ -21,7 +21,7 @@ typedef struct {
   size_t blocsize;
   unsigned int npol;
   unsigned int obsnchan;
-  int64_t pktidx;
+  int64_t pktidx; // TODO make uint64_t?
   double obsfreq;
   double obsbw;
   double tbin;
@@ -117,8 +117,8 @@ int header_size(char * hdr, size_t len, int directio)
 // Reads obs params from fd.  On entry, fd is assumed to be at the start of a
 // RAW header section.  On success, this function returns the file offset of
 // the subsequent data block and the file descriptor `fd` will also refer to
-// that location in the file.  On failure, this function returns -1 and the
-// location to which fd refers is undefined.
+// that location in the file.  On EOF, this function returns 0.  On failure,
+// this function returns -1 and the location to which fd refers is undefined.
 off_t read_obs_params(int fd, obs_params_t * obs_params)
 {
   int i;
@@ -129,6 +129,10 @@ off_t read_obs_params(int fd, obs_params_t * obs_params)
 
   // Read header (plus some data, probably)
   hdr_size = read(fd, hdr, MAX_HDR_SIZE);
+
+  if(hdr_size < 80) {
+    return 0;
+  }
 
   obs_params->blocsize = get_int(hdr, "BLOCSIZE", 0);
   obs_params->npol     = get_int(hdr, "NPOL",     0);
@@ -211,12 +215,17 @@ int main(int argc, char *argv[])
 {
 	int s; // Indexes the stems
   int i; // Indexes the files for a given stem
+  int b; // Counts the blocks processed for a given file
 int j, k;
 char tmp[16];
   int fdin;
+  int next_stem;
   unsigned int Nc;   // Number of coarse channels
   unsigned int Np;   // Number of polarizations
   unsigned int Ntpb; // Number of time samples per block
+  int64_t pktidx0;
+  int64_t pktidx;
+  int64_t dpktidx;
   char fname[PATH_MAX+1];
   int fdout[MAX_OUTPUTS];
   int open_flags;
@@ -244,9 +253,11 @@ char tmp[16];
   ctx.Nas[1] = (1<<(20 -  3));
   ctx.Nas[2] = (1<<(20 - 10));
 
+  // For each stem
   for(s=1; s<argc; s++) {
     printf("working stem: %s\n", argv[s]);
 
+    // For each file from stem
     for(i=0; /* until break */; i++) {
       // Build next input file name
       snprintf(fname, PATH_MAX, "%s.%04d.raw", argv[s], i);
@@ -256,7 +267,7 @@ char tmp[16];
       fdin = open(fname, O_RDONLY);
       if(fdin == -1) {
         printf(" [%s]\n", strerror(errno));
-        break;
+        break; // Goto next stem
       }
       printf("\n");
 
@@ -264,7 +275,7 @@ char tmp[16];
       if(read_obs_params(fdin, &obs_params) == -1) {
         fprintf(stderr, "error getting obs params from %s\n", fname);
         close(fdin);
-        break;
+        break; // Goto next stem
       }
 
       // If first file for stem, check sizing
@@ -274,11 +285,18 @@ char tmp[16];
         Np = obs_params.npol;
         Ntpb = obs_params.blocsize / (2 * Np * Nc);
 
+        // First pktidx of first file
+        pktidx0 = obs_params.pktidx;
+        // Previous pktidx
+        pktidx  = pktidx0;
+        // Expected difference be between obs_params.pktidx and previous pktidx
+        dpktidx = 0;
+
         if(2 * Np * Nc * Ntpb != obs_params.blocsize) {
           printf("bad block geometry: 2*%d*%d*%u != %lu\n",
               Np, Nc, Ntpb, obs_params.blocsize);
           close(fdin);
-          break;
+          break; // Goto next stem
         }
 
 #ifdef VERBOSE
@@ -315,26 +333,56 @@ char tmp[16];
         }
       } // if first file
 
-      // mmap block
-      // TODO mmap block, but for now just printf first few blocks
-      for(k=0; k<4; k++) {
+      // For all blocks in file
+      for(b=0; /* until break */; b++) {
+        // Lazy init dpktidx as soon as possible
+        if(dpktidx == 0 && obs_params.pktidx != pktidx) {
+          dpktidx = obs_params.pktidx - pktidx;
+        }
+
+        // Validate that current pktidx is the expected distance from the
+        // previous one.
+        if(obs_params.pktidx - pktidx != dpktidx) {
+          printf("got unexpected jump in pktidx (%ld - %ld != %ld)\n",
+                 obs_params.pktidx, pktidx, dpktidx);
+          // For now, give up on this stem and go to next stem
+          next_stem = 1;
+          break;
+        }
+
+        // TODO mmap block, but for now just printf first few blocks
         read(fdin, tmp, 16);
-        lseek(fdin, obs_params.blocsize-16, SEEK_CUR);
-        printf("%016lx:", obs_params.pktidx);
+        lseek(fdin, -16, SEEK_CUR);
+        printf("%3d %016lx:", b, obs_params.pktidx);
         for(j=0; j<16; j++) {
           printf(" %02x", tmp[j] & 0xff);
         }
         printf("\n");
 
-        // Read obs params
-        if(read_obs_params(fdin, &obs_params) == -1) {
-          fprintf(stderr, "error getting obs params from %s\n", fname);
+        // seek past data block
+        lseek(fdin, obs_params.blocsize, SEEK_CUR);
+
+        // Remember pktidx
+        pktidx = obs_params.pktidx;
+
+        // Read obs params of next block
+        if(read_obs_params(fdin, &obs_params) <= 0) {
+          if(read_obs_params(fdin, &obs_params) == -1) {
+            fprintf(stderr, "error getting obs params from %s [%s]\n",
+                    fname, strerror(errno));
+          }
           break;
         }
-      }
+      } // For each block
 
-      // Go to next input file
+      // Done with input file
       close(fdin);
+
+      // If skipping to next stem
+      if(next_stem) {
+        next_stem = 0;
+        break;
+      }
     } // each file for stem
   } // each stem
 
