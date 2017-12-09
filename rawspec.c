@@ -340,14 +340,33 @@ char tmp[16];
           dpktidx = obs_params.pktidx - pktidx;
         }
 
-        // Validate that current pktidx is the expected distance from the
-        // previous one.
+        // Handle cases were the current pktidx is not the expected distance
+        // from the previous pktidx.
         if(obs_params.pktidx - pktidx != dpktidx) {
-          printf("got unexpected jump in pktidx (%ld - %ld != %ld)\n",
-                 obs_params.pktidx, pktidx, dpktidx);
-          // For now, give up on this stem and go to next stem
-          next_stem = 1;
-          break;
+          // Cannot go backwards or forwards by non-multiple of dpktidx
+          if(obs_params.pktidx < pktidx) {
+            printf("got backwards jump in pktidx: %ld -> %ld\n",
+                   pktidx, obs_params.pktidx);
+            // Give up on this stem and go to next stem
+            next_stem = 1;
+            break;
+          } else if((obs_params.pktidx - pktidx) % dpktidx != 0) {
+            printf("got misaligned jump in pktidx: (%ld - %ld) %% %ld != 0\n",
+                   obs_params.pktidx, pktidx, dpktidx);
+            // Give up on this stem and go to next stem
+            next_stem = 1;
+            break;
+          }
+
+          // Put in filler blocks of zeros
+          while(obs_params.pktidx - pktidx != dpktidx) {
+            // TODO memset
+            printf("%3d %016lx:", b, obs_params.pktidx);
+            printf(" -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --\n");
+
+            b++;
+            pktidx += dpktidx;
+          }
         }
 
         // TODO mmap block, but for now just printf first few blocks
