@@ -18,7 +18,7 @@ typedef struct {
   int output_product;
 } dump_cb_data_t;
 
-// CPU context structure
+// GPU context structure
 typedef struct {
   // Device pointer to FFT input buffer
   char2 * d_fft_in;
