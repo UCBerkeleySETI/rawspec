@@ -360,12 +360,13 @@ char tmp[16];
 
           // Put in filler blocks of zeros
           while(obs_params.pktidx - pktidx != dpktidx) {
-            // TODO memset
-            printf("%3d %016lx:", b, obs_params.pktidx);
-            printf(" -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --\n");
-
-            b++;
+            // Increment pktidx to next missing value
             pktidx += dpktidx;
+            // TODO memset
+            printf("%3d %016lx:", b, pktidx);
+            printf(" -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --\n");
+            // Increment block counter
+            b++;
           }
         }
 
