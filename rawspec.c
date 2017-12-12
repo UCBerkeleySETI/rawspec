@@ -14,181 +14,11 @@
 #include <sys/mman.h>
 
 #include "rawspec.h"
+#include "rawutils.h"
 #include "fitshead.h"
-
-typedef struct {
-  int directio;
-  size_t blocsize;
-  unsigned int npol;
-  unsigned int obsnchan;
-  int64_t pktidx; // TODO make uint64_t?
-  double obsfreq;
-  double obsbw;
-  double tbin;
-} obs_params_t;
-
-// Multiple of 80 and 512
-#define MAX_HDR_SIZE (25600)
 
 #define ELAPSED_NS(start,stop) \
   (((int64_t)stop.tv_sec-start.tv_sec)*1000*1000*1000+(stop.tv_nsec-start.tv_nsec))
-
-int get_int(const char * buf, const char * key, int def)
-{
-  char tmpstr[48];
-  int value;
-  if (hgeti4(buf, key, &value) == 0) {
-    if (hgets(buf, key, 48, tmpstr) == 0) {
-      value = def;
-    } else {
-      value = strtol(tmpstr, NULL, 0);
-    }
-  }
-
-  return value;
-}
-
-int get_s64(const char * buf, const char * key, int64_t def)
-{
-  char tmpstr[48];
-  int64_t value;
-  if (hgeti8(buf, key, &value) == 0) {
-    if (hgets(buf, key, 48, tmpstr) == 0) {
-      value = def;
-    } else {
-      value = strtoll(tmpstr, NULL, 0);
-    }
-  }
-
-  return value;
-}
-
-int get_u64(const char * buf, const char * key, uint64_t def)
-{
-  char tmpstr[48];
-  uint64_t value;
-  if (hgetu8(buf, key, &value) == 0) {
-    if (hgets(buf, key, 48, tmpstr) == 0) {
-      value = def;
-    } else {
-      value = strtoull(tmpstr, NULL, 0);
-    }
-  }
-
-  return value;
-}
-
-double get_dbl(const char * buf, const char * key, double def)
-{
-  char tmpstr[48];
-  double value;
-  if (hgetr8(buf, key, &value) == 0) {
-    if (hgets(buf, key, 48, tmpstr) == 0) {
-      value = def;
-    } else {
-      value = strtod(tmpstr, NULL);
-    }
-  }
-
-  return value;
-}
-
-int header_size(char * hdr, size_t len, int directio)
-{
-  int i;
-
-  // Loop over the 80-byte records
-  for(i=0; i<len; i += 80) {
-    // If we found the "END " record
-    if(!strncmp(hdr+i, "END ", 4)) {
-      //printf("header_size: found END at record %d\n", i);
-      // Move to just after END record
-      i += 80;
-      // Move past any direct I/O padding
-      if(directio) {
-        i += (MAX_HDR_SIZE - i) % 512;
-      }
-      return i;
-    }
-  }
-  return 0;
-}
-
-// Reads obs params from fd.  On entry, fd is assumed to be at the start of a
-// RAW header section.  On success, this function returns the file offset of
-// the subsequent data block and the file descriptor `fd` will also refer to
-// that location in the file.  On EOF, this function returns 0.  On failure,
-// this function returns -1 and the location to which fd refers is undefined.
-off_t read_obs_params(int fd, obs_params_t * obs_params)
-{
-  int i;
-  char hdr[MAX_HDR_SIZE] __attribute__ ((aligned (512)));
-  int hdr_size;
-  off_t pos = lseek(fd, 0, SEEK_CUR);
-  //printf("ROP: pos=%lu\n", pos);
-
-  // Read header (plus some data, probably)
-  hdr_size = read(fd, hdr, MAX_HDR_SIZE);
-
-  if(hdr_size == -1) {
-    return -1;
-  } else if(hdr_size < 80) {
-    return 0;
-  }
-
-  obs_params->blocsize = get_int(hdr, "BLOCSIZE", 0);
-  obs_params->npol     = get_int(hdr, "NPOL",     0);
-  obs_params->obsnchan = get_int(hdr, "OBSNCHAN", 0);
-  obs_params->obsfreq  = get_dbl(hdr, "OBSFREQ",  0.0);
-  obs_params->obsbw    = get_dbl(hdr, "OBSBW",    0.0);
-  obs_params->tbin     = get_dbl(hdr, "TBIN",     0.0);
-  obs_params->directio = get_int(hdr, "DIRECTIO", 0);
-  obs_params->pktidx   = get_int(hdr, "PKTIDX",  -1);
-
-  if(obs_params->blocsize ==  0) {
-    fprintf(stderr, " BLOCSIZE not found in header\n");
-    return -1;
-  }
-  if(obs_params->npol  ==  0) {
-    fprintf(stderr, "NPOL not found in header\n");
-    return -1;
-  }
-  if(obs_params->obsnchan ==  0) {
-    fprintf(stderr, "OBSNCHAN not found in header\n");
-    return -1;
-  }
-  if(obs_params->obsfreq  ==  0.0) {
-    fprintf(stderr, "OBSFREQ not found in header\n");
-    return -1;
-  }
-  if(obs_params->obsbw    ==  0.0) {
-    fprintf(stderr, "OBSBW not found in header\n");
-    return -1;
-  }
-  if(obs_params->tbin     ==  0.0) {
-    fprintf(stderr, "TBIN not found in header\n");
-    return -1;
-  }
-  if(obs_params->pktidx   == -1) {
-    fprintf(stderr, "PKTIDX not found in header\n");
-    return -1;
-  }
-  // 4 is the number of possible cross pol products
-  if(obs_params->npol == 4) {
-    // 2 is the actual number of polarizations present
-    obs_params->npol = 2;
-  }
-
-  // Get actual size of header (plus any padding)
-  hdr_size = header_size(hdr, hdr_size, obs_params->directio);
-  //printf("ROP: hdr=%lu\n", hdr_size);
-
-  // Seek forward from original position past header (and any padding)
-  pos = lseek(fd, pos + hdr_size, SEEK_SET);
-  //printf("ROP: seek=%ld\n", pos);
-
-  return pos;
-}
 
 int open_output_file(const char *stem, int output_idx)
 {
@@ -270,7 +100,7 @@ char tmp[16];
   size_t bytes_read;
   size_t total_bytes_read;
   off_t pos;
-  obs_params_t obs_params;
+  raw_hdr_t raw_hdr;
   rawspec_context ctx;
 
   if(argc<2) {
@@ -330,7 +160,7 @@ char tmp[16];
       printf("\n");
 
       // Read obs params
-      pos = read_obs_params(fdin, &obs_params);
+      pos = raw_read_header(fdin, &raw_hdr);
       if(pos <= 0) {
         if(pos == -1) {
           fprintf(stderr, "error getting obs params from %s\n", fname);
@@ -345,31 +175,31 @@ char tmp[16];
       // If first file for stem, check sizing
       if(fi == 0) {
         // Calculate Ntpb and validate block dimensions
-        Nc = obs_params.obsnchan;
-        Np = obs_params.npol;
-        Ntpb = obs_params.blocsize / (2 * Np * Nc);
+        Nc = raw_hdr.obsnchan;
+        Np = raw_hdr.npol;
+        Ntpb = raw_hdr.blocsize / (2 * Np * Nc);
 
         // First pktidx of first file
-        pktidx0 = obs_params.pktidx;
+        pktidx0 = raw_hdr.pktidx;
         // Previous pktidx
         pktidx  = pktidx0;
-        // Expected difference be between obs_params.pktidx and previous pktidx
+        // Expected difference be between raw_hdr.pktidx and previous pktidx
         dpktidx = 0;
 
-        if(2 * Np * Nc * Ntpb != obs_params.blocsize) {
+        if(2 * Np * Nc * Ntpb != raw_hdr.blocsize) {
           printf("bad block geometry: 2*%d*%d*%u != %lu\n",
-              Np, Nc, Ntpb, obs_params.blocsize);
+              Np, Nc, Ntpb, raw_hdr.blocsize);
           close(fdin);
           break; // Goto next stem
         }
 
 #ifdef VERBOSE
-        printf("BLOCSIZE = %lu\n", obs_params.blocsize);
-        printf("OBSNCHAN = %d\n",  obs_params.obsnchan);
-        printf("NPOL     = %d\n",  obs_params.npol);
-        printf("OBSFREQ  = %g\n",  obs_params.obsfreq);
-        printf("OBSBW    = %g\n",  obs_params.obsbw);
-        printf("TBIN     = %g\n",  obs_params.tbin);
+        printf("BLOCSIZE = %lu\n", raw_hdr.blocsize);
+        printf("OBSNCHAN = %d\n",  raw_hdr.obsnchan);
+        printf("NPOL     = %d\n",  raw_hdr.npol);
+        printf("OBSFREQ  = %g\n",  raw_hdr.obsfreq);
+        printf("OBSBW    = %g\n",  raw_hdr.obsbw);
+        printf("TBIN     = %g\n",  raw_hdr.tbin);
 #endif // VERBOSE
 
         // If block dimensions have changed
@@ -403,35 +233,35 @@ char tmp[16];
       // For all blocks in file
       for(;;) {
         // Lazy init dpktidx as soon as possible
-        if(dpktidx == 0 && obs_params.pktidx > pktidx) {
-          dpktidx = obs_params.pktidx - pktidx;
+        if(dpktidx == 0 && raw_hdr.pktidx > pktidx) {
+          dpktidx = raw_hdr.pktidx - pktidx;
         }
 
         // Handle cases were the current pktidx is not the expected distance
         // from the previous pktidx.
-        if(obs_params.pktidx - pktidx != dpktidx) {
+        if(raw_hdr.pktidx - pktidx != dpktidx) {
           // Cannot go backwards or forwards by non-multiple of dpktidx
-          if(obs_params.pktidx < pktidx) {
+          if(raw_hdr.pktidx < pktidx) {
             printf("got backwards jump in pktidx: %ld -> %ld\n",
-                   pktidx, obs_params.pktidx);
+                   pktidx, raw_hdr.pktidx);
             // Give up on this stem and go to next stem
             next_stem = 1;
             break;
-          } else if((obs_params.pktidx - pktidx) % dpktidx != 0) {
+          } else if((raw_hdr.pktidx - pktidx) % dpktidx != 0) {
             printf("got misaligned jump in pktidx: (%ld - %ld) %% %ld != 0\n",
-                   obs_params.pktidx, pktidx, dpktidx);
+                   raw_hdr.pktidx, pktidx, dpktidx);
             // Give up on this stem and go to next stem
             next_stem = 1;
             break;
           }
 
           // Put in filler blocks of zeros
-          while(obs_params.pktidx - pktidx != dpktidx) {
+          while(raw_hdr.pktidx - pktidx != dpktidx) {
             // Increment pktidx to next missing value
             pktidx += dpktidx;
 
             // Fill block buffer with zeros
-            memset(ctx.h_blkbufs[bi%ctx.Nb], 0, obs_params.blocsize);
+            memset(ctx.h_blkbufs[bi%ctx.Nb], 0, raw_hdr.blocsize);
 
 #ifdef VERBOSE
             printf("%3d %016lx:", bi, pktidx);
@@ -447,7 +277,7 @@ char tmp[16];
               }
               fprintf(stderr, "\n");
               rawspec_copy_blocks_to_gpu(&ctx, 0, 0, ctx.Nb);
-              rawspec_start_processing(&ctx, obs_params.obsbw < 0 ? -1 : +1);
+              rawspec_start_processing(&ctx, raw_hdr.obsbw < 0 ? -1 : +1);
             }
 
             // Increment block counter
@@ -457,12 +287,12 @@ char tmp[16];
 
         bytes_read = read_fully(fdin,
                                 ctx.h_blkbufs[bi % ctx.Nb],
-                                obs_params.blocsize);
+                                raw_hdr.blocsize);
         if(bytes_read == -1) {
           perror("read");
           next_stem = 1;
           break;
-        } else if(bytes_read < obs_params.blocsize) {
+        } else if(bytes_read < raw_hdr.blocsize) {
           fprintf(stderr, "incomplete block at EOF\n");
           next_stem = 1;
           break;
@@ -470,7 +300,7 @@ char tmp[16];
         total_bytes_read += bytes_read;
 
 #ifdef VERBOSE
-        printf("%3d %016lx:", bi, obs_params.pktidx);
+        printf("%3d %016lx:", bi, raw_hdr.pktidx);
         for(j=0; j<16; j++) {
           printf(" %02x", ctx.h_blkbufs[bi%ctx.Nb][j] & 0xff);
         }
@@ -488,14 +318,14 @@ char tmp[16];
 #endif // VERBOSE
           rawspec_wait_for_completion(&ctx);
           rawspec_copy_blocks_to_gpu(&ctx, 0, 0, ctx.Nb);
-          rawspec_start_processing(&ctx, obs_params.obsbw < 0 ? -1 : +1);
+          rawspec_start_processing(&ctx, raw_hdr.obsbw < 0 ? -1 : +1);
         }
 
         // Remember pktidx
-        pktidx = obs_params.pktidx;
+        pktidx = raw_hdr.pktidx;
 
         // Read obs params of next block
-        pos = read_obs_params(fdin, &obs_params);
+        pos = raw_read_header(fdin, &raw_hdr);
         if(pos <= 0) {
           if(pos == -1) {
             fprintf(stderr, "error getting obs params from %s [%s]\n",
