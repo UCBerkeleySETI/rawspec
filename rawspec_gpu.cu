@@ -336,8 +336,8 @@ int rawspec_initialize(rawspec_context * ctx)
 
     // Host buffer needs to accommodate the number of integrations that will be
     // dumped at one time (Nd).
-    cuda_rc = cudaHostAlloc(&ctx->h_pwrbuf[i],
-                       gpu_ctx->Nds[i]*ctx->Nts[i]*ctx->Nc*sizeof(float),
+    ctx->h_pwrbuf_size[i] = gpu_ctx->Nds[i]*ctx->Nts[i]*ctx->Nc*sizeof(float);
+    cuda_rc = cudaHostAlloc(&ctx->h_pwrbuf[i], ctx->h_pwrbuf_size[i],
                        cudaHostAllocDefault);
 
     if(cuda_rc != cudaSuccess) {

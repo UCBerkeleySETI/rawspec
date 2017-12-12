@@ -35,62 +35,62 @@ typedef struct {
 
 int get_int(const char * buf, const char * key, int def)
 {
-	char tmpstr[48];
-	int value;
-	if (hgeti4(buf, key, &value) == 0) {
-		if (hgets(buf, key, 48, tmpstr) == 0) {
-			value = def;
-		} else {
-			value = strtol(tmpstr, NULL, 0);
-		}
-	}
+  char tmpstr[48];
+  int value;
+  if (hgeti4(buf, key, &value) == 0) {
+    if (hgets(buf, key, 48, tmpstr) == 0) {
+      value = def;
+    } else {
+      value = strtol(tmpstr, NULL, 0);
+    }
+  }
 
-	return value;
+  return value;
 }
 
 int get_s64(const char * buf, const char * key, int64_t def)
 {
-	char tmpstr[48];
-	int64_t value;
-	if (hgeti8(buf, key, &value) == 0) {
-		if (hgets(buf, key, 48, tmpstr) == 0) {
-			value = def;
-		} else {
-			value = strtoll(tmpstr, NULL, 0);
-		}
-	}
+  char tmpstr[48];
+  int64_t value;
+  if (hgeti8(buf, key, &value) == 0) {
+    if (hgets(buf, key, 48, tmpstr) == 0) {
+      value = def;
+    } else {
+      value = strtoll(tmpstr, NULL, 0);
+    }
+  }
 
-	return value;
+  return value;
 }
 
 int get_u64(const char * buf, const char * key, uint64_t def)
 {
-	char tmpstr[48];
-	uint64_t value;
-	if (hgetu8(buf, key, &value) == 0) {
-		if (hgets(buf, key, 48, tmpstr) == 0) {
-			value = def;
-		} else {
-			value = strtoull(tmpstr, NULL, 0);
-		}
-	}
+  char tmpstr[48];
+  uint64_t value;
+  if (hgetu8(buf, key, &value) == 0) {
+    if (hgets(buf, key, 48, tmpstr) == 0) {
+      value = def;
+    } else {
+      value = strtoull(tmpstr, NULL, 0);
+    }
+  }
 
-	return value;
+  return value;
 }
 
 double get_dbl(const char * buf, const char * key, double def)
 {
-	char tmpstr[48];
-	double value;
-	if (hgetr8(buf, key, &value) == 0) {
-		if (hgets(buf, key, 48, tmpstr) == 0) {
-			value = def;
-		} else {
-			value = strtod(tmpstr, NULL);
-		}
-	}
+  char tmpstr[48];
+  double value;
+  if (hgetr8(buf, key, &value) == 0) {
+    if (hgets(buf, key, 48, tmpstr) == 0) {
+      value = def;
+    } else {
+      value = strtod(tmpstr, NULL);
+    }
+  }
 
-	return value;
+  return value;
 }
 
 int header_size(char * hdr, size_t len, int directio)
@@ -122,7 +122,7 @@ int header_size(char * hdr, size_t len, int directio)
 off_t read_obs_params(int fd, obs_params_t * obs_params)
 {
   int i;
-  char hdr[MAX_HDR_SIZE];
+  char hdr[MAX_HDR_SIZE] __attribute__ ((aligned (512)));
   int hdr_size;
   off_t pos = lseek(fd, 0, SEEK_CUR);
   //printf("ROP: pos=%lu\n", pos);
@@ -130,7 +130,9 @@ off_t read_obs_params(int fd, obs_params_t * obs_params)
   // Read header (plus some data, probably)
   hdr_size = read(fd, hdr, MAX_HDR_SIZE);
 
-  if(hdr_size < 80) {
+  if(hdr_size == -1) {
+    return -1;
+  } else if(hdr_size < 80) {
     return 0;
   }
 
@@ -143,13 +145,32 @@ off_t read_obs_params(int fd, obs_params_t * obs_params)
   obs_params->directio = get_int(hdr, "DIRECTIO", 0);
   obs_params->pktidx   = get_int(hdr, "PKTIDX",  -1);
 
-  if(obs_params->blocsize ==  0
-  || obs_params->obsnchan ==  0
-  || obs_params->obsfreq  ==  0.0
-  || obs_params->obsbw    ==  0.0
-  || obs_params->tbin     ==  0.0
-  || obs_params->npol     ==  0
-  || obs_params->pktidx   == -1) {
+  if(obs_params->blocsize ==  0) {
+    fprintf(stderr, " BLOCSIZE not found in header\n");
+    return -1;
+  }
+  if(obs_params->npol  ==  0) {
+    fprintf(stderr, "NPOL not found in header\n");
+    return -1;
+  }
+  if(obs_params->obsnchan ==  0) {
+    fprintf(stderr, "OBSNCHAN not found in header\n");
+    return -1;
+  }
+  if(obs_params->obsfreq  ==  0.0) {
+    fprintf(stderr, "OBSFREQ not found in header\n");
+    return -1;
+  }
+  if(obs_params->obsbw    ==  0.0) {
+    fprintf(stderr, "OBSBW not found in header\n");
+    return -1;
+  }
+  if(obs_params->tbin     ==  0.0) {
+    fprintf(stderr, "TBIN not found in header\n");
+    return -1;
+  }
+  if(obs_params->pktidx   == -1) {
+    fprintf(stderr, "PKTIDX not found in header\n");
     return -1;
   }
   // 4 is the number of possible cross pol products
@@ -169,55 +190,72 @@ off_t read_obs_params(int fd, obs_params_t * obs_params)
   return pos;
 }
 
-// Returns 0 on success
-int do_mmap(rawspec_context *ctx, int fd, size_t blocsize)
+int open_output_file(const char *stem, int output_idx)
+{
+  int fd;
+  char fname[PATH_MAX+1];
+
+  snprintf(fname, PATH_MAX, "%s.%04d.fil", stem, output_idx);
+  fname[PATH_MAX] = '\0';
+  fd = open(fname, O_WRONLY | O_CREAT | O_TRUNC, 0777);
+  if(fd == -1) {
+    perror(fname);
+  }
+  return fd;
+}
+
+void dump_callback(rawspec_context * ctx,
+                   int output_product)
 {
   int i;
-  size_t file_size;
-  int num_blocks;
-  size_t total_bytes_read = 1;
+#ifdef VERBOSE
+  fprintf(stderr, "cb %d writing %lu bytes:",
+      output_product, ctx->h_pwrbuf_size[output_product]);
+  for(i=0; i<16; i++) {
+    fprintf(stderr, " %02x", ((char *)ctx->h_pwrbuf[output_product])[i] & 0xff);
+  }
+  fprintf(stderr, "\n");
+#endif // VERBOSE
+  int * fdouts = (int *)ctx->user_data;
+  write(fdouts[output_product],
+        ctx->h_pwrbuf[output_product],
+        ctx->h_pwrbuf_size[output_product]);
+}
 
-  // Timing variables
-  struct timespec ts_start, ts_stop;
-  uint64_t elapsed_ns=0;
+// Reads `bytes_to_read` bytes from `fd` into the buffer pointed to by `buf`.
+// Returns the total bytes read or -1 on error.  A non-negative return value
+// will be less than `bytes_to_read` only of EOF is reached.
+ssize_t read_fully(int fd, void * buf, size_t bytes_to_read)
+{
+  ssize_t bytes_read;
+  ssize_t total_bytes_read = 0;
 
-  file_size = lseek(fd, 0, SEEK_END);
-  num_blocks = file_size / blocsize;
-
-  clock_gettime(CLOCK_MONOTONIC, &ts_start);
-
-  for(i=0; i<num_blocks; i++) {
-    if(mmap(ctx->h_blkbufs[i % ctx->Nb], blocsize, PROT_READ,
-            MAP_PRIVATE | MAP_FIXED | MAP_POPULATE,
-            fd, i*blocsize) == MAP_FAILED) {
-      perror("mmap");
-      return 1;
+  while(bytes_to_read > 0) {
+    bytes_read = read(fd, buf, bytes_to_read);
+    if(bytes_read <= 0) {
+      if(bytes_read == 0) {
+        break;
+      } else {
+        return -1;
+      }
     }
-    total_bytes_read += blocsize;
+    buf += bytes_read;
+    bytes_to_read -= bytes_read;
+    total_bytes_read += bytes_read;
   }
 
-  clock_gettime(CLOCK_MONOTONIC, &ts_stop);
-  elapsed_ns = ELAPSED_NS(ts_start, ts_stop);
-
-  perror("mmap");
-
-  printf("mmap'd %lu bytes in %.6f sec (%.3f GBps)\n",
-         total_bytes_read,
-         elapsed_ns / 1e9,
-         total_bytes_read / (double)elapsed_ns);
-
-  for(i=0; i<ctx->Nb; i++) {
-    munmap(ctx->h_blkbufs[i], blocsize);
-  }
+  return total_bytes_read;
 }
 
 int main(int argc, char *argv[])
 {
-	int s; // Indexes the stems
-  int i; // Indexes the files for a given stem
-  int b; // Counts the blocks processed for a given file
+  int si; // Indexes the stems
+  int fi; // Indexes the files for a given stem
+  int bi; // Counts the blocks processed for a given file
+  int i;
 int j, k;
 char tmp[16];
+  void * pv;
   int fdin;
   int next_stem;
   unsigned int Nc;   // Number of coarse channels
@@ -227,9 +265,11 @@ char tmp[16];
   int64_t pktidx;
   int64_t dpktidx;
   char fname[PATH_MAX+1];
-  int fdout[MAX_OUTPUTS];
+  int fdout;
   int open_flags;
   size_t bytes_read;
+  size_t total_bytes_read;
+  off_t pos;
   obs_params_t obs_params;
   rawspec_context ctx;
 
@@ -248,23 +288,41 @@ char tmp[16];
   ctx.Nts[0] = (1<<20);
   ctx.Nts[1] = (1<<3);
   ctx.Nts[2] = (1<<10);
-  // One dump per output product
-  ctx.Nas[0] = (1<<(20 - 20));
-  ctx.Nas[1] = (1<<(20 -  3));
-  ctx.Nas[2] = (1<<(20 - 10));
+  // One dump per output product per 32 input buffers
+  ctx.Nas[0] = 32*(1<<(20 - 20));
+  ctx.Nas[1] = 32*(1<<(20 -  3));
+  ctx.Nas[2] = 32*(1<<(20 - 10));
+
+  // Init user_data to be array of file descriptors
+  ctx.user_data = malloc(ctx.No * sizeof(int));
+  ctx.dump_callback = dump_callback;
 
   // For each stem
-  for(s=1; s<argc; s++) {
-    printf("working stem: %s\n", argv[s]);
+  for(si=1; si<argc; si++) {
+    printf("working stem: %s\n", argv[si]);
+
+    for(i=0; i<ctx.No; i++) {
+      fdout = open_output_file(argv[si], i);
+      if(fdout == -1) {
+        return 1; // Give up
+      }
+      ((int *)ctx.user_data)[i] = fdout;
+    }
+
+    // bi is the block counter for the entire sequence of files for this stem.
+    // Note that bi is the count of contiguous blocks that are fed to the GPU.
+    // If the input file has missing blocks (based on PKTIDX gaps), bi will
+    // still count through those missing blocks.
+    bi = 0;
 
     // For each file from stem
-    for(i=0; /* until break */; i++) {
+    for(fi=0; /* until break */; fi++) {
       // Build next input file name
-      snprintf(fname, PATH_MAX, "%s.%04d.raw", argv[s], i);
+      snprintf(fname, PATH_MAX, "%s.%04d.raw", argv[si], fi);
       fname[PATH_MAX] = '\0';
 
       printf("opening file: %s", fname);
-      fdin = open(fname, O_RDONLY);
+      fdin = open(fname, O_RDONLY | O_DIRECT);
       if(fdin == -1) {
         printf(" [%s]\n", strerror(errno));
         break; // Goto next stem
@@ -272,14 +330,20 @@ char tmp[16];
       printf("\n");
 
       // Read obs params
-      if(read_obs_params(fdin, &obs_params) == -1) {
-        fprintf(stderr, "error getting obs params from %s\n", fname);
+      pos = read_obs_params(fdin, &obs_params);
+      if(pos <= 0) {
+        if(pos == -1) {
+          fprintf(stderr, "error getting obs params from %s\n", fname);
+        } else {
+          fprintf(stderr, "no data found in %s\n", fname);
+        }
         close(fdin);
+        next_stem = 1;
         break; // Goto next stem
       }
 
       // If first file for stem, check sizing
-      if(i == 0) {
+      if(fi == 0) {
         // Calculate Ntpb and validate block dimensions
         Nc = obs_params.obsnchan;
         Np = obs_params.npol;
@@ -326,17 +390,20 @@ char tmp[16];
             fprintf(stderr, "rawspec initialization failed\n");
             close(fdin);
             break;
+          } else {
+            printf("initializtion succeeded for new block dimensions\n");
           }
         } else {
           // Same as previous stem, just reset for new integration
+          printf("resetting integration buffers for new stem\n");
           rawspec_reset_integration(&ctx);
         }
       } // if first file
 
       // For all blocks in file
-      for(b=0; /* until break */; b++) {
+      for(;;) {
         // Lazy init dpktidx as soon as possible
-        if(dpktidx == 0 && obs_params.pktidx != pktidx) {
+        if(dpktidx == 0 && obs_params.pktidx > pktidx) {
           dpktidx = obs_params.pktidx - pktidx;
         }
 
@@ -362,37 +429,82 @@ char tmp[16];
           while(obs_params.pktidx - pktidx != dpktidx) {
             // Increment pktidx to next missing value
             pktidx += dpktidx;
-            // TODO memset
-            printf("%3d %016lx:", b, pktidx);
-            printf(" -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --\n");
-            // Increment block counter
-            b++;
-          }
-        }
 
-        // TODO mmap block, but for now just printf first few blocks
-        read(fdin, tmp, 16);
-        lseek(fdin, -16, SEEK_CUR);
-        printf("%3d %016lx:", b, obs_params.pktidx);
+            // Fill block buffer with zeros
+            memset(ctx.h_blkbufs[bi%ctx.Nb], 0, obs_params.blocsize);
+
+#ifdef VERBOSE
+            printf("%3d %016lx:", bi, pktidx);
+            printf(" -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --\n");
+#endif // VERBOSE
+
+            // If this is the last block of an input buffer, start processing
+            if(bi % ctx.Nb == ctx.Nb - 1) {
+              rawspec_wait_for_completion(&ctx);
+              fprintf(stderr, "block 0: ");
+              for(j=0; j<16; j++) {
+                fprintf(stderr, " %02x", ctx.h_blkbufs[0][j] & 0xff);
+              }
+              fprintf(stderr, "\n");
+              rawspec_copy_blocks_to_gpu(&ctx, 0, 0, ctx.Nb);
+              rawspec_start_processing(&ctx, obs_params.obsbw < 0 ? -1 : +1);
+            }
+
+            // Increment block counter
+            bi++;
+          } // filler zero blocks
+        } // irregular pktidx step
+
+        bytes_read = read_fully(fdin,
+                                ctx.h_blkbufs[bi % ctx.Nb],
+                                obs_params.blocsize);
+        if(bytes_read == -1) {
+          perror("read");
+          next_stem = 1;
+          break;
+        } else if(bytes_read < obs_params.blocsize) {
+          fprintf(stderr, "incomplete block at EOF\n");
+          next_stem = 1;
+          break;
+        }
+        total_bytes_read += bytes_read;
+
+#ifdef VERBOSE
+        printf("%3d %016lx:", bi, obs_params.pktidx);
         for(j=0; j<16; j++) {
-          printf(" %02x", tmp[j] & 0xff);
+          printf(" %02x", ctx.h_blkbufs[bi%ctx.Nb][j] & 0xff);
         }
         printf("\n");
+#endif // VERBOSE
 
-        // seek past data block
-        lseek(fdin, obs_params.blocsize, SEEK_CUR);
+        // If this is the last block of an input buffer, start processing
+        if(bi % ctx.Nb == ctx.Nb - 1) {
+#ifdef VERBOSE
+          fprintf(stderr, "block %3d buf 0: ", bi);
+          for(j=0; j<16; j++) {
+            fprintf(stderr, " %02x", ctx.h_blkbufs[0][j] & 0xff);
+          }
+          fprintf(stderr, "\n");
+#endif // VERBOSE
+          rawspec_wait_for_completion(&ctx);
+          rawspec_copy_blocks_to_gpu(&ctx, 0, 0, ctx.Nb);
+          rawspec_start_processing(&ctx, obs_params.obsbw < 0 ? -1 : +1);
+        }
 
         // Remember pktidx
         pktidx = obs_params.pktidx;
 
         // Read obs params of next block
-        if(read_obs_params(fdin, &obs_params) <= 0) {
-          if(read_obs_params(fdin, &obs_params) == -1) {
+        pos = read_obs_params(fdin, &obs_params);
+        if(pos <= 0) {
+          if(pos == -1) {
             fprintf(stderr, "error getting obs params from %s [%s]\n",
                     fname, strerror(errno));
           }
           break;
         }
+
+        bi++;
       } // For each block
 
       // Done with input file
@@ -404,62 +516,20 @@ char tmp[16];
         break;
       }
     } // each file for stem
+
+    // Wait for GPU work to complete
+    if(ctx.Nc) {
+      rawspec_wait_for_completion(&ctx);
+    }
+
+    // Close output files
+    for(i=0; i<ctx.No; i++) {
+      close(((int *)ctx.user_data)[i]);
+    }
   } // each stem
 
-  return 0;
-}
-
-#if 0
-  int blocsize = 92274688;
-
-  ctx.No = 3;
-  ctx.Np = 2;
-  ctx.Nc = 88;
-  ctx.Ntpb = blocsize / (2 * ctx.Np * ctx.Nc);
-  ctx.Nts[0] = (1<<20);
-  ctx.Nts[1] = (1<<3);
-  ctx.Nts[2] = (1<<10);
-  // One dump per output product
-  ctx.Nas[0] = (1<<(20 - 20));
-  ctx.Nas[1] = (1<<(20 -  3));
-  ctx.Nas[2] = (1<<(20 - 10));
-  // Auto-calculate Nb
-  ctx.Nb = 0;
-  if(argc<2) {
-    fprintf(stderr, "usage: %s FILENAME\n", argv[0]);
-    return 1;
-  }
-
-  open_flags = O_RDONLY;
-
-  if(argc>2 && strstr(argv[2], "direct")) {
-    printf("using Direct I/O\n");
-    open_flags |= O_DIRECT; 
-  }
-  
-  // Initialize
-  if(rawspec_initialize(&ctx)) {
-    fprintf(stderr, "initialization failed\n");
-    return 1;
-  }
-  printf("initialization succeeded\n");
-
-  // Open file
-  fd = open(argv[1], open_flags);
-  if(fd == -1) {
-    perror("open");
-    return 1;
-  }
-  printf("file open succeeded\n");
-
-  if(argc>2 && strstr(argv[2], "read")) {
-    do_read(&ctx, fd, blocsize);
-  } else if(argc>2 && strstr(argv[2], "memcpy")) {
-    do_memcpy(&ctx, fd, blocsize);
-  } else {
-    do_mmap(&ctx, fd, blocsize);
-  }
+  // Final cleanup
+  rawspec_cleanup(&ctx);
 
   return 0;
 }
-#endif

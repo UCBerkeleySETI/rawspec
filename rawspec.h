@@ -59,6 +59,7 @@ struct rawspec_context_s {
   // Host pointers to the output power buffers.
   // The sizes, in bytes, will be Nc * Nts[i].
   float * h_pwrbuf[MAX_OUTPUTS];
+  size_t h_pwrbuf_size[MAX_OUTPUTS];
 
   // Fields below here are not normally needed at all by the client
 
