@@ -1,5 +1,3 @@
-//#define _GNU_SOURCE 1
-//
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -69,6 +67,56 @@ double raw_get_dbl(const char * buf, const char * key, double def)
   return value;
 }
 
+void raw_get_str(const char * buf, const char * key, const char * def,
+                 char * out, size_t len)
+{
+  if (hgets(buf, key, len, out) == 0) {
+    strncpy(out, def, len);
+    out[len-1] = '\0';
+  }
+}
+
+#define raw_hmsstr_to_h(hmsstr) (raw_dmsstr_to_d(hmsstr))
+
+double raw_dmsstr_to_d(char * dmsstr)
+{
+  int sign = 1;
+  double d = 0.0;
+
+  char * saveptr;
+  char * tok;
+
+  if(dmsstr[0] == '-') {
+    sign = -1;
+    dmsstr++;
+  } else if(dmsstr[0] == '+') {
+    dmsstr++;
+  }
+
+  tok = strtok_r(dmsstr, ":", &saveptr);
+  if(tok) {
+    // Degrees (or hours)
+    d = strtod(tok, NULL);
+
+    tok = strtok_r(NULL, ":", &saveptr);
+    if(tok) {
+      // Minutes
+      d += strtod(tok, NULL) / 60.0;
+
+      tok = strtok_r(NULL, ":", &saveptr);
+      if(tok) {
+        // Seconds
+        d += strtod(tok, NULL) / 3600.0;
+        tok = strtok_r(NULL, ":", &saveptr);
+      }
+    }
+  } else {
+    d = strtod(dmsstr, NULL);
+  }
+
+  return sign * d;
+}
+
 int raw_header_size(char * hdr, size_t len, int directio)
 {
   int i;
@@ -98,10 +146,12 @@ int raw_header_size(char * hdr, size_t len, int directio)
 off_t raw_read_header(int fd, raw_hdr_t * raw_hdr)
 {
   int i;
+  int smjd;
+  int imjd;
   char hdr[MAX_RAW_HDR_SIZE] __attribute__ ((aligned (512)));
   int hdr_size;
+  char tmp[80];
   off_t pos = lseek(fd, 0, SEEK_CUR);
-  //printf("ROP: pos=%lu\n", pos);
 
   // Read header (plus some data, probably)
   hdr_size = read(fd, hdr, MAX_RAW_HDR_SIZE);
@@ -120,6 +170,18 @@ off_t raw_read_header(int fd, raw_hdr_t * raw_hdr)
   raw_hdr->tbin     = raw_get_dbl(hdr, "TBIN",     0.0);
   raw_hdr->directio = raw_get_int(hdr, "DIRECTIO", 0);
   raw_hdr->pktidx   = raw_get_int(hdr, "PKTIDX",  -1);
+
+  raw_get_str(hdr, "RA_STR", "0.0", tmp, 80);
+  raw_hdr->ra = raw_hmsstr_to_h(tmp);
+
+  raw_get_str(hdr, "DEC_STR", "0.0", tmp, 80);
+  raw_hdr->dec = raw_dmsstr_to_d(tmp);
+
+  imjd = raw_get_int(hdr, "STT_IMJD", 51545);
+  smjd = raw_get_int(hdr, "STT_SMJD", 0);
+  raw_hdr->mjd = ((double)imjd) + ((double)smjd)/86400.0;
+
+  raw_get_str(hdr, "SRC_NAME", "Unknown", raw_hdr->src_name, 80);
 
   if(raw_hdr->blocsize ==  0) {
     fprintf(stderr, " BLOCSIZE not found in header\n");

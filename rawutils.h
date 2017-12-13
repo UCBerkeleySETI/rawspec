@@ -13,6 +13,10 @@ typedef struct {
   double obsfreq;
   double obsbw;
   double tbin;
+  double ra;  // hours
+  double dec; // degrees
+  double mjd;
+  char src_name[81];
 } raw_hdr_t;
 
 // Multiple of 80 and 512
@@ -29,6 +33,12 @@ int raw_get_s64(const char * buf, const char * key, int64_t def);
 int raw_get_u64(const char * buf, const char * key, uint64_t def);
 
 double raw_get_dbl(const char * buf, const char * key, double def);
+
+void raw_get_str(const char * buf, const char * key, const char * def,
+                 char * out, size_t len);
+
+double raw_dmsstr_to_d(char * dmsstr);
+#define raw_hmsstr_to_h(hmsstr) (raw_dmsstr_to_d(hmsstr))
 
 int raw_header_size(char * hdr, size_t len, int directio);
 
