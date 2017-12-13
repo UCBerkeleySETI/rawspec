@@ -15,10 +15,16 @@
 
 #include "rawspec.h"
 #include "rawutils.h"
+#include "fbutils.h"
 #include "fitshead.h"
 
 #define ELAPSED_NS(start,stop) \
   (((int64_t)stop.tv_sec-start.tv_sec)*1000*1000*1000+(stop.tv_nsec-start.tv_nsec))
+
+typedef struct {
+  int fd; // Output file descriptor
+  fb_hdr_t fb_hdr;
+} callback_data_t;
 
 int open_output_file(const char *stem, int output_idx)
 {
@@ -46,8 +52,8 @@ void dump_callback(rawspec_context * ctx,
   }
   fprintf(stderr, "\n");
 #endif // VERBOSE
-  int * fdouts = (int *)ctx->user_data;
-  write(fdouts[output_product],
+  callback_data_t * cb_data = (callback_data_t *)ctx->user_data;
+  write(cb_data[output_product].fd,
         ctx->h_pwrbuf[output_product],
         ctx->h_pwrbuf_size[output_product]);
 }
@@ -95,12 +101,14 @@ char tmp[16];
   int64_t pktidx;
   int64_t dpktidx;
   char fname[PATH_MAX+1];
+  char * bfname;
   int fdout;
   int open_flags;
   size_t bytes_read;
   size_t total_bytes_read;
   off_t pos;
   raw_hdr_t raw_hdr;
+  callback_data_t cb_data[MAX_OUTPUTS];
   rawspec_context ctx;
 
   if(argc<2) {
@@ -123,9 +131,21 @@ char tmp[16];
   ctx.Nas[1] = 32*(1<<(20 -  3));
   ctx.Nas[2] = 32*(1<<(20 - 10));
 
-  // Init user_data to be array of file descriptors
-  ctx.user_data = malloc(ctx.No * sizeof(int));
+  // Init user_data to be array of callback data structures
+  ctx.user_data = &cb_data;
   ctx.dump_callback = dump_callback;
+
+  // Init pre-defined filterbank headers
+  for(i=0; i<ctx.No; i++) {
+    memset(&cb_data[i].fb_hdr, 0, sizeof(fb_hdr_t));
+    cb_data[i].fb_hdr.machine_id = 1;
+    cb_data[i].fb_hdr.telescope_id = 1;
+    cb_data[i].fb_hdr.data_type = 1;
+    cb_data[i].fb_hdr.nbeams = 1;
+    cb_data[i].fb_hdr.ibeam  = 1;
+    cb_data[i].fb_hdr.nbits  = 8;
+    cb_data[i].fb_hdr.nifs   = 1;
+  }
 
   // For each stem
   for(si=1; si<argc; si++) {
@@ -136,7 +156,7 @@ char tmp[16];
       if(fdout == -1) {
         return 1; // Give up
       }
-      ((int *)ctx.user_data)[i] = fdout;
+      cb_data[i].fd = fdout;
     }
 
     // bi is the block counter for the entire sequence of files for this stem.
@@ -150,6 +170,7 @@ char tmp[16];
       // Build next input file name
       snprintf(fname, PATH_MAX, "%s.%04d.raw", argv[si], fi);
       fname[PATH_MAX] = '\0';
+      bfname = basename(fname);
 
       printf("opening file: %s", fname);
       fdin = open(fname, O_RDONLY | O_DIRECT);
@@ -228,6 +249,28 @@ char tmp[16];
           printf("resetting integration buffers for new stem\n");
           rawspec_reset_integration(&ctx);
         }
+
+        // Update filterbank headers based on raw params and Nts etc.
+        for(i=0; i<ctx.No; i++) {
+          // Same for all products
+          cb_data[i].fb_hdr.src_raj = raw_hdr.ra;
+          cb_data[i].fb_hdr.src_dej = raw_hdr.dec;
+          cb_data[i].fb_hdr.tstart = raw_hdr.mjd;
+          strncpy(cb_data[i].fb_hdr.source_name, raw_hdr.src_name, 80);
+          cb_data[i].fb_hdr.source_name[80] = '\0';
+          strncpy(cb_data[i].fb_hdr.rawdatafile, bfname, 80);
+          cb_data[i].fb_hdr.rawdatafile[80] = '\0';
+          // Output product dependent
+          cb_data[i].fb_hdr.foff = raw_hdr.obsbw/ctx.Nts[i];
+          cb_data[i].fb_hdr.fch1 =
+            raw_hdr.obsfreq - raw_hdr.obsbw/2 + cb_data[i].fb_hdr.foff/2;
+          cb_data[i].fb_hdr.nchans = ctx.Nc * ctx.Nts[i];
+          cb_data[i].fb_hdr.tsamp = raw_hdr.tbin * ctx.Nts[i] * ctx.Nas[i];
+
+          // Write filterbank header to output file
+          fb_fd_write_header(cb_data[i].fd, &cb_data[i].fb_hdr);
+        }
+
       } // if first file
 
       // For all blocks in file
@@ -354,7 +397,7 @@ char tmp[16];
 
     // Close output files
     for(i=0; i<ctx.No; i++) {
-      close(((int *)ctx.user_data)[i]);
+      close(cb_data[i].fd);
     }
   } // each stem
 

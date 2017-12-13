@@ -52,7 +52,7 @@ librawspec.so: rawspec_gpu.o
 	$(VERBOSE) $(NVCC) -shared $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ $(CUDA_STATIC_LIBS)
 
 rawspec: librawspec.so
-rawspec: rawspec.o rawutils.o hget.o
+rawspec: rawspec.o rawutils.o fbutils.o hget.o
 	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ -L. -lrawspec
 
 rawspectest: librawspec.so
