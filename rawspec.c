@@ -139,13 +139,13 @@ char tmp[16];
   // Init pre-defined filterbank headers
   for(i=0; i<ctx.No; i++) {
     memset(&cb_data[i].fb_hdr, 0, sizeof(fb_hdr_t));
-    cb_data[i].fb_hdr.machine_id = 1;
-    cb_data[i].fb_hdr.telescope_id = 1;
+    cb_data[i].fb_hdr.machine_id = 20;
+    cb_data[i].fb_hdr.telescope_id = 6; // GBT
     cb_data[i].fb_hdr.data_type = 1;
-    cb_data[i].fb_hdr.nbeams = 1;
-    cb_data[i].fb_hdr.ibeam  = 1;
-    cb_data[i].fb_hdr.nbits  = 8;
-    cb_data[i].fb_hdr.nifs   = 1;
+    cb_data[i].fb_hdr.nbeams =  1;
+    cb_data[i].fb_hdr.ibeam  =  1;
+    cb_data[i].fb_hdr.nbits  = 32;
+    cb_data[i].fb_hdr.nifs   =  1;
   }
 
   // For each stem
@@ -262,7 +262,7 @@ char tmp[16];
           strncpy(cb_data[i].fb_hdr.rawdatafile, bfname, 80);
           cb_data[i].fb_hdr.rawdatafile[80] = '\0';
           // Output product dependent
-          cb_data[i].fb_hdr.foff = raw_hdr.obsbw/ctx.Nts[i];
+          cb_data[i].fb_hdr.foff = raw_hdr.obsbw/raw_hdr.obsnchan/ctx.Nts[i];
           cb_data[i].fb_hdr.fch1 =
             raw_hdr.obsfreq - raw_hdr.obsbw/2 + cb_data[i].fb_hdr.foff/2;
           cb_data[i].fb_hdr.nchans = ctx.Nc * ctx.Nts[i];
