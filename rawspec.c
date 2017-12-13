@@ -126,10 +126,11 @@ char tmp[16];
   ctx.Nts[0] = (1<<20);
   ctx.Nts[1] = (1<<3);
   ctx.Nts[2] = (1<<10);
-  // One dump per output product per 32 input buffers
-  ctx.Nas[0] = 32*(1<<(20 - 20));
-  ctx.Nas[1] = 32*(1<<(20 -  3));
-  ctx.Nas[2] = 32*(1<<(20 - 10));
+  // Number of fine spectra to accumulate per dump.  These values are defaults
+  // for typical BL filterbank products.
+  ctx.Nas[0] = 51;
+  ctx.Nas[1] = 128;
+  ctx.Nas[2] = 3072;
 
   // Init user_data to be array of callback data structures
   ctx.user_data = &cb_data;
