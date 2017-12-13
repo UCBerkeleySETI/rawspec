@@ -31,7 +31,7 @@ int open_output_file(const char *stem, int output_idx)
   int fd;
   char fname[PATH_MAX+1];
 
-  snprintf(fname, PATH_MAX, "%s.%04d.fil", stem, output_idx);
+  snprintf(fname, PATH_MAX, "%s.rawspec.%04d.fil", stem, output_idx);
   fname[PATH_MAX] = '\0';
   fd = open(fname, O_WRONLY | O_CREAT | O_TRUNC, 0777);
   if(fd == -1) {
