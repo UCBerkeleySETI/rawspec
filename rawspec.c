@@ -180,6 +180,7 @@ char tmp[16];
         break; // Goto next stem
       }
       printf("\n");
+      posix_fadvise(fdin, 0, 0, POSIX_FADV_SEQUENTIAL);
 
       // Read obs params
       pos = raw_read_header(fdin, &raw_hdr);
