@@ -314,12 +314,14 @@ char tmp[16];
 
             // If this is the last block of an input buffer, start processing
             if(bi % ctx.Nb == ctx.Nb - 1) {
-              rawspec_wait_for_completion(&ctx);
-              fprintf(stderr, "block 0: ");
+#ifdef VERBOSE
+              fprintf(stderr, "block %3b buf 0: ", bi);
               for(j=0; j<16; j++) {
                 fprintf(stderr, " %02x", ctx.h_blkbufs[0][j] & 0xff);
               }
               fprintf(stderr, "\n");
+#endif // VERBOSE
+              rawspec_wait_for_completion(&ctx);
               rawspec_copy_blocks_to_gpu(&ctx, 0, 0, ctx.Nb);
               rawspec_start_processing(&ctx, raw_hdr.obsbw < 0 ? -1 : +1);
             }
