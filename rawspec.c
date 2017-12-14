@@ -323,7 +323,7 @@ char tmp[16];
 #endif // VERBOSE
               rawspec_wait_for_completion(&ctx);
               rawspec_copy_blocks_to_gpu(&ctx, 0, 0, ctx.Nb);
-              rawspec_start_processing(&ctx, raw_hdr.obsbw < 0 ? -1 : +1);
+              rawspec_start_processing(&ctx, RAWSPEC_FORWARD_FFT);
             }
 
             // Increment block counter
@@ -364,7 +364,7 @@ char tmp[16];
 #endif // VERBOSE
           rawspec_wait_for_completion(&ctx);
           rawspec_copy_blocks_to_gpu(&ctx, 0, 0, ctx.Nb);
-          rawspec_start_processing(&ctx, raw_hdr.obsbw < 0 ? -1 : +1);
+          rawspec_start_processing(&ctx, RAWSPEC_FORWARD_FFT);
         }
 
         // Remember pktidx

@@ -1,6 +1,10 @@
 #ifndef _MYGPUSPEC_H_
 #define _MYGPUSPEC_H_
 
+// Specifies forward or inverse FFT direction
+#define RAWSPEC_FORWARD_FFT (+1)
+#define RAWSPEC_INVERSE_FFT (-1)
+
 #define MAX_OUTPUTS (4)
 
 #define RAWSPEC_BLOCSIZE(pctx) ((pctx)->Nc * (pctx)->Ntpb * (pctx)->Np * 2)
