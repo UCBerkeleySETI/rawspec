@@ -634,13 +634,10 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
 
     // If time to dump
     if(gpu_ctx->inbuf_count % gpu_ctx->Nis[i] == 0) {
-      // If accumulting multiple spectra
-      // and more than one spectrum fits in the input buffer
-      if(ctx->Nas[i] > 1
-      && ctx->Nas[i] * gpu_ctx->Nss[i] < ctx->Nb * ctx->Ntpb) {
-        // Integrate those "more than one" spectra together using the
-        // accumulate kernel.
-
+      // If the number of spectra to dump per input buffer is less than the
+      // number of spectra per input buffer, then we need to accumulate the
+      // sub-integrations together.
+      if(gpu_ctx->Nds[i] < gpu_ctx->Nss[i]) {
         accumulate<<<gpu_ctx->grid[i],
                      gpu_ctx->nthreads[i],
                      0, stream>>>(gpu_ctx->d_pwr_out[i],
