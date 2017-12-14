@@ -7,6 +7,8 @@
 #define NO_PLAN   ((cufftHandle)-1)
 #define NO_STREAM ((cudaStream_t)-1)
 
+#define MIN(a,b) ((a < b) ? (a) : (b))
+
 #define PRINT_ERRMSG(error)                  \
   fprintf(stderr, "got error %s at %s:%d\n", \
       _cudaGetErrorEnum(error),  \
@@ -331,8 +333,7 @@ int rawspec_initialize(rawspec_context * ctx)
     gpu_ctx->grid[i].z = ctx->Nc;
 
     // Calculate number of threads per block
-    gpu_ctx->nthreads[i] = ctx->Nts[i] < MAX_THREADS ? ctx->Nts[i]
-                                                     : MAX_THREADS;
+    gpu_ctx->nthreads[i] = MIN(ctx->Nts[i], MAX_THREADS);
 
     // Host buffer needs to accommodate the number of integrations that will be
     // dumped at one time (Nd).
