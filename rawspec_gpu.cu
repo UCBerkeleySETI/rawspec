@@ -642,10 +642,10 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
         accumulate<<<gpu_ctx->grid[i],
                      gpu_ctx->nthreads[i],
                      0, stream>>>(gpu_ctx->d_pwr_out[i],
-                                  ctx->Nas[i],
-                                  ctx->Nts[i],
-                                  ctx->Nas[i]*ctx->Nts[i],
-                                  ctx->Nb*ctx->Ntpb);
+                                  MIN(ctx->Nas[i], gpu_ctx->Nss[i]), // Na
+                                  ctx->Nts[i],                       // xpitch
+                                  ctx->Nas[i]*ctx->Nts[i],           // ypitch
+                                  ctx->Nb*ctx->Ntpb);                // zpitch
       }
 
       // Copy integrated power spectra (or spectrum) to host.  This is done as
