@@ -12,6 +12,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <getopt.h>
 
 #include "rawspec.h"
 #include "rawutils.h"
@@ -83,6 +84,37 @@ ssize_t read_fully(int fd, void * buf, size_t bytes_to_read)
   return total_bytes_read;
 }
 
+static struct option long_opts[] = {
+  {"help", 0, NULL, 'h'},
+  {"ffts", 1, NULL, 'f'},
+  {"ints", 1, NULL, 't'},
+#ifdef TODO
+  {"dest", 1, NULL, 'd'},
+#endif // TODO
+  {0,0,0,0}
+};
+
+void usage(const char *argv0) {
+  const char * bname = basename(argv0);
+  // Should "never" happen
+  if(!bname) {
+    bname = argv0;
+  }
+
+  fprintf(stderr,
+    "Usage: %s [options] STEM [...]\n"
+    "\n"
+    "Options:\n"
+    "  -h, --help            Show this message\n"
+    "  -f, --ffts=N1[,N2...] FFT lengths\n"
+    "  -t, --ints=N1[,N2...] Spectra to integrate\n"
+#ifdef TODO
+    "  -d, --dest=DEST       Destination directory or host:port\n"
+#endif // TODO
+    , bname
+  );
+}
+
 int main(int argc, char *argv[])
 {
   int si; // Indexes the stems
@@ -101,6 +133,9 @@ char tmp[16];
   int64_t pktidx;
   int64_t dpktidx;
   char fname[PATH_MAX+1];
+  int opt;
+  char * argv0;
+  char * pchar;
   char * bfname;
   int fdout;
   int open_flags;
@@ -111,26 +146,87 @@ char tmp[16];
   callback_data_t cb_data[MAX_OUTPUTS];
   rawspec_context ctx;
 
-  if(argc<2) {
-    fprintf(stderr, "usage: %s STEM [...]\n", argv[0]);
-    return 1;
+  // Init rawspec context
+  memset(&ctx, 0, sizeof(ctx));
+
+  // Parse command line.
+  argv0 = argv[0];
+  while((opt=getopt_long(argc,argv,"hf:t:",long_opts,NULL))!=-1) {
+    switch (opt) {
+      case 'h': // Help
+        usage(argv0);
+        return 0;
+        break;
+
+      case 'f': // Fine channel(s) per coarse channel
+        for(i=0, pchar = strtok(optarg,",");
+            pchar != NULL; i++, pchar = strtok(NULL, ",")) {
+          if(i>=MAX_OUTPUTS){
+            fprintf(stderr,
+                "error: up to %d output products supported.\n", MAX_OUTPUTS);
+            return 1;
+          }
+          ctx.Nts[i] = strtoul(pchar, NULL, 0);
+        }
+        break;
+
+      case 't': // Number of spectra to accumumate
+        for(i=0, pchar = strtok(optarg,",");
+            pchar != NULL; i++, pchar = strtok(NULL, ",")) {
+          if(i>=MAX_OUTPUTS){
+            fprintf(stderr,
+                "error: up to %d output products supported.\n", MAX_OUTPUTS);
+            return 1;
+          }
+          ctx.Nas[i] = strtoul(pchar, NULL, 0);
+        }
+        break;
+
+      case '?': // Command line parsing error
+      default:
+        return 1;
+        break;
+    }
   }
 
-  // Init block sizing fields to 0
-  ctx.Nc   = 0;
-  ctx.Np   = 0;
-  ctx.Ntpb = 0;
+  // Validate user input
+  for(i=0; i < MAX_OUTPUTS; i++) {
+    // If both Nt and Na are zero, stop validating/counting
+    if(ctx.Nts[i] == 0 && ctx.Nas[i] == 0) {
+      break;
+    } else if(ctx.Nts[i] ==0 || ctx.Nas[i] == 0) {
+      // If only one of Nt or Ni are zero, error out
+      fprintf(stderr,
+          "error: must specify same number of FFTs and integration lengths\n");
+      return 1;
+    };
+  }
+  // Remember number of output products specified
+  ctx.No = i;
 
-  // Init integration parameters
-  ctx.No = 3;
-  ctx.Nts[0] = (1<<20);
-  ctx.Nts[1] = (1<<3);
-  ctx.Nts[2] = (1<<10);
-  // Number of fine spectra to accumulate per dump.  These values are defaults
-  // for typical BL filterbank products.
-  ctx.Nas[0] = 51;
-  ctx.Nas[1] = 128;
-  ctx.Nas[2] = 3072;
+  if(ctx.No == 0) {
+    printf("using default FFTs and integration lengths\n");
+    // These values are defaults for typical BL filterbank products.
+    ctx.No = 3;
+    // Number of fine channels per coarse channel (i.e. FFT size).
+    ctx.Nts[0] = (1<<20);
+    ctx.Nts[1] = (1<<3);
+    ctx.Nts[2] = (1<<10);
+    // Number of fine spectra to accumulate per dump.
+    ctx.Nas[0] = 51;
+    ctx.Nas[1] = 128;
+    ctx.Nas[2] = 3072;
+  }
+
+  // Skip past option args
+  argc -= optind;
+  argv += optind;
+
+  // If no stems given, print usage and exit
+  if(argc == 0) {
+    usage(argv0);
+    return 1;
+  }
 
   // Init user_data to be array of callback data structures
   ctx.user_data = &cb_data;
@@ -149,7 +245,7 @@ char tmp[16];
   }
 
   // For each stem
-  for(si=1; si<argc; si++) {
+  for(si=0; si<argc; si++) {
     printf("working stem: %s\n", argv[si]);
 
     for(i=0; i<ctx.No; i++) {
