@@ -27,12 +27,12 @@ typedef struct {
   fb_hdr_t fb_hdr;
 } callback_data_t;
 
-int open_output_file(const char *stem, int output_idx)
+int open_output_file(const char * dest, const char *stem, int output_idx)
 {
   int fd;
   char fname[PATH_MAX+1];
 
-  snprintf(fname, PATH_MAX, "%s.rawspec.%04d.fil", stem, output_idx);
+  snprintf(fname, PATH_MAX, "%s/%s.rawspec.%04d.fil", dest, stem, output_idx);
   fname[PATH_MAX] = '\0';
   fd = open(fname, O_WRONLY | O_CREAT | O_TRUNC, 0777);
   if(fd == -1) {
@@ -88,9 +88,7 @@ static struct option long_opts[] = {
   {"help", 0, NULL, 'h'},
   {"ffts", 1, NULL, 'f'},
   {"ints", 1, NULL, 't'},
-#ifdef TODO
   {"dest", 1, NULL, 'd'},
-#endif // TODO
   {0,0,0,0}
 };
 
@@ -108,9 +106,11 @@ void usage(const char *argv0) {
     "  -h, --help            Show this message\n"
     "  -f, --ffts=N1[,N2...] FFT lengths\n"
     "  -t, --ints=N1[,N2...] Spectra to integrate\n"
+    "  -d, --dest=DEST       Destination directory"
 #ifdef TODO
-    "  -d, --dest=DEST       Destination directory or host:port\n"
+    " or host:port"
 #endif // TODO
+    "\n"
     , bname
   );
 }
@@ -137,6 +137,7 @@ char tmp[16];
   char * argv0;
   char * pchar;
   char * bfname;
+  char * dest = "."; // default output destination is current directory
   int fdout;
   int open_flags;
   size_t bytes_read;
@@ -151,11 +152,15 @@ char tmp[16];
 
   // Parse command line.
   argv0 = argv[0];
-  while((opt=getopt_long(argc,argv,"hf:t:",long_opts,NULL))!=-1) {
+  while((opt=getopt_long(argc,argv,"hd:f:t:",long_opts,NULL))!=-1) {
     switch (opt) {
       case 'h': // Help
         usage(argv0);
         return 0;
+        break;
+
+      case 'd': // Output destination
+        dest = optarg; // TODO strdup?
         break;
 
       case 'f': // Fine channel(s) per coarse channel
@@ -362,7 +367,7 @@ char tmp[16];
           cb_data[i].fb_hdr.nchans = ctx.Nc * ctx.Nts[i];
           cb_data[i].fb_hdr.tsamp = raw_hdr.tbin * ctx.Nts[i] * ctx.Nas[i];
 
-          cb_data[i].fd = open_output_file(argv[si], i);
+          cb_data[i].fd = open_output_file(dest, argv[si], i);
           if(cb_data[i].fd == -1) {
             // If we can't open this output file, we probably won't be able to
             // open any more output files, so print message and bail out.
