@@ -238,8 +238,8 @@ int main(int argc, char * argv[])
 
   float f = 0;
 
-  int fdfd  = open("fbutils_fd.fil",  O_WRONLY | O_CREAT, 0777);
-  int fdbuf = open("fbutils_buf.fil", O_WRONLY | O_CREAT, 0777);
+  int fdfd  = open("fbutils_fd.fil",  O_WRONLY | O_CREAT, 0664);
+  int fdbuf = open("fbutils_buf.fil", O_WRONLY | O_CREAT, 0664);
 
 
   ssize_t nbytes = fb_fd_write_header(fdfd, &hdr);

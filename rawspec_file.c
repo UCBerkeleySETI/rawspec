@@ -14,7 +14,7 @@ int open_output_file(const char * dest, const char *stem, int output_idx)
 
   snprintf(fname, PATH_MAX, "%s/%s.rawspec.%04d.fil", dest, stem, output_idx);
   fname[PATH_MAX] = '\0';
-  fd = open(fname, O_WRONLY | O_CREAT | O_TRUNC, 0777);
+  fd = open(fname, O_WRONLY | O_CREAT | O_TRUNC, 0664);
   if(fd == -1) {
     perror(fname);
   }
