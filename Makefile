@@ -76,6 +76,6 @@ clean:
 	rm -f *.o *.so rawspec rawspectest fileiotest tags
 
 tags:
-	ctags -R . $(CUDA_PATH)/samples/common/inc
+	ctags -R .
 
-.PHONY: all clean tags
+.PHONY: all install clean tags tags
