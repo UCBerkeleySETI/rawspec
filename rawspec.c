@@ -244,17 +244,14 @@ char tmp[16];
     cb_data[i].fb_hdr.nifs   =  1;
   }
 
+  // Init callback file descriptors to sentinal values
+  for(i=0; i<ctx.No; i++) {
+    cb_data[i].fd = -1;
+  }
+
   // For each stem
   for(si=0; si<argc; si++) {
     printf("working stem: %s\n", argv[si]);
-
-    for(i=0; i<ctx.No; i++) {
-      fdout = open_output_file(argv[si], i);
-      if(fdout == -1) {
-        return 1; // Give up
-      }
-      cb_data[i].fd = fdout;
-    }
 
     // bi is the block counter for the entire sequence of files for this stem.
     // Note that bi is the count of contiguous blocks that are fed to the GPU.
@@ -364,6 +361,14 @@ char tmp[16];
             raw_hdr.obsfreq - raw_hdr.obsbw/2 + cb_data[i].fb_hdr.foff/2;
           cb_data[i].fb_hdr.nchans = ctx.Nc * ctx.Nts[i];
           cb_data[i].fb_hdr.tsamp = raw_hdr.tbin * ctx.Nts[i] * ctx.Nas[i];
+
+          cb_data[i].fd = open_output_file(argv[si], i);
+          if(cb_data[i].fd == -1) {
+            // If we can't open this output file, we probably won't be able to
+            // open any more output files, so print message and bail out.
+            fprintf(stderr, "cannot open output file, giving up\n");
+            return 1; // Give up
+          }
 
           // Write filterbank header to output file
           fb_fd_write_header(cb_data[i].fd, &cb_data[i].fb_hdr);
@@ -486,6 +491,7 @@ char tmp[16];
       // If skipping to next stem
       if(next_stem) {
         next_stem = 0;
+        // break out of each file loop
         break;
       }
     } // each file for stem
@@ -497,7 +503,10 @@ char tmp[16];
 
     // Close output files
     for(i=0; i<ctx.No; i++) {
-      close(cb_data[i].fd);
+      if(cb_data[i].fd != -1) {
+        close(cb_data[i].fd);
+        cb_data[i].fd = -1;
+      }
     }
   } // each stem
 
