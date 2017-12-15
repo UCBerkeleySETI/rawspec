@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-int open_output_socket(const char * host, int port);
+int open_output_socket(const char * host, const char * port);
 
 void dump_net_callback(rawspec_context * ctx, int output_product);
 

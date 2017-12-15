@@ -72,11 +72,7 @@ void usage(const char *argv0) {
     "  -h, --help            Show this message\n"
     "  -f, --ffts=N1[,N2...] FFT lengths\n"
     "  -t, --ints=N1[,N2...] Spectra to integrate\n"
-    "  -d, --dest=DEST       Destination directory"
-#ifdef TODO
-    " or host:port"
-#endif // TODO
-    "\n"
+    "  -d, --dest=DEST       Destination directory or host:port\n"
     , bname
   );
 }
@@ -105,7 +101,7 @@ char tmp[16];
   char * bfname;
   char * dest = "."; // default output destination is current directory
   rawspec_output_mode_t output_mode = RAWSPEC_FILE;
-  int dest_port = 0; // dest port for network output
+  char * dest_port = NULL; // dest port for network output
   int fdout;
   int open_flags;
   size_t bytes_read;
@@ -135,7 +131,7 @@ char tmp[16];
         if(pchar) {
           // Null terminate hostname, advance to port
           *pchar++ = '\0';
-          dest_port = strtoul(pchar, NULL, 0);
+          dest_port = pchar;
           output_mode = RAWSPEC_NET;
         }
         break;
@@ -236,6 +232,7 @@ char tmp[16];
     ctx.dump_callback = dump_file_callback;
   } else {
     ctx.dump_callback = dump_net_callback;
+
     // Open socket and store for all output products
     cb_data[0].fd = open_output_socket(dest, dest_port);
     if(cb_data[0].fd == -1) {
