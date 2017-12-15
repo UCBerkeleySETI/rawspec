@@ -65,6 +65,9 @@ struct rawspec_context_s {
   float * h_pwrbuf[MAX_OUTPUTS];
   size_t h_pwrbuf_size[MAX_OUTPUTS];
 
+  // Array of Nd values (number of spectra per dump)
+  unsigned int Nds[MAX_OUTPUTS];
+
   // Fields below here are not normally needed at all by the client
 
   unsigned int Ntmax; // Maximum Nt value

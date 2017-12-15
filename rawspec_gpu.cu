@@ -38,8 +38,6 @@ typedef struct {
   dim3 grid[MAX_OUTPUTS];
   // Array of number of threads to use per block for accumulate kernel
   int nthreads[MAX_OUTPUTS];
-  // Array of Nd values (number of spectra per dump)
-  unsigned int Nds[MAX_OUTPUTS];
   // Array of Ni values (number of input buffers per dump)
   unsigned int Nis[MAX_OUTPUTS];
   // A count of the number of input buffers processed
@@ -316,9 +314,9 @@ int rawspec_initialize(rawspec_context * ctx)
     gpu_ctx->Nss[i] = (ctx->Nb * ctx->Ntpb) / ctx->Nts[i];
 
     // Calculate number of spectra per dump
-    gpu_ctx->Nds[i] = gpu_ctx->Nss[i] / ctx->Nas[i];
-    if(gpu_ctx->Nds[i] == 0) {
-      gpu_ctx->Nds[i] = 1;
+    ctx->Nds[i] = gpu_ctx->Nss[i] / ctx->Nas[i];
+    if(ctx->Nds[i] == 0) {
+      ctx->Nds[i] = 1;
     }
 
     // Calculate number of input buffers per dump
@@ -329,7 +327,7 @@ int rawspec_initialize(rawspec_context * ctx)
 
     // Calculate grid dimensions
     gpu_ctx->grid[i].x = (ctx->Nts[i] + MAX_THREADS - 1) / MAX_THREADS;
-    gpu_ctx->grid[i].y = gpu_ctx->Nds[i];
+    gpu_ctx->grid[i].y = ctx->Nds[i];
     gpu_ctx->grid[i].z = ctx->Nc;
 
     // Calculate number of threads per block
@@ -337,7 +335,7 @@ int rawspec_initialize(rawspec_context * ctx)
 
     // Host buffer needs to accommodate the number of integrations that will be
     // dumped at one time (Nd).
-    ctx->h_pwrbuf_size[i] = gpu_ctx->Nds[i]*ctx->Nts[i]*ctx->Nc*sizeof(float);
+    ctx->h_pwrbuf_size[i] = ctx->Nds[i]*ctx->Nts[i]*ctx->Nc*sizeof(float);
     cuda_rc = cudaHostAlloc(&ctx->h_pwrbuf[i], ctx->h_pwrbuf_size[i],
                        cudaHostAllocDefault);
 
@@ -638,7 +636,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
       // If the number of spectra to dump per input buffer is less than the
       // number of spectra per input buffer, then we need to accumulate the
       // sub-integrations together.
-      if(gpu_ctx->Nds[i] < gpu_ctx->Nss[i]) {
+      if(ctx->Nds[i] < gpu_ctx->Nss[i]) {
         accumulate<<<gpu_ctx->grid[i],
                      gpu_ctx->nthreads[i],
                      0, stream>>>(gpu_ctx->d_pwr_out[i],
@@ -657,7 +655,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
       dpitch = ctx->Nts[i] * sizeof(float);
       height = ctx->Nc;
 
-      for(d=0; d<gpu_ctx->Nds[i]; d++) {
+      for(d=0; d<ctx->Nds[i]; d++) {
 
         // Lo to hi
         width  = ((ctx->Nts[i]+1) / 2) * sizeof(float);
@@ -709,7 +707,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
 
       // Add power buffer clearing cudaMemset call to stream
       cuda_rc = cudaMemsetAsync(gpu_ctx->d_pwr_out[i], 0,
-                                gpu_ctx->Nds[i]*ctx->Nts[i]*ctx->Nc*sizeof(float),
+                                ctx->Nds[i]*ctx->Nts[i]*ctx->Nc*sizeof(float),
                                 stream);
 
       if(cuda_rc != cudaSuccess) {
