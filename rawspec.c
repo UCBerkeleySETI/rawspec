@@ -15,61 +15,15 @@
 #include <getopt.h>
 
 #include "rawspec.h"
+#include "rawspec_file.h"
+#include "rawspec_socket.h"
+#include "rawspec_callback.h"
 #include "rawutils.h"
 #include "fbutils.h"
 #include "fitshead.h"
 
 #define ELAPSED_NS(start,stop) \
   (((int64_t)stop.tv_sec-start.tv_sec)*1000*1000*1000+(stop.tv_nsec-start.tv_nsec))
-
-typedef struct {
-  int fd; // Output file descriptor or socket
-  fb_hdr_t fb_hdr;
-} callback_data_t;
-
-int open_output_file(const char * dest, const char *stem, int output_idx)
-{
-  int fd;
-  char fname[PATH_MAX+1];
-
-  snprintf(fname, PATH_MAX, "%s/%s.rawspec.%04d.fil", dest, stem, output_idx);
-  fname[PATH_MAX] = '\0';
-  fd = open(fname, O_WRONLY | O_CREAT | O_TRUNC, 0777);
-  if(fd == -1) {
-    perror(fname);
-  }
-  return fd;
-}
-
-void dump_file_callback(rawspec_context * ctx,
-                   int output_product)
-{
-  int i;
-#ifdef VERBOSE
-  fprintf(stderr, "cb %d writing %lu bytes:",
-      output_product, ctx->h_pwrbuf_size[output_product]);
-  for(i=0; i<16; i++) {
-    fprintf(stderr, " %02x", ((char *)ctx->h_pwrbuf[output_product])[i] & 0xff);
-  }
-  fprintf(stderr, "\n");
-#endif // VERBOSE
-  callback_data_t * cb_data = (callback_data_t *)ctx->user_data;
-  write(cb_data[output_product].fd,
-        ctx->h_pwrbuf[output_product],
-        ctx->h_pwrbuf_size[output_product]);
-}
-
-int open_output_socket(const char * host, int port)
-{
-  // TODO
-  return -1;
-}
-
-void dump_net_callback(rawspec_context * ctx,
-                   int output_product)
-{
-  // TODO
-}
 
 // Reads `bytes_to_read` bytes from `fd` into the buffer pointed to by `buf`.
 // Returns the total bytes read or -1 on error.  A non-negative return value

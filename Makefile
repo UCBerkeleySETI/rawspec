@@ -39,11 +39,14 @@ endif
 all: rawspec rawspectest fileiotest
 
 # TODO Replace with auto-generated dependencies
-rawspec.o: rawspec.h fitshead.h rawutils.h
+rawspec.o: rawspec.h fitshead.h rawutils.h rawspec_callback.h \
+	         rawspec_file.h rawspec_socket.h
 rawutils.o: rawutils.h
 rawspectest.o: rawspec.h
 rawspec_gpu.o: rawspec.h
 fileiotest.o: rawspec.h
+rawspec_file.o: rawspec_file.h
+rawspec_socket.o: rawspec_socket.h
 
 %.o: %.cu
 	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) -dc $(GENCODE_FLAGS) -o $@ -c $<
@@ -52,7 +55,7 @@ librawspec.so: rawspec_gpu.o
 	$(VERBOSE) $(NVCC) -shared $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ $(CUDA_STATIC_LIBS)
 
 rawspec: librawspec.so
-rawspec: rawspec.o rawutils.o fbutils.o hget.o
+rawspec: rawspec.o rawutils.o fbutils.o hget.o rawspec_file.o rawspec_socket.o
 	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ -L. -lrawspec
 
 rawspectest: librawspec.so

@@ -1,6 +1,8 @@
 #ifndef _MYGPUSPEC_H_
 #define _MYGPUSPEC_H_
 
+#include <unistd.h>
+
 // Specifies forward or inverse FFT direction
 #define RAWSPEC_FORWARD_FFT (+1)
 #define RAWSPEC_INVERSE_FFT (-1)
