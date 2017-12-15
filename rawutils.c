@@ -148,6 +148,8 @@ off_t raw_read_header(int fd, raw_hdr_t * raw_hdr)
   int i;
   int smjd;
   int imjd;
+  // Ensure that hdr is aligned to a 512-byte boundary so that it can be used
+  // with files opened with O_DIRECT.
   char hdr[MAX_RAW_HDR_SIZE] __attribute__ ((aligned (512)));
   int hdr_size;
   char tmp[80];

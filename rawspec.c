@@ -174,7 +174,7 @@ char tmp[16];
       bfname = basename(fname);
 
       printf("opening file: %s", fname);
-      fdin = open(fname, O_RDONLY | O_DIRECT);
+      fdin = open(fname, O_RDONLY);
       if(fdin == -1) {
         printf(" [%s]\n", strerror(errno));
         break; // Goto next stem
