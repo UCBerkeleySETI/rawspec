@@ -74,6 +74,12 @@ struct rawspec_context_s {
   void * gpu_ctx; // Host pointer to opaque/private GPU specific context
 };
 
+// enum for output mode
+typedef enum {
+  RAWSPEC_FILE,
+  RAWSPEC_NET
+} rawspec_output_mode_t;
+
 #ifdef __cplusplus
 extern "C" {
 #endif

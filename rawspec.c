@@ -23,7 +23,7 @@
   (((int64_t)stop.tv_sec-start.tv_sec)*1000*1000*1000+(stop.tv_nsec-start.tv_nsec))
 
 typedef struct {
-  int fd; // Output file descriptor
+  int fd; // Output file descriptor or socket
   fb_hdr_t fb_hdr;
 } callback_data_t;
 
@@ -41,7 +41,7 @@ int open_output_file(const char * dest, const char *stem, int output_idx)
   return fd;
 }
 
-void dump_callback(rawspec_context * ctx,
+void dump_file_callback(rawspec_context * ctx,
                    int output_product)
 {
   int i;
@@ -57,6 +57,18 @@ void dump_callback(rawspec_context * ctx,
   write(cb_data[output_product].fd,
         ctx->h_pwrbuf[output_product],
         ctx->h_pwrbuf_size[output_product]);
+}
+
+int open_output_socket(const char * host, int port)
+{
+  // TODO
+  return -1;
+}
+
+void dump_net_callback(rawspec_context * ctx,
+                   int output_product)
+{
+  // TODO
 }
 
 // Reads `bytes_to_read` bytes from `fd` into the buffer pointed to by `buf`.
@@ -138,6 +150,8 @@ char tmp[16];
   char * pchar;
   char * bfname;
   char * dest = "."; // default output destination is current directory
+  rawspec_output_mode_t output_mode = RAWSPEC_FILE;
+  int dest_port = 0; // dest port for network output
   int fdout;
   int open_flags;
   size_t bytes_read;
@@ -160,7 +174,16 @@ char tmp[16];
         break;
 
       case 'd': // Output destination
-        dest = optarg; // TODO strdup?
+        dest = optarg;
+        // If dest contains at least one ':', it's HOST:PORT and we're
+        // outputting over the network.
+        pchar = strrchr(dest, ':');
+        if(pchar) {
+          // Null terminate hostname, advance to port
+          *pchar++ = '\0';
+          dest_port = strtoul(pchar, NULL, 0);
+          output_mode = RAWSPEC_NET;
+        }
         break;
 
       case 'f': // Fine channel(s) per coarse channel
@@ -235,7 +258,6 @@ char tmp[16];
 
   // Init user_data to be array of callback data structures
   ctx.user_data = &cb_data;
-  ctx.dump_callback = dump_callback;
 
   // Init pre-defined filterbank headers
   for(i=0; i<ctx.No; i++) {
@@ -252,6 +274,24 @@ char tmp[16];
   // Init callback file descriptors to sentinal values
   for(i=0; i<ctx.No; i++) {
     cb_data[i].fd = -1;
+  }
+
+  // Set output mode specific callback function
+  // and open socket if outputting over network.
+  if(output_mode == RAWSPEC_FILE) {
+    ctx.dump_callback = dump_file_callback;
+  } else {
+    ctx.dump_callback = dump_net_callback;
+    // Open socket and store for all output products
+    cb_data[0].fd = open_output_socket(dest, dest_port);
+    if(cb_data[0].fd == -1) {
+      fprintf(stderr, "cannot open output socket, giving up\n");
+      return 1; // Give up
+    }
+    // Share socket descriptor with other callbacks
+    for(i=1; i<ctx.No; i++) {
+      cb_data[i].fd = cb_data[0].fd;
+    }
   }
 
   // For each stem
@@ -375,8 +415,10 @@ char tmp[16];
             return 1; // Give up
           }
 
-          // Write filterbank header to output file
-          fb_fd_write_header(cb_data[i].fd, &cb_data[i].fb_hdr);
+          if(output_mode == RAWSPEC_FILE) {
+            // Write filterbank header to output file
+            fb_fd_write_header(cb_data[i].fd, &cb_data[i].fb_hdr);
+          }
         }
 
       } // if first file
@@ -507,16 +549,26 @@ char tmp[16];
     }
 
     // Close output files
-    for(i=0; i<ctx.No; i++) {
-      if(cb_data[i].fd != -1) {
-        close(cb_data[i].fd);
-        cb_data[i].fd = -1;
+    if(output_mode == RAWSPEC_FILE) {
+      for(i=0; i<ctx.No; i++) {
+        if(cb_data[i].fd != -1) {
+          close(cb_data[i].fd);
+          cb_data[i].fd = -1;
+        }
       }
     }
   } // each stem
 
   // Final cleanup
   rawspec_cleanup(&ctx);
+
+  // Close sockets (or should-"never"-happen unclosed files)
+  for(i=0; i<ctx.No; i++) {
+    if(cb_data[i].fd != -1) {
+      close(cb_data[i].fd);
+      cb_data[i].fd = -1;
+    }
+  }
 
   return 0;
 }
