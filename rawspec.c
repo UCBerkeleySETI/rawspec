@@ -129,7 +129,7 @@ char tmp[16];
         // outputting over the network.
         pchar = strrchr(dest, ':');
         if(pchar) {
-          // Null terminate hostname, advance to port
+          // NUL terminate hostname, advance to port
           *pchar++ = '\0';
           dest_port = pchar;
           output_mode = RAWSPEC_NET;
@@ -358,15 +358,15 @@ char tmp[16];
           cb_data[i].fb_hdr.nchans = ctx.Nc * ctx.Nts[i];
           cb_data[i].fb_hdr.tsamp = raw_hdr.tbin * ctx.Nts[i] * ctx.Nas[i];
 
-          cb_data[i].fd = open_output_file(dest, argv[si], i);
-          if(cb_data[i].fd == -1) {
-            // If we can't open this output file, we probably won't be able to
-            // open any more output files, so print message and bail out.
-            fprintf(stderr, "cannot open output file, giving up\n");
-            return 1; // Give up
-          }
-
           if(output_mode == RAWSPEC_FILE) {
+            cb_data[i].fd = open_output_file(dest, argv[si], i);
+            if(cb_data[i].fd == -1) {
+              // If we can't open this output file, we probably won't be able to
+              // open any more output files, so print message and bail out.
+              fprintf(stderr, "cannot open output file, giving up\n");
+              return 1; // Give up
+            }
+
             // Write filterbank header to output file
             fb_fd_write_header(cb_data[i].fd, &cb_data[i].fb_hdr);
           }
