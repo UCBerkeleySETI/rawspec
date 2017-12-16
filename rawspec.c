@@ -209,9 +209,13 @@ char tmp[16];
   // Init user_data to be array of callback data structures
   ctx.user_data = &cb_data;
 
+  // Zero-out the callback data sructures
+  for(i=0; i<ctx.No; i++) {
+    memset(&cb_data[i], 0, sizeof(callback_data_t));
+  }
+
   // Init pre-defined filterbank headers
   for(i=0; i<ctx.No; i++) {
-    memset(&cb_data[i].fb_hdr, 0, sizeof(fb_hdr_t));
     cb_data[i].fb_hdr.machine_id = 20;
     cb_data[i].fb_hdr.telescope_id = 6; // GBT
     cb_data[i].fb_hdr.data_type = 1;
