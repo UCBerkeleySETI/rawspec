@@ -8,6 +8,7 @@
 #include "rawspec_socket.h"
 #include "rawspec_callback.h"
 
+#define MIN_MTU (8600)
 #define MAX_FLOATS_PER_PACKET (8192 / sizeof(float))
 
 #define MIN(a,b) ((a < b) ? (a) : (b))
@@ -16,6 +17,8 @@ int open_output_socket(const char * host, const char * port)
 {
   int rc;
   int sfd;
+  unsigned int mtu = 0;
+  socklen_t ss = sizeof(int);
   struct addrinfo hints;
   struct addrinfo * result;
   struct addrinfo * rp;
@@ -59,6 +62,29 @@ int open_output_socket(const char * host, const char * port)
   }
 
   freeaddrinfo(result); // No longer needed
+
+  // Get MTU and make sure it's large enough.
+  // At this point it is probably only local MTU, but it's a start.
+  rc = getsockopt(sfd, IPPROTO_IP, IP_MTU, &mtu, &ss);
+  if(rc < 0) {
+    perror("getsockopt");
+    fprintf(stderr, "warning: could not determine MTU\n");
+  } else if(mtu < MIN_MTU) {
+    fprintf(stderr, "MTU %u is too small, need at least %u\n", mtu, MIN_MTU);
+    close(sfd);
+    return -1;
+  }
+
+  // Set IP_MTU_DISCOVER socket option to IP_PMTUDISC_PROBE.  This sets the DF
+  // (don't fragment) flag on outbound packets and ignores MTU changes.  This
+  // is probably not essential.
+  mtu = IP_PMTUDISC_PROBE;
+  rc = setsockopt(sfd, IPPROTO_IP, IP_MTU_DISCOVER, &mtu, sizeof(int));
+  if(rc < 0) {
+    perror("setsockopt");
+    fprintf(stderr,
+        "warning: could not set IP_MTU_DISCOVER to IP_PMTUDISC_PROBE\n");
+  }
 
   return sfd;
 }
@@ -176,6 +202,7 @@ void dump_net_callback(rawspec_context * ctx, int output_product)
       }
 
       // Send packet
+      // TODO Handle EMSGSIZE errors from send()?
       total_packets++;
       if(send(cb_data->fd, pkt, ppkt-pkt, 0) == -1) {
         if(errno == ENOTCONN) {
