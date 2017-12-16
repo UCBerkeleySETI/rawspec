@@ -333,7 +333,7 @@ char tmp[16];
             close(fdin);
             break;
           } else {
-            printf("initializtion succeeded for new block dimensions\n");
+            printf("initialization succeeded for new block dimensions\n");
           }
         } else {
           // Same as previous stem, just reset for new integration
