@@ -530,5 +530,14 @@ char tmp[16];
     }
   }
 
+  // Print stats
+  for(i=0; i<ctx.No; i++) {
+    printf("output product %d: %u spectra", i, cb_data[i].total_spectra);
+    if(cb_data[i].total_packets > 0) {
+      printf(" (%u packets)", cb_data[i].total_packets);
+    }
+    printf("\n");
+  }
+
   return 0;
 }

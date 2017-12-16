@@ -36,4 +36,7 @@ void dump_file_callback(rawspec_context * ctx, int output_product)
   write(cb_data[output_product].fd,
         ctx->h_pwrbuf[output_product],
         ctx->h_pwrbuf_size[output_product]);
+
+  // Increment total spectra counter for this output product
+  cb_data[output_product].total_spectra += ctx->Nds[output_product];
 }

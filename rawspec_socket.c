@@ -219,5 +219,9 @@ void dump_net_callback(rawspec_context * ctx, int output_product)
         output_product, error_packets, total_packets);
   }
 
+  // Increment total spectra and total packets counters
+  cb_data->total_spectra += ctx->Nds[output_product];
+  cb_data->total_packets += total_packets;
+
   first[output_product] = 0;
 }

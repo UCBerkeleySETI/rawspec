@@ -5,6 +5,8 @@
 
 typedef struct {
   int fd; // Output file descriptor or socket
+  unsigned int total_spectra;
+  unsigned int total_packets;
   fb_hdr_t fb_hdr;
 } callback_data_t;
 
