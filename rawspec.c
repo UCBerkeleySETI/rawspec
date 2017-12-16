@@ -338,6 +338,11 @@ char tmp[16];
             break;
           } else {
             printf("initialization succeeded for new block dimensions\n");
+#if 0
+            if(output_mode == RAWSPEC_NET) {
+              set_socket_options(&ctx);
+            }
+#endif
           }
         } else {
           // Same as previous stem, just reset for new integration

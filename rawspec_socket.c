@@ -63,6 +63,43 @@ int open_output_socket(const char * host, const char * port)
   return sfd;
 }
 
+#if 0
+void set_socket_options(rawspec_context * ctx)
+{
+  int i;
+  int rc;
+  int fd = -1;
+  unsigned int bufsize = 0;
+  socklen_t ss = sizeof(int);
+  callback_data_t * cb_data = (callback_data_t *)ctx->user_data;
+
+  // Calculate sum of all power buffer sizes.
+  // TODO Be more selective if/when multiple sockets are used.
+  for(i=0; i < ctx->No; i++) {
+    bufsize += ctx->h_pwrbuf_size[i];
+  }
+  bufsize *= 2;
+
+  for(i=0; i < ctx->No; i++) {
+    if(fd != cb_data[i].fd) {
+      fd = cb_data[i].fd;
+
+      printf("setting socket send buffer to %u bytes\n", bufsize);
+
+      rc = setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &bufsize, sizeof(int));
+      if(rc < 0) {
+        perror("setsockopt");
+      }
+
+      rc = getsockopt(fd, SOL_SOCKET, SO_SNDBUF, &bufsize, &ss);
+      if(!rc) {
+        printf("send buffer size is %d bytes\n", bufsize);
+      }
+    }
+  }
+}
+#endif
+
 void dump_net_callback(rawspec_context * ctx, int output_product)
 {
   // This should use MAX_OUTPUTS, but that makes
