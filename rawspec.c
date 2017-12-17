@@ -362,8 +362,10 @@ char tmp[16];
           cb_data[i].fb_hdr.rawdatafile[80] = '\0';
           // Output product dependent
           cb_data[i].fb_hdr.foff = raw_hdr.obsbw/raw_hdr.obsnchan/ctx.Nts[i];
-          cb_data[i].fb_hdr.fch1 =
-            raw_hdr.obsfreq - raw_hdr.obsbw/2 + cb_data[i].fb_hdr.foff/2;
+          // This computes correct fch1 for odd or even number of fine channels
+          cb_data[i].fb_hdr.fch1 = raw_hdr.obsfreq
+            - raw_hdr.obsbw*(raw_hdr.obsnchan-1)/(2*raw_hdr.obsnchan)
+            - (ctx.Nts[i]/2) * cb_data[i].fb_hdr.foff;
           cb_data[i].fb_hdr.nchans = ctx.Nc * ctx.Nts[i];
           cb_data[i].fb_hdr.tsamp = raw_hdr.tbin * ctx.Nts[i] * ctx.Nas[i];
 
