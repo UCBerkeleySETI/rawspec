@@ -1,4 +1,5 @@
 PREFIX = /usr/local
+BINDIR = $(PREFIX)/bin
 INCDIR = $(PREFIX)/include
 LIBDIR = $(PREFIX)/lib
 
@@ -67,6 +68,8 @@ fileiotest: fileiotest.o
 	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ -L. -lrawspec
 
 install: rawspec.h librawspec.so
+	mkdir -p $(BINDIR)
+	cp -p rawspec $(BINDIR)
 	mkdir -p $(INCDIR)
 	cp -p rawspec.h $(INCDIR)
 	mkdir -p $(LIBDIR)
