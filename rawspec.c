@@ -167,6 +167,16 @@ char tmp[16];
     }
   }
 
+  // Skip past option args
+  argc -= optind;
+  argv += optind;
+
+  // If no stems given, print usage and exit
+  if(argc == 0) {
+    usage(argv0);
+    return 1;
+  }
+
   // Validate user input
   for(i=0; i < MAX_OUTPUTS; i++) {
     // If both Nt and Na are zero, stop validating/counting
@@ -194,16 +204,6 @@ char tmp[16];
     ctx.Nas[0] = 51;
     ctx.Nas[1] = 128;
     ctx.Nas[2] = 3072;
-  }
-
-  // Skip past option args
-  argc -= optind;
-  argv += optind;
-
-  // If no stems given, print usage and exit
-  if(argc == 0) {
-    usage(argv0);
-    return 1;
   }
 
   // Init user_data to be array of callback data structures
