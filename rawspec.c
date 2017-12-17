@@ -185,7 +185,7 @@ char tmp[16];
     } else if(ctx.Nts[i] ==0 || ctx.Nas[i] == 0) {
       // If only one of Nt or Ni are zero, error out
       fprintf(stderr,
-          "error: must specify same number of FFTs and integration lengths\n");
+          "error: must specify same number of FFT and integration lengths\n");
       return 1;
     };
   }
@@ -193,7 +193,7 @@ char tmp[16];
   ctx.No = i;
 
   if(ctx.No == 0) {
-    printf("using default FFTs and integration lengths\n");
+    printf("using default FFT and integration lengths\n");
     // These values are defaults for typical BL filterbank products.
     ctx.No = 3;
     // Number of fine channels per coarse channel (i.e. FFT size).
