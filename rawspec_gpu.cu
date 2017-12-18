@@ -1,4 +1,5 @@
 #include "rawspec.h"
+#include "rawspec_version.h"
 
 #include <cufft.h>
 #include <cufftXt.h>
@@ -115,6 +116,17 @@ static void CUDART_CB dump_stream_callback(cudaStream_t stream,
     dump_cb_data->ctx->dump_callback(dump_cb_data->ctx,
                                      dump_cb_data->output_product);
   }
+}
+
+// This stringification trick is from "info cpp"
+#define STRINGIFY1(s) #s
+#define STRINGIFY(s) STRINGIFY1(s)
+static const char rawspec_version[] = STRINGIFY(RAWSPEC_VERSION);
+
+// Returns a pointer to a string containing the rawspec version
+const char * rawspec_version_string()
+{
+  return rawspec_version;
 }
 
 // Sets ctx->Ntmax.

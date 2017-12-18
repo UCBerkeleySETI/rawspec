@@ -86,6 +86,9 @@ typedef enum {
 extern "C" {
 #endif
 
+// Returns a pointer to a string containing the rawspec version
+const char * rawspec_version_string();
+
 // Sets ctx->Ntmax.
 // Allocates host and device buffers based on the ctx->N values.
 // Allocated buffers are not cleared, except for the power outbut buffers.

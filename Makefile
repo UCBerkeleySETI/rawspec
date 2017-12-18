@@ -37,14 +37,17 @@ ifeq ($(Q),1)
 VERBOSE = @
 endif
 
+# Possibly (re-)build rawspec_version.h
+$(shell $(SHELL) gen_version.sh)
+
 all: rawspec rawspectest fileiotest
 
 # TODO Replace with auto-generated dependencies
 rawspec.o: rawspec.h fitshead.h rawutils.h rawspec_callback.h \
-	         rawspec_file.h rawspec_socket.h
+	         rawspec_file.h rawspec_socket.h rawspec_version.h
 rawutils.o: rawutils.h
 rawspectest.o: rawspec.h
-rawspec_gpu.o: rawspec.h
+rawspec_gpu.o: rawspec.h rawspec_version.h
 fileiotest.o: rawspec.h
 rawspec_file.o: rawspec_file.h
 rawspec_socket.o: rawspec_socket.h

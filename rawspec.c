@@ -18,12 +18,17 @@
 #include "rawspec_file.h"
 #include "rawspec_socket.h"
 #include "rawspec_callback.h"
+#include "rawspec_version.h"
 #include "rawutils.h"
 #include "fbutils.h"
 #include "fitshead.h"
 
 #define ELAPSED_NS(start,stop) \
   (((int64_t)stop.tv_sec-start.tv_sec)*1000*1000*1000+(stop.tv_nsec-start.tv_nsec))
+
+// This stringification trick is from "info cpp"
+#define STRINGIFY1(s) #s
+#define STRINGIFY(s) STRINGIFY1(s)
 
 // Reads `bytes_to_read` bytes from `fd` into the buffer pointed to by `buf`.
 // Returns the total bytes read or -1 on error.  A non-negative return value
@@ -51,10 +56,11 @@ ssize_t read_fully(int fd, void * buf, size_t bytes_to_read)
 }
 
 static struct option long_opts[] = {
-  {"help", 0, NULL, 'h'},
-  {"ffts", 1, NULL, 'f'},
-  {"ints", 1, NULL, 't'},
-  {"dest", 1, NULL, 'd'},
+  {"help",    0, NULL, 'h'},
+  {"ffts",    1, NULL, 'f'},
+  {"ints",    1, NULL, 't'},
+  {"dest",    1, NULL, 'd'},
+  {"version", 0, NULL, 'v'},
   {0,0,0,0}
 };
 
@@ -73,6 +79,7 @@ void usage(const char *argv0) {
     "  -f, --ffts=N1[,N2...] FFT lengths\n"
     "  -t, --ints=N1[,N2...] Spectra to integrate\n"
     "  -d, --dest=DEST       Destination directory or host:port\n"
+    "  -v, --version         Show version and exit\n"
     , bname
   );
 }
@@ -116,7 +123,7 @@ char tmp[16];
 
   // Parse command line.
   argv0 = argv[0];
-  while((opt=getopt_long(argc,argv,"hd:f:t:",long_opts,NULL))!=-1) {
+  while((opt=getopt_long(argc,argv,"hd:f:t:v",long_opts,NULL))!=-1) {
     switch (opt) {
       case 'h': // Help
         usage(argv0);
@@ -158,6 +165,12 @@ char tmp[16];
           }
           ctx.Nas[i] = strtoul(pchar, NULL, 0);
         }
+        break;
+
+      case 'v': // Version
+        printf("rawspec %s\n", STRINGIFY(RAWSPEC_VERSION));
+        printf("librawspec %s\n", rawspec_version_string());
+        return 0;
         break;
 
       case '?': // Command line parsing error

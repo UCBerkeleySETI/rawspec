@@ -2,5 +2,6 @@ fileiotest
 librawspec.so
 rawspec
 rawspectest
+rawspec_version.h
 tags
 *.o
