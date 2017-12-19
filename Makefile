@@ -9,7 +9,7 @@ CC=gcc
 HOST_COMPILER ?= $(CC)
 NVCC          := $(CUDA_PATH)/bin/nvcc -ccbin $(HOST_COMPILER)
 
-CFLAGS = -ggdb
+CFLAGS = -ggdb -fPIC
 NVCC_FLAGS = -m64 -g -Xcompiler=-fPIC -I$(CUDA_PATH)/samples/common/inc
 
 CUDA_SHARED_LIBS = -lcufft
@@ -57,11 +57,11 @@ rawspec_socket.o: rawspec_socket.h
 %.o: %.cu
 	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) -dc $(GENCODE_FLAGS) -o $@ -c $<
 	
-librawspec.so: rawspec_gpu.o
+librawspec.so: rawspec_gpu.o rawspec_fbutils.o
 	$(VERBOSE) $(NVCC) -shared $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ $(CUDA_STATIC_LIBS)
 
 rawspec: librawspec.so
-rawspec: rawspec.o rawutils.o rawspec_fbutils.o hget.o rawspec_file.o rawspec_socket.o
+rawspec: rawspec.o rawutils.o hget.o rawspec_file.o rawspec_socket.o
 	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ -L. -lrawspec
 
 rawspectest: librawspec.so
@@ -77,6 +77,7 @@ install: rawspec.h librawspec.so
 	cp -p rawspec $(BINDIR)
 	mkdir -p $(INCDIR)
 	cp -p rawspec.h $(INCDIR)
+	cp -p rawspec_fbutils.h $(INCDIR)
 	mkdir -p $(LIBDIR)
 	cp -p librawspec.so $(LIBDIR)
 
