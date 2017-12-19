@@ -148,7 +148,7 @@ void dump_net_callback(rawspec_context * ctx, int output_product)
 
   // Fields to remember from header
   int hdr_nchans = fb_hdr->nchans;
-  int hdr_fch1   = fb_hdr->fch1;
+  double hdr_fch1   = fb_hdr->fch1;
 
   int channels_per_packet;
   int spectra_per_packet;
