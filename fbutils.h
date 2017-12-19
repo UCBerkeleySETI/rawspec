@@ -114,7 +114,12 @@ typedef struct {
 extern "C" {
 #endif
 
+// Conversion utilities
+
 double fb_ddd_to_dms(double ddd);
+double fb_dms_to_ddd(double dms);
+
+// Write utilities
 
 ssize_t fb_fd_write_int(int fd, int32_t i);
 void * fb_buf_write_int(void * buf, int32_t i);
@@ -127,6 +132,22 @@ void * fb_buf_write_angle(void * buf, double d);
 
 ssize_t fb_fd_write_string(int fd, const char * c);
 void * fb_buf_write_string(void * buf, const char * c);
+
+// Read utilities
+
+int32_t fb_fd_read_int(int fd, int32_t * i);
+void * fb_buf_read_int(void * buf, int32_t * i);
+
+double fb_fd_read_double(int fd, double * d);
+void * fb_buf_read_double(void * buf, double * d);
+
+double fb_fd_read_angle(int fd, double * d);
+void * fb_buf_read_angle(void * buf, double * d);
+
+ssize_t fb_fd_read_string(int fd, char * c, size_t * n);
+void * fb_buf_read_string(void * buf, char * c, size_t * n);
+
+// Header functions
 
 ssize_t fb_fd_write_header(int fd, const fb_hdr_t * hdr);
 void * fb_buf_write_header(void * buf, const fb_hdr_t * hdr);

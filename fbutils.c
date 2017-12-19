@@ -9,6 +9,8 @@
 
 #include "fbutils.h"
 
+// Conversion utilities
+
 double fb_ddd_to_dms(double ddd)
 {
   int sign = ddd < 0 ? -1 : +1;
@@ -19,6 +21,25 @@ double fb_ddd_to_dms(double ddd)
   mm  = floor(mm);
   return sign * (10000*ddd + 100*mm + ss);
 }
+
+double fb_dms_to_ddd(double dms)
+{
+  double dd;
+  double mm;
+  double ss;
+
+  int sign = dms < 0 ? -1 : +1;
+  dms = fabs(dms);
+
+  dd = floor(dms / 10000);
+  dms -= 10000 * dd;
+  mm = floor(dms / 100);
+  ss = dms - 100 * mm;
+  dd += mm/60.0 + ss/3600.0;
+  return sign * dd;
+}
+
+// Write utilities
 
 ssize_t fb_fd_write_int(int fd, int32_t i)
 {
@@ -72,6 +93,130 @@ void * fb_buf_write_string(void * buf, const char * c)
   memcpy(buf, c, len); 
   return buf + len;
 }
+
+// Read utilities
+
+int32_t fb_fd_read_int(int fd, int32_t * i)
+{
+  int ii;
+  read(fd, &ii, sizeof(int32_t));
+  ii = le32toh(ii);
+  if(i) {
+    *i = ii;
+  }
+  return ii;
+}
+
+void * fb_buf_read_int(void * buf, int32_t * i)
+{
+  if(i) {
+    *i = le32toh(*(int32_t *)buf);
+  }
+  return buf + sizeof(int32_t);
+}
+
+double fb_fd_read_double(int fd, double * d)
+{
+  uint64_t ii;
+  read(fd, &ii, sizeof(int64_t));
+  ii = le64toh(ii);
+  if(d) {
+    *d = *(double *)&ii;
+  }
+  return *(double *)&ii;
+}
+
+void * fb_buf_read_double(void * buf, double * d)
+{
+  uint64_t ii;
+  if(d) {
+    ii = *(uint64_t *)&buf;
+    ii = le64toh(ii);
+    *d = *(double *)&ii;
+  }
+  return buf + sizeof(int64_t);
+}
+
+double fb_fd_read_angle(int fd, double * d)
+{
+  double dd = fb_fd_read_double(fd, NULL);
+  dd = fb_dms_to_ddd(dd);
+  if(d) {
+    *d = dd;
+  }
+  return dd;
+}
+
+void * fb_buf_read_angle(void * buf, double * d)
+{
+  buf = fb_buf_read_double(buf, d);
+  if(d) {
+    *d = fb_dms_to_ddd(*d);
+  }
+  return buf;
+}
+
+// Only read max *n characters
+ssize_t fb_fd_read_string(int fd, char * c, size_t * n)
+{
+  int32_t total_len, read_len;
+  if(!c || !n) {
+    return -1;
+  }
+  // Read length
+  read(fd, &total_len, sizeof(int32_t));
+  read_len = total_len = le32toh(total_len);
+  // If length to read is greater than size of buffer
+  if(read_len > *n) {
+    // Truncate read length
+    read_len = *n;
+  }
+  // Read string
+  read_len = read(fd, c, read_len);
+  if(read_len == -1) {
+    return -1;
+  }
+  // If space remains in buffer, NUL terminate
+  if(read_len < *n) {
+    c[read_len] = '\0';
+  }
+  // If read was truncated, seek past rest of string
+  if(read_len < total_len) {
+    lseek(fd, total_len - read_len, SEEK_CUR);
+  }
+  // Store and return length read
+  *n = read_len;
+  return read_len;
+}
+
+// Only read max *n characters
+void * fb_buf_read_string(void * buf, char * c, size_t * n)
+{
+  int32_t total_len, read_len;
+  if(!c || !n) {
+    return buf;
+  }
+  // Get length
+  total_len = *(int32_t *)buf;
+  buf += sizeof(int32_t);
+  read_len = total_len = le32toh(total_len);
+  // If length to read is greater than size of buffer
+  if(read_len > *n) {
+    // Truncate read length
+    read_len = *n;
+  }
+  // Copy string
+  memcpy(c, buf, read_len);
+  // If space remains in buffer, NUL terminate
+  if(read_len < *n) {
+    c[read_len] = '\0';
+  }
+  // Store length
+  *n = read_len;
+  return buf + total_len;
+}
+
+// Header functions
 
 // TODO Add return value checking
 ssize_t fb_fd_write_header(int fd, const fb_hdr_t * hdr)
