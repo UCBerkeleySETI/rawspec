@@ -73,6 +73,9 @@ fileiotest: librawspec.so
 fileiotest: fileiotest.o
 	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ -L. -lrawspec
 
+rawspec_fbutils: rawspec_fbutils.c rawspec_fbutils.h
+	$(CC) -o $@ -DFBUTILS_TEST -ggdb -O0 $< -lm
+
 install: rawspec.h librawspec.so
 	mkdir -p $(BINDIR)
 	cp -p rawspec $(BINDIR)
