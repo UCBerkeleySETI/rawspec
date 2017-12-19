@@ -2,6 +2,7 @@ PREFIX = /usr/local
 BINDIR = $(PREFIX)/bin
 INCDIR = $(PREFIX)/include
 LIBDIR = $(PREFIX)/lib
+DATADIR = $(PREFIX)/share
 
 CUDA_PATH ?= /usr/local/cuda-8.0
 
@@ -80,6 +81,8 @@ install: rawspec.h librawspec.so
 	cp -p rawspec_fbutils.h $(INCDIR)
 	mkdir -p $(LIBDIR)
 	cp -p librawspec.so $(LIBDIR)
+	mkdir -p $(DATADIR)/aclocal
+	cp -p m4/rawspec.m4 $(DATADIR)/aclocal
 
 clean:
 	rm -f *.o *.so rawspec rawspectest fileiotest tags
