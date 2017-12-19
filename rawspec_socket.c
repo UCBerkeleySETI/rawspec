@@ -126,6 +126,10 @@ void set_socket_options(rawspec_context * ctx)
 }
 #endif
 
+// TODO If the integration time allows, this callback can/should spawn a worker
+// thread that outputs the packets at a more leisurely pace to prevent flooding
+// the switch (which could happen if rawspec processes on multiple hosts dump
+// many packets to the same destination at the same time).
 void dump_net_callback(rawspec_context * ctx, int output_product)
 {
   // This should use MAX_OUTPUTS, but that makes

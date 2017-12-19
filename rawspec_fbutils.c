@@ -7,7 +7,7 @@
 #include <string.h>
 #include <endian.h>
 
-#include "fbutils.h"
+#include "rawspec_fbutils.h"
 
 // Conversion utilities
 

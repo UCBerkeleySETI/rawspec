@@ -20,7 +20,7 @@
 #include "rawspec_callback.h"
 #include "rawspec_version.h"
 #include "rawutils.h"
-#include "fbutils.h"
+#include "rawspec_fbutils.h"
 #include "fitshead.h"
 
 #define ELAPSED_NS(start,stop) \
