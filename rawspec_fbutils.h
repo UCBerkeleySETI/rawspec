@@ -152,6 +152,9 @@ void * fb_buf_read_string(void * buf, char * c, size_t * n);
 ssize_t fb_fd_write_header(int fd, const fb_hdr_t * hdr);
 void * fb_buf_write_header(void * buf, const fb_hdr_t * hdr);
 
+ssize_t fb_fd_read_header(int fd, fb_hdr_t * hdr, size_t * hdr_len);
+void * fb_buf_read_header(void * buf, fb_hdr_t * hdr, size_t * hdr_len);
+
 #ifdef __cplusplus
 }
 #endif

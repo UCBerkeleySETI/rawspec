@@ -130,7 +130,7 @@ void * fb_buf_read_double(void * buf, double * d)
 {
   uint64_t ii;
   if(d) {
-    ii = *(uint64_t *)&buf;
+    ii = *(uint64_t *)buf;
     ii = le64toh(ii);
     *d = *(double *)&ii;
   }
@@ -213,6 +213,7 @@ void * fb_buf_read_string(void * buf, char * c, size_t * n)
   }
   // Store length
   *n = read_len;
+
   return buf + total_len;
 }
 
@@ -325,6 +326,134 @@ void * fb_buf_write_header(void * buf, const fb_hdr_t * hdr)
   return buf;
 }
 
+// TODO Make this more robust by using the value of *hdr_len on enrty as the
+// max number of bytes to process from buf.
+void * fb_buf_read_header(void * buf, fb_hdr_t * hdr, size_t * hdr_len)
+{
+  size_t len;
+  char kw[81];
+  void * p;
+
+  // No NULLs allowed!
+  if(!buf || !hdr || !hdr_len) {
+    return buf;
+  }
+
+  // Zero out the header structure
+  memset(hdr, 0, sizeof(fb_hdr_t));
+
+  // Read first keyword
+  len = sizeof(kw) - 1;
+  p = fb_buf_read_string(buf, kw, &len);
+  kw[len] = '\0';
+  // Make sure it's as expected/required
+  if(strcmp(kw, "HEADER_START")) {
+    return buf;
+  }
+
+  // Read next keyword
+  len = sizeof(kw) - 1;
+  p = fb_buf_read_string(p, kw, &len);
+  kw[len] = '\0';
+
+  // While we're not at the end
+  while(strcmp(kw, "HEADER_END")) {
+
+    // Read and store value for keyword
+    if(!strcmp(kw, "machine_id")) {
+      p = fb_buf_read_int(p, &hdr->machine_id);
+    } else if(!strcmp(kw, "telescope_id")) {
+      p = fb_buf_read_int(p, &hdr->telescope_id);
+    } else if(!strcmp(kw, "data_type")) {
+      p = fb_buf_read_int(p, &hdr->data_type);
+    } else if(!strcmp(kw, "barycentric")) {
+      p = fb_buf_read_int(p, &hdr->barycentric);
+    } else if(!strcmp(kw, "pulsarcentric")) {
+      p = fb_buf_read_int(p, &hdr->pulsarcentric);
+    } else if(!strcmp(kw, "src_raj")) {
+      p = fb_buf_read_angle(p, &hdr->src_raj);
+    } else if(!strcmp(kw, "src_dej")) {
+      p = fb_buf_read_angle(p, &hdr->src_dej);
+    } else if(!strcmp(kw, "az_start")) {
+      p = fb_buf_read_double(p, &hdr->az_start);
+    } else if(!strcmp(kw, "za_start")) {
+      p = fb_buf_read_double(p, &hdr->za_start);
+    } else if(!strcmp(kw, "fch1")) {
+      p = fb_buf_read_double(p, &hdr->fch1);
+    } else if(!strcmp(kw, "foff")) {
+      p = fb_buf_read_double(p, &hdr->foff);
+    } else if(!strcmp(kw, "nchans")) {
+      p = fb_buf_read_int(p, &hdr->nchans);
+    } else if(!strcmp(kw, "nbeams")) {
+      p = fb_buf_read_int(p, &hdr->nbeams);
+    } else if(!strcmp(kw, "ibeam")) {
+      p = fb_buf_read_int(p, &hdr->ibeam);
+    } else if(!strcmp(kw, "nbits")) {
+      p = fb_buf_read_int(p, &hdr->nbits);
+    } else if(!strcmp(kw, "tstart")) {
+      p = fb_buf_read_double(p, &hdr->tstart);
+    } else if(!strcmp(kw, "tsamp")) {
+      p = fb_buf_read_double(p, &hdr->tsamp);
+    } else if(!strcmp(kw, "nifs")) {
+      p = fb_buf_read_int(p, &hdr->nifs);
+    } else if(!strcmp(kw, "source_name")) {
+      len = sizeof(hdr->source_name) - 1;
+      p = fb_buf_read_string(p, hdr->source_name, &len);
+      hdr->source_name[len] = '\0';
+    } else if(!strcmp(kw, "rawdatafile")) {
+      len = sizeof(hdr->rawdatafile) - 1;
+      p = fb_buf_read_string(p, hdr->rawdatafile, &len);
+      hdr->rawdatafile[len] = '\0';
+    } else {
+      // Ignore unknown keyword
+    }
+
+    // Read next keyword
+    len = sizeof(kw) - 1;
+    p = fb_buf_read_string(p, kw, &len);
+    kw[len] = '\0';
+  }
+
+  // Store length
+  if(hdr_len) {
+    *hdr_len = p - buf;
+  }
+
+  return p;
+}
+
+ssize_t fb_fd_read_header(int fd, fb_hdr_t * hdr, size_t * hdr_len)
+{
+  char buf[4096];
+  char * p;
+  size_t len;
+  size_t bytes_read;
+
+  // Make sure hdr is non-NULL
+  if(!hdr) {
+    return -1;
+  }
+
+  // Read more than the header could ever be
+  len = bytes_read = read(fd, buf, sizeof(buf));
+
+  // Parse header from buffer
+  p = fb_buf_read_header(buf, hdr, &len);
+
+  // If successful
+  if(p != buf) {
+    // Seek to end of header
+    lseek(fd, len - 4096, SEEK_CUR);
+    // Store length
+    if(hdr_len) {
+      *hdr_len = len;
+    }
+  }
+
+  return len;
+}
+
+
 #ifdef FBUTILS_TEST
 
 #include <stdio.h>
@@ -381,25 +510,33 @@ int main(int argc, char * argv[])
   // Max string size is supposed to be 80, but bug in sigproc if over 79
   strcpy(hdr.rawdatafile, "1234567890123456789012345678901234567890123456789012345678901234567890123456789");
 
-  float f = 0;
+  if(argc > 1) {
+    int fd  = open(argv[1],  O_RDONLY);
+    ssize_t hdr_size = fb_fd_read_header(fd, &hdr, NULL);
+    printf("header size %lu bytes\n", hdr_size);
+    printf("fch1 %.17g\n", hdr.fch1);
+    printf("foff %.17g\n", hdr.foff);
+  } else {
+    float f = 0;
 
-  int fdfd  = open("fbutils_fd.fil",  O_WRONLY | O_CREAT, 0664);
-  int fdbuf = open("fbutils_buf.fil", O_WRONLY | O_CREAT, 0664);
+    int fdfd  = open("fbutils_fd.fil",  O_WRONLY | O_CREAT, 0664);
+    int fdbuf = open("fbutils_buf.fil", O_WRONLY | O_CREAT, 0664);
 
 
-  ssize_t nbytes = fb_fd_write_header(fdfd, &hdr);
-  write(fdfd, (void *)&f, sizeof(float));
-  printf("write %lu+4 fd bytes\n", nbytes);
+    ssize_t nbytes = fb_fd_write_header(fdfd, &hdr);
+    write(fdfd, (void *)&f, sizeof(float));
+    printf("write %lu+4 fd bytes\n", nbytes);
 
-  char buf[1024];
-  char * end = fb_buf_write_header(buf, &hdr);
-  nbytes = end-buf;
-  write(fdbuf, buf, nbytes);
-  write(fdbuf, (void *)&f, sizeof(float));
-  printf("write %lu+4 buf bytes\n", nbytes);
+    char buf[1024];
+    char * end = fb_buf_write_header(buf, &hdr);
+    nbytes = end-buf;
+    write(fdbuf, buf, nbytes);
+    write(fdbuf, (void *)&f, sizeof(float));
+    printf("write %lu+4 buf bytes\n", nbytes);
 
-  close(fdfd);
-  close(fdbuf);
+    close(fdfd);
+    close(fdbuf);
+  }
 
   return 0;
 }
