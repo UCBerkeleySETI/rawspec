@@ -250,6 +250,7 @@ char tmp[16];
   } else {
     ctx.dump_callback = dump_net_callback;
 
+#if 1
     // Open socket and store for all output products
     cb_data[0].fd = open_output_socket(dest, dest_port);
     if(cb_data[0].fd == -1) {
@@ -260,6 +261,15 @@ char tmp[16];
     for(i=1; i<ctx.No; i++) {
       cb_data[i].fd = cb_data[0].fd;
     }
+#else
+    for(i=0; i<ctx.No; i++) {
+      cb_data[i].fd = open_output_socket(dest, dest_port);
+      if(cb_data[i].fd == -1) {
+        fprintf(stderr, "cannot open output socket %d, giving up\n", i);
+        return 1; // Give up
+      }
+    }
+#endif
   }
 
   // For each stem
