@@ -144,8 +144,9 @@ void * fb_buf_read_double(void * buf, double * d);
 double fb_fd_read_angle(int fd, double * d);
 void * fb_buf_read_angle(void * buf, double * d);
 
-ssize_t fb_fd_read_string(int fd, char * c, size_t * n);
-void * fb_buf_read_string(void * buf, char * c, size_t * n);
+ssize_t fb_fd_read_string(int fd, char * c, int32_t * n);
+void * fb_buf_peek_string(void * buf, char ** c, int32_t * n);
+void * fb_buf_read_string(void * buf, char * c, int32_t * n);
 
 // Header functions
 

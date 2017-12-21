@@ -90,7 +90,7 @@ void * fb_buf_write_string(void * buf, const char * c)
 {
   int32_t len = strnlen(c, 80);
   buf = fb_buf_write_int(buf, len);
-  memcpy(buf, c, len); 
+  memcpy(buf, c, len);
   return buf + len;
 }
 
@@ -157,7 +157,7 @@ void * fb_buf_read_angle(void * buf, double * d)
 }
 
 // Only read max *n characters
-ssize_t fb_fd_read_string(int fd, char * c, size_t * n)
+ssize_t fb_fd_read_string(int fd, char * c, int32_t * n)
 {
   int32_t total_len, read_len;
   if(!c || !n) {
@@ -189,32 +189,44 @@ ssize_t fb_fd_read_string(int fd, char * c, size_t * n)
   return read_len;
 }
 
-// Only read max *n characters
-void * fb_buf_read_string(void * buf, char * c, size_t * n)
+// Sets *c to point to start of NOT-nul-terminated string in buf.  Sets *n to
+// length of string.  Returns buf+sizeof(int)+length_of_string unless c or n in
+// NULL in which case it returns buf.
+void * fb_buf_peek_string(void * buf, char ** c, int32_t * n)
 {
-  int32_t total_len, read_len;
   if(!c || !n) {
     return buf;
   }
-  // Get length
-  total_len = *(int32_t *)buf;
-  buf += sizeof(int32_t);
-  read_len = total_len = le32toh(total_len);
+  *c = fb_buf_read_int(buf, n);
+  return *c + *n;
+}
+
+// Only read max *n characters
+void * fb_buf_read_string(void * buf, char * c, int32_t * n)
+{
+  char * bufstr;
+  int32_t len;
+  if(!c || !n) {
+    return buf;
+  }
+  // Peek at string
+  buf = fb_buf_peek_string(buf, &bufstr, &len);
+
   // If length to read is greater than size of buffer
-  if(read_len > *n) {
+  if(len > *n) {
     // Truncate read length
-    read_len = *n;
+    len = *n;
   }
   // Copy string
-  memcpy(c, buf, read_len);
+  memcpy(c, bufstr, len);
   // If space remains in buffer, NUL terminate
-  if(read_len < *n) {
-    c[read_len] = '\0';
+  if(len < *n) {
+    c[len] = '\0';
   }
   // Store length
-  *n = read_len;
+  *n = len;
 
-  return buf + total_len;
+  return buf;
 }
 
 // Header functions
@@ -330,8 +342,8 @@ void * fb_buf_write_header(void * buf, const fb_hdr_t * hdr)
 // max number of bytes to process from buf.
 void * fb_buf_read_header(void * buf, fb_hdr_t * hdr, size_t * hdr_len)
 {
-  size_t len;
-  char kw[81];
+  int32_t len;
+  char * kw;
   void * p;
 
   // No NULLs allowed!
@@ -342,65 +354,62 @@ void * fb_buf_read_header(void * buf, fb_hdr_t * hdr, size_t * hdr_len)
   // Zero out the header structure
   memset(hdr, 0, sizeof(fb_hdr_t));
 
-  // Read first keyword
-  len = sizeof(kw) - 1;
-  p = fb_buf_read_string(buf, kw, &len);
-  kw[len] = '\0';
-  // Make sure it's as expected/required
-  if(strcmp(kw, "HEADER_START")) {
+  // Peek at first keyword
+  p = fb_buf_peek_string(buf, &kw, &len);
+  // If first string is not HEADER_START
+  if(strncmp(kw, "HEADER_START", len)) {
+    // buf is not a filterbank header, return original buf value.
     return buf;
   }
 
   // Read next keyword
-  len = sizeof(kw) - 1;
-  p = fb_buf_read_string(p, kw, &len);
-  kw[len] = '\0';
+  p = fb_buf_peek_string(p, &kw, &len);
 
   // While we're not at the end
-  while(strcmp(kw, "HEADER_END")) {
+  while(strncmp(kw, "HEADER_END", len)) {
 
     // Read and store value for keyword
-    if(!strcmp(kw, "machine_id")) {
+    if(!strncmp(kw, "machine_id", len)) {
       p = fb_buf_read_int(p, &hdr->machine_id);
-    } else if(!strcmp(kw, "telescope_id")) {
+    } else if(!strncmp(kw, "telescope_id", len)) {
       p = fb_buf_read_int(p, &hdr->telescope_id);
-    } else if(!strcmp(kw, "data_type")) {
+    } else if(!strncmp(kw, "data_type", len)) {
       p = fb_buf_read_int(p, &hdr->data_type);
-    } else if(!strcmp(kw, "barycentric")) {
+    } else if(!strncmp(kw, "barycentric", len)) {
       p = fb_buf_read_int(p, &hdr->barycentric);
-    } else if(!strcmp(kw, "pulsarcentric")) {
+    } else if(!strncmp(kw, "pulsarcentric", len)) {
       p = fb_buf_read_int(p, &hdr->pulsarcentric);
-    } else if(!strcmp(kw, "src_raj")) {
+    } else if(!strncmp(kw, "src_raj", len)) {
       p = fb_buf_read_angle(p, &hdr->src_raj);
-    } else if(!strcmp(kw, "src_dej")) {
+    } else if(!strncmp(kw, "src_dej", len)) {
       p = fb_buf_read_angle(p, &hdr->src_dej);
-    } else if(!strcmp(kw, "az_start")) {
+    } else if(!strncmp(kw, "az_start", len)) {
       p = fb_buf_read_double(p, &hdr->az_start);
-    } else if(!strcmp(kw, "za_start")) {
+    } else if(!strncmp(kw, "za_start", len)) {
       p = fb_buf_read_double(p, &hdr->za_start);
-    } else if(!strcmp(kw, "fch1")) {
+    } else if(!strncmp(kw, "fch1", len)) {
       p = fb_buf_read_double(p, &hdr->fch1);
-    } else if(!strcmp(kw, "foff")) {
+    } else if(!strncmp(kw, "foff", len)) {
       p = fb_buf_read_double(p, &hdr->foff);
-    } else if(!strcmp(kw, "nchans")) {
+    } else if(!strncmp(kw, "nchans", len)) {
       p = fb_buf_read_int(p, &hdr->nchans);
-    } else if(!strcmp(kw, "nbeams")) {
+    } else if(!strncmp(kw, "nbeams", len)) {
       p = fb_buf_read_int(p, &hdr->nbeams);
-    } else if(!strcmp(kw, "ibeam")) {
+    } else if(!strncmp(kw, "ibeam", len)) {
       p = fb_buf_read_int(p, &hdr->ibeam);
-    } else if(!strcmp(kw, "nbits")) {
+    } else if(!strncmp(kw, "nbits", len)) {
       p = fb_buf_read_int(p, &hdr->nbits);
-    } else if(!strcmp(kw, "tstart")) {
+    } else if(!strncmp(kw, "tstart", len)) {
       p = fb_buf_read_double(p, &hdr->tstart);
-    } else if(!strcmp(kw, "tsamp")) {
+    } else if(!strncmp(kw, "tsamp", len)) {
       p = fb_buf_read_double(p, &hdr->tsamp);
-    } else if(!strcmp(kw, "nifs")) {
+    } else if(!strncmp(kw, "nifs", len)) {
       p = fb_buf_read_int(p, &hdr->nifs);
-    } else if(!strcmp(kw, "source_name")) {
+    } else if(!strncmp(kw, "source_name", len)) {
       len = sizeof(hdr->source_name) - 1;
       p = fb_buf_read_string(p, hdr->source_name, &len);
       hdr->source_name[len] = '\0';
-    } else if(!strcmp(kw, "rawdatafile")) {
+    } else if(!strncmp(kw, "rawdatafile", len)) {
       len = sizeof(hdr->rawdatafile) - 1;
       p = fb_buf_read_string(p, hdr->rawdatafile, &len);
       hdr->rawdatafile[len] = '\0';
@@ -408,10 +417,8 @@ void * fb_buf_read_header(void * buf, fb_hdr_t * hdr, size_t * hdr_len)
       // Ignore unknown keyword
     }
 
-    // Read next keyword
-    len = sizeof(kw) - 1;
-    p = fb_buf_read_string(p, kw, &len);
-    kw[len] = '\0';
+    // Peek next keyword
+    p = fb_buf_peek_string(p, &kw, &len);
   }
 
   // Store length
