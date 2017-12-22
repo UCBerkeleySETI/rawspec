@@ -719,7 +719,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
 
       // Add power buffer clearing cudaMemset call to stream
       cuda_rc = cudaMemsetAsync(gpu_ctx->d_pwr_out[i], 0,
-                                ctx->Nds[i]*ctx->Nts[i]*ctx->Nc*sizeof(float),
+                                ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float),
                                 stream);
 
       if(cuda_rc != cudaSuccess) {
