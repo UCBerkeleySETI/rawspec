@@ -56,10 +56,12 @@ ssize_t read_fully(int fd, void * buf, size_t bytes_to_read)
 }
 
 static struct option long_opts[] = {
-  {"help",    0, NULL, 'h'},
-  {"ffts",    1, NULL, 'f'},
-  {"ints",    1, NULL, 't'},
   {"dest",    1, NULL, 'd'},
+  {"ffts",    1, NULL, 'f'},
+  {"nchan",   1, NULL, 'n'},
+  {"schan",   1, NULL, 's'},
+  {"ints",    1, NULL, 't'},
+  {"help",    0, NULL, 'h'},
   {"version", 0, NULL, 'v'},
   {0,0,0,0}
 };
@@ -75,10 +77,13 @@ void usage(const char *argv0) {
     "Usage: %s [options] STEM [...]\n"
     "\n"
     "Options:\n"
-    "  -h, --help            Show this message\n"
-    "  -f, --ffts=N1[,N2...] FFT lengths\n"
-    "  -t, --ints=N1[,N2...] Spectra to integrate\n"
     "  -d, --dest=DEST       Destination directory or host:port\n"
+    "  -f, --ffts=N1[,N2...] FFT lengths\n"
+    "  -n, --nchan=N         Number of coarse channels to process [all]\n"
+    "  -s, --schan=C         First coarse channel to process [0]\n"
+    "  -t, --ints=N1[,N2...] Spectra to integrate\n"
+    "\n"
+    "  -h, --help            Show this message\n"
     "  -v, --version         Show version and exit\n"
     , bname
   );
@@ -117,13 +122,15 @@ char tmp[16];
   raw_hdr_t raw_hdr;
   callback_data_t cb_data[MAX_OUTPUTS];
   rawspec_context ctx;
+  unsigned int schan = 0;
+  unsigned int nchan = 0;
 
   // Init rawspec context
   memset(&ctx, 0, sizeof(ctx));
 
   // Parse command line.
   argv0 = argv[0];
-  while((opt=getopt_long(argc,argv,"hd:f:t:v",long_opts,NULL))!=-1) {
+  while((opt=getopt_long(argc,argv,"d:f:n:s:t:hv",long_opts,NULL))!=-1) {
     switch (opt) {
       case 'h': // Help
         usage(argv0);
@@ -153,6 +160,14 @@ char tmp[16];
           }
           ctx.Nts[i] = strtoul(pchar, NULL, 0);
         }
+        break;
+
+      case 'n': // Number of coarse channels to process
+        nchan = strtoul(optarg, NULL, 0);
+        break;
+
+      case 's': // First coarse channel to process
+        schan = strtoul(optarg, NULL, 0);
         break;
 
       case 't': // Number of spectra to accumumate
@@ -187,6 +202,12 @@ char tmp[16];
   // If no stems given, print usage and exit
   if(argc == 0) {
     usage(argv0);
+    return 1;
+  }
+
+  // If schan is non-zero, nchan must be too
+  if(schan != 0 && nchan == 0) {
+    fprintf(stderr, "error: nchan must be non-zero if schan is non-zero\n");
     return 1;
   }
 
@@ -307,7 +328,6 @@ char tmp[16];
           fprintf(stderr, "no data found in %s\n", fname);
         }
         close(fdin);
-        next_stem = 1;
         break; // Goto next stem
       }
 
@@ -340,6 +360,20 @@ char tmp[16];
         printf("OBSBW    = %g\n",  raw_hdr.obsbw);
         printf("TBIN     = %g\n",  raw_hdr.tbin);
 #endif // VERBOSE
+
+        // If processing a subset of coarse channels
+        if(nchan != 0) {
+          // Validate schan and nchan
+          if(nchan != 0 && schan + nchan > Nc) {
+            printf("bad channel range: schan + nchan > obsnchan (%u + %u > %d)\n",
+                schan, nchan, raw_hdr.obsnchan);
+            close(fdin);
+            break; // Goto next stem
+          }
+
+          // Use nchan as Nc
+          Nc = nchan;
+        }
 
         // If block dimensions have changed
         if(Nc != ctx.Nc || Np != ctx.Np || Ntpb != ctx.Ntpb) {
@@ -388,7 +422,8 @@ char tmp[16];
           // This computes correct fch1 for odd or even number of fine channels
           cb_data[i].fb_hdr.fch1 = raw_hdr.obsfreq
             - raw_hdr.obsbw*(raw_hdr.obsnchan-1)/(2*raw_hdr.obsnchan)
-            - (ctx.Nts[i]/2) * cb_data[i].fb_hdr.foff;
+            - (ctx.Nts[i]/2) * cb_data[i].fb_hdr.foff
+            + schan * raw_hdr.obsbw / raw_hdr.obsnchan; // Adjust for schan
           cb_data[i].fb_hdr.nchans = ctx.Nc * ctx.Nts[i];
           cb_data[i].fb_hdr.tsamp = raw_hdr.tbin * ctx.Nts[i] * ctx.Nas[i];
 
@@ -465,17 +500,25 @@ char tmp[16];
           } // filler zero blocks
         } // irregular pktidx step
 
+        // Seek past first schan channel
+        lseek(fdin, 2 * ctx.Np * schan * ctx.Ntpb, SEEK_CUR);
+
+        // Read ctx.Nc coarse channels from this block
         bytes_read = read_fully(fdin,
                                 ctx.h_blkbufs[bi % ctx.Nb],
-                                raw_hdr.blocsize);
+                                2 * ctx.Np * ctx.Nc * ctx.Ntpb);
+
+        // Seek past channels after schan+nchan
+        lseek(fdin, 2 * ctx.Np * (raw_hdr.obsnchan-(schan+Nc)) * ctx.Ntpb, SEEK_CUR);
+
         if(bytes_read == -1) {
           perror("read");
           next_stem = 1;
-          break;
-        } else if(bytes_read < raw_hdr.blocsize) {
+          break; // Goto next file
+        } else if(bytes_read < 2 * ctx.Np * ctx.Nc * ctx.Ntpb) {
           fprintf(stderr, "incomplete block at EOF\n");
           next_stem = 1;
-          break;
+          break; // Goto next file
         }
         total_bytes_read += bytes_read;
 
