@@ -4,6 +4,7 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <errno.h>
+#include <time.h>
 
 #include "rawspec_socket.h"
 #include "rawspec_callback.h"
@@ -140,6 +141,8 @@ void dump_net_callback(rawspec_context * ctx, int output_product)
   char pkt[90000];
   char * ppkt = pkt;
   float * ppwr;
+  size_t pkt_size;
+  struct timespec sleep_time = {0, 0};
 
   callback_data_t * cb_data =
     &((callback_data_t *)ctx->user_data)[output_product];
@@ -208,17 +211,25 @@ void dump_net_callback(rawspec_context * ctx, int output_product)
       // Send packet
       // TODO Handle EMSGSIZE errors from send()?
       total_packets++;
-      if(send(cb_data->fd, pkt, ppkt-pkt, 0) == -1) {
+      pkt_size = ppkt - pkt;
+      if(send(cb_data->fd, pkt, pkt_size, 0) == -1) {
         if(errno == ENOTCONN) {
           // ENOTCONN means that there is no listener on the receive side.
           // Eventually we might want to stop sending packets if there is
           // no remote listener, but for now we try to send packet again
-          // (in case the remote side is capturing packets with tcpdump).
-          if(send(cb_data->fd, pkt, ppkt-pkt, 0) == -1) {
+          // in case the remote side is capturing packets with packet sockets
+          // (e.g. hashpipe or libpcap/tcpdump).
+          if(send(cb_data->fd, pkt, pkt_size, 0) == -1) {
             error_packets++;
           }
         }
       }
+
+      // Sleep to throttle output rate.  This should be made user-selectable,
+      // but for now assume 10 Gbps data rate and sleep for the packet
+      // transmission time.
+      sleep_time.tv_nsec = pkt_size * 8 / 10;
+      nanosleep(&sleep_time, NULL);
 
       // Advance ppwr
       ppwr += pkt_nchan;
