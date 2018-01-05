@@ -406,6 +406,13 @@ char tmp[16];
             break;
           } else {
             //printf("initialization succeeded for new block dimensions\n");
+
+            // Copy fields from ctx to cb_data
+            for(i=0; i<ctx.No; i++) {
+              cb_data[i].h_pwrbuf = ctx.h_pwrbuf[i];
+              cb_data[i].h_pwrbuf_size = ctx.h_pwrbuf_size[i];
+              cb_data[i].Nds = ctx.Nds[i];
+            }
 #if 0
             if(output_mode == RAWSPEC_NET) {
               set_socket_options(&ctx);
