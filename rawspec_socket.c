@@ -5,6 +5,7 @@
 #include <netdb.h>
 #include <errno.h>
 #include <time.h>
+#include <math.h>
 
 #include "rawspec_socket.h"
 #include "rawspec_callback.h"
@@ -142,6 +143,8 @@ void dump_net_callback(rawspec_context * ctx, int output_product)
   char * ppkt = pkt;
   float * ppwr;
   size_t pkt_size;
+  double sec_per_packet;
+  time_t sleep_ns;
   struct timespec sleep_time = {0, 0};
 
   callback_data_t * cb_data =
@@ -174,6 +177,17 @@ void dump_net_callback(rawspec_context * ctx, int output_product)
       spectra_per_packet = spec_remaining;
     }
   }
+
+  // Calculate real-time per packet:
+  //
+  //       time_per_spectrum * spectra_per_packet
+  //      ----------------------------------------
+  //          total_channels / packet_channels
+  sec_per_packet = fb_hdr->tsamp * spectra_per_packet
+                 / ((ctx->Nc*ctx->Nts[output_product]) / fb_hdr->nchans);
+
+  // Scale by rate factor
+  sec_per_packet *= cb_data->rate;
 
   if(first[output_product]) {
     fprintf(stderr, "output product %d: chan_per_pkt %4d spec_per_pkt %d\n",
@@ -225,11 +239,20 @@ void dump_net_callback(rawspec_context * ctx, int output_product)
         }
       }
 
-      // Sleep to throttle output rate.  This should be made user-selectable,
-      // but for now assume 10 Gbps data rate and sleep for the packet
-      // transmission time.
-      sleep_time.tv_nsec = pkt_size * 8 / 10;
-      nanosleep(&sleep_time, NULL);
+      // Sleep to throttle output rate.
+      if(cb_data->rate > 0) {
+        // Sleep for scaled observational real-time
+        sleep_time.tv_sec = (time_t)sec_per_packet;
+        sleep_time.tv_nsec = (time_t)(1e9*modf(sec_per_packet,NULL));
+        nanosleep(&sleep_time, NULL);
+      } else if(cb_data->rate < 0) {
+        // Sleep for scaled packet transmission time.
+        // Assumes 10 Gbps for now.
+        sleep_ns = (time_t)(-cb_data->rate * pkt_size * 8 / 10);
+        sleep_time.tv_sec  = sleep_ns / (1000*1000*1000);
+        sleep_time.tv_nsec = sleep_ns % (1000*1000*1000);
+        nanosleep(&sleep_time, NULL);
+      }
 
       // Advance ppwr
       ppwr += pkt_nchan;

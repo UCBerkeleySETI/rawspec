@@ -59,6 +59,7 @@ static struct option long_opts[] = {
   {"dest",    1, NULL, 'd'},
   {"ffts",    1, NULL, 'f'},
   {"nchan",   1, NULL, 'n'},
+  {"rate",    1, NULL, 'r'},
   {"schan",   1, NULL, 's'},
   {"ints",    1, NULL, 't'},
   {"help",    0, NULL, 'h'},
@@ -80,6 +81,10 @@ void usage(const char *argv0) {
     "  -d, --dest=DEST       Destination directory or host:port\n"
     "  -f, --ffts=N1[,N2...] FFT lengths\n"
     "  -n, --nchan=N         Number of coarse channels to process [all]\n"
+    "  -r, --rate=FLOAT      Relative rate to send packets [1.0]\n"
+    "                        +1.0 is observational real-time\n"
+    "                         0.0 is no rate limit\n"
+    "                        -1.0 is packet tx real-time\n"
     "  -s, --schan=C         First coarse channel to process [0]\n"
     "  -t, --ints=N1[,N2...] Spectra to integrate\n"
     "\n"
@@ -124,13 +129,14 @@ char tmp[16];
   rawspec_context ctx;
   unsigned int schan = 0;
   unsigned int nchan = 0;
+  double rate = 0.0;
 
   // Init rawspec context
   memset(&ctx, 0, sizeof(ctx));
 
   // Parse command line.
   argv0 = argv[0];
-  while((opt=getopt_long(argc,argv,"d:f:n:s:t:hv",long_opts,NULL))!=-1) {
+  while((opt=getopt_long(argc,argv,"d:f:n:r:s:t:hv",long_opts,NULL))!=-1) {
     switch (opt) {
       case 'h': // Help
         usage(argv0);
@@ -164,6 +170,10 @@ char tmp[16];
 
       case 'n': // Number of coarse channels to process
         nchan = strtoul(optarg, NULL, 0);
+        break;
+
+      case 'r': // Relative rate to send packets
+        rate = strtod(optarg, NULL);
         break;
 
       case 's': // First coarse channel to process
@@ -248,7 +258,7 @@ char tmp[16];
     memset(&cb_data[i], 0, sizeof(callback_data_t));
   }
 
-  // Init pre-defined filterbank headers
+  // Init pre-defined filterbank headers and save rate
   for(i=0; i<ctx.No; i++) {
     cb_data[i].fb_hdr.machine_id = 20;
     cb_data[i].fb_hdr.telescope_id = 6; // GBT
@@ -257,6 +267,7 @@ char tmp[16];
     cb_data[i].fb_hdr.ibeam  =  1;
     cb_data[i].fb_hdr.nbits  = 32;
     cb_data[i].fb_hdr.nifs   =  1;
+    cb_data[i].rate          = rate;
   }
 
   // Init callback file descriptors to sentinal values
