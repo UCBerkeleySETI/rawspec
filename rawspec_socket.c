@@ -132,7 +132,10 @@ void set_socket_options(rawspec_context * ctx)
 // thread that outputs the packets at a more leisurely pace to prevent flooding
 // the switch (which could happen if rawspec processes on multiple hosts dump
 // many packets to the same destination at the same time).
-void dump_net_callback(rawspec_context * ctx, int output_product)
+void dump_net_callback(
+    rawspec_context * ctx,
+    int output_product,
+    int callback_type)
 {
   // This should use MAX_OUTPUTS, but that makes
   // initialization of this static array harder.
@@ -147,146 +150,148 @@ void dump_net_callback(rawspec_context * ctx, int output_product)
   time_t sleep_ns;
   struct timespec sleep_time = {0, 0};
 
-  callback_data_t * cb_data =
-    &((callback_data_t *)ctx->user_data)[output_product];
+  if(callback_type == RAWSPEC_CALLBACK_POST_DUMP) {
+    callback_data_t * cb_data =
+      &((callback_data_t *)ctx->user_data)[output_product];
 
-  fb_hdr_t * fb_hdr = &cb_data->fb_hdr;
+    fb_hdr_t * fb_hdr = &cb_data->fb_hdr;
 
-  // Fields to remember from header
-  int hdr_nchans = fb_hdr->nchans;
-  double hdr_fch1   = fb_hdr->fch1;
+    // Fields to remember from header
+    int hdr_nchans = fb_hdr->nchans;
+    double hdr_fch1   = fb_hdr->fch1;
 
-  int channels_per_packet;
-  int spectra_per_packet;
-  int chan_remaining;
-  int spec_remaining = ctx->Nds[output_product];
+    int channels_per_packet;
+    int spectra_per_packet;
+    int chan_remaining;
+    int spec_remaining = ctx->Nds[output_product];
 
-  int pkt_nchan;
-  int pkt_nspec;
+    int pkt_nchan;
+    int pkt_nspec;
 
-  int total_packets = 0;
-  int error_packets = 0;
+    int total_packets = 0;
+    int error_packets = 0;
 
-  if(hdr_nchans >= MAX_FLOATS_PER_PACKET) {
-    channels_per_packet = MAX_FLOATS_PER_PACKET;
-    spectra_per_packet = 1;
-  } else {
-    channels_per_packet = hdr_nchans;
-    spectra_per_packet = MAX_FLOATS_PER_PACKET / hdr_nchans;
-    if(spectra_per_packet > spec_remaining) {
-      spectra_per_packet = spec_remaining;
-    }
-  }
-
-  // Calculate real-time per packet:
-  //
-  //       time_per_spectrum * spectra_per_packet
-  //      ----------------------------------------
-  //          total_channels / packet_channels
-  sec_per_packet = fb_hdr->tsamp * spectra_per_packet
-                 / ((ctx->Nc*ctx->Nts[output_product]) / fb_hdr->nchans);
-
-  // Scale by rate factor
-  sec_per_packet *= cb_data->rate;
-
-  if(first[output_product]) {
-    fprintf(stderr, "output product %d: chan_per_pkt %4d spec_per_pkt %d\n",
-        output_product, channels_per_packet, spectra_per_packet);
-  }
-
-  // Outer loop over all spectra for this dump
-  while(spec_remaining) {
-    pkt_nspec = MIN(spectra_per_packet, spec_remaining);
-
-    // Restore header fch1
-    fb_hdr->fch1 = hdr_fch1;
-
-    // Set ppwr to start of current output spectrum
-    ppwr = ctx->h_pwrbuf[output_product]
-         + (ctx->Nds[output_product] - spec_remaining) * hdr_nchans;
-
-    // Inner loop over all channels for this dump
-    chan_remaining = hdr_nchans;
-    while(chan_remaining) {
-      pkt_nchan = MIN(channels_per_packet, chan_remaining);
-
-      // Update header nchans
-      fb_hdr->nchans = pkt_nchan;
-
-      // Output header to packet buffer
-      ppkt = fb_buf_write_header(pkt, fb_hdr);
-
-      // Copy spectra to buffer
-      for(i=0; i<pkt_nspec; i++) {
-        memcpy(ppkt, ppwr + i*hdr_nchans, pkt_nchan*sizeof(float));
-        ppkt += pkt_nchan*sizeof(float);
+    if(hdr_nchans >= MAX_FLOATS_PER_PACKET) {
+      channels_per_packet = MAX_FLOATS_PER_PACKET;
+      spectra_per_packet = 1;
+    } else {
+      channels_per_packet = hdr_nchans;
+      spectra_per_packet = MAX_FLOATS_PER_PACKET / hdr_nchans;
+      if(spectra_per_packet > spec_remaining) {
+        spectra_per_packet = spec_remaining;
       }
+    }
 
-      // Send packet
-      // TODO Handle EMSGSIZE errors from send()?
-      total_packets++;
-      pkt_size = ppkt - pkt;
-      if(send(cb_data->fd, pkt, pkt_size, 0) == -1) {
-        if(errno == ENOTCONN) {
-          // ENOTCONN means that there is no listener on the receive side.
-          // Eventually we might want to stop sending packets if there is
-          // no remote listener, but for now we try to send packet again
-          // in case the remote side is capturing packets with packet sockets
-          // (e.g. hashpipe or libpcap/tcpdump).
-          if(send(cb_data->fd, pkt, pkt_size, 0) == -1) {
-            error_packets++;
+    // Calculate real-time per packet:
+    //
+    //       time_per_spectrum * spectra_per_packet
+    //      ----------------------------------------
+    //          total_channels / packet_channels
+    sec_per_packet = fb_hdr->tsamp * spectra_per_packet
+                   / ((ctx->Nc*ctx->Nts[output_product]) / fb_hdr->nchans);
+
+    // Scale by rate factor
+    sec_per_packet *= cb_data->rate;
+
+    if(first[output_product]) {
+      fprintf(stderr, "output product %d: chan_per_pkt %4d spec_per_pkt %d\n",
+          output_product, channels_per_packet, spectra_per_packet);
+    }
+
+    // Outer loop over all spectra for this dump
+    while(spec_remaining) {
+      pkt_nspec = MIN(spectra_per_packet, spec_remaining);
+
+      // Restore header fch1
+      fb_hdr->fch1 = hdr_fch1;
+
+      // Set ppwr to start of current output spectrum
+      ppwr = ctx->h_pwrbuf[output_product]
+           + (ctx->Nds[output_product] - spec_remaining) * hdr_nchans;
+
+      // Inner loop over all channels for this dump
+      chan_remaining = hdr_nchans;
+      while(chan_remaining) {
+        pkt_nchan = MIN(channels_per_packet, chan_remaining);
+
+        // Update header nchans
+        fb_hdr->nchans = pkt_nchan;
+
+        // Output header to packet buffer
+        ppkt = fb_buf_write_header(pkt, fb_hdr);
+
+        // Copy spectra to buffer
+        for(i=0; i<pkt_nspec; i++) {
+          memcpy(ppkt, ppwr + i*hdr_nchans, pkt_nchan*sizeof(float));
+          ppkt += pkt_nchan*sizeof(float);
+        }
+
+        // Send packet
+        // TODO Handle EMSGSIZE errors from send()?
+        total_packets++;
+        pkt_size = ppkt - pkt;
+        if(send(cb_data->fd, pkt, pkt_size, 0) == -1) {
+          if(errno == ENOTCONN) {
+            // ENOTCONN means that there is no listener on the receive side.
+            // Eventually we might want to stop sending packets if there is
+            // no remote listener, but for now we try to send packet again
+            // in case the remote side is capturing packets with packet sockets
+            // (e.g. hashpipe or libpcap/tcpdump).
+            if(send(cb_data->fd, pkt, pkt_size, 0) == -1) {
+              error_packets++;
+            }
           }
         }
-      }
 
-      // Sleep to throttle output rate.
-      if(cb_data->rate > 0) {
-        // Sleep for scaled observational real-time
-        sleep_time.tv_sec = (time_t)sec_per_packet;
-        sleep_time.tv_nsec = (time_t)(1e9*modf(sec_per_packet,NULL));
-        nanosleep(&sleep_time, NULL);
-      } else if(cb_data->rate < 0) {
-        // Sleep for scaled packet transmission time.
-        // Assumes 10 Gbps for now.
-        sleep_ns = (time_t)(-cb_data->rate * pkt_size * 8 / 10);
-        sleep_time.tv_sec  = sleep_ns / (1000*1000*1000);
-        sleep_time.tv_nsec = sleep_ns % (1000*1000*1000);
-        nanosleep(&sleep_time, NULL);
-      }
+        // Sleep to throttle output rate.
+        if(cb_data->rate > 0) {
+          // Sleep for scaled observational real-time
+          sleep_time.tv_sec = (time_t)sec_per_packet;
+          sleep_time.tv_nsec = (time_t)(1e9*modf(sec_per_packet,NULL));
+          nanosleep(&sleep_time, NULL);
+        } else if(cb_data->rate < 0) {
+          // Sleep for scaled packet transmission time.
+          // Assumes 10 Gbps for now.
+          sleep_ns = (time_t)(-cb_data->rate * pkt_size * 8 / 10);
+          sleep_time.tv_sec  = sleep_ns / (1000*1000*1000);
+          sleep_time.tv_nsec = sleep_ns % (1000*1000*1000);
+          nanosleep(&sleep_time, NULL);
+        }
 
-      // Advance ppwr
-      ppwr += pkt_nchan;
+        // Advance ppwr
+        ppwr += pkt_nchan;
 
-      // Update header fch1
-      fb_hdr->fch1 += pkt_nchan * fb_hdr->foff;
+        // Update header fch1
+        fb_hdr->fch1 += pkt_nchan * fb_hdr->foff;
 
-      // Decrement chan_remaining
-      chan_remaining -= pkt_nchan;
+        // Decrement chan_remaining
+        chan_remaining -= pkt_nchan;
 
-    } // Inner loop over all channels
+      } // Inner loop over all channels
 
-    // Update header tstart
-    fb_hdr->tstart += pkt_nspec * fb_hdr->tsamp / 86400.0;
+      // Update header tstart
+      fb_hdr->tstart += pkt_nspec * fb_hdr->tsamp / 86400.0;
 
-    // Decrement spec_remaining
-    spec_remaining -= pkt_nspec;
+      // Decrement spec_remaining
+      spec_remaining -= pkt_nspec;
 
-  } // Outer loop over all spectra
+    } // Outer loop over all spectra
 
-  // Restore fch1
-  fb_hdr->fch1 = hdr_fch1;
+    // Restore fch1
+    fb_hdr->fch1 = hdr_fch1;
 
-  // Restore nchans
-  fb_hdr->nchans = hdr_nchans;
+    // Restore nchans
+    fb_hdr->nchans = hdr_nchans;
 
-  if(error_packets > 0) {
-    printf("output product %d: error packets %d/%d\n",
-        output_product, error_packets, total_packets);
+    if(error_packets > 0) {
+      printf("output product %d: error packets %d/%d\n",
+          output_product, error_packets, total_packets);
+    }
+
+    // Increment total spectra and total packets counters
+    cb_data->total_spectra += ctx->Nds[output_product];
+    cb_data->total_packets += total_packets;
+
+    first[output_product] = 0;
   }
-
-  // Increment total spectra and total packets counters
-  cb_data->total_spectra += ctx->Nds[output_product];
-  cb_data->total_packets += total_packets;
-
-  first[output_product] = 0;
 }

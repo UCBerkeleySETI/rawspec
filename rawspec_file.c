@@ -21,22 +21,27 @@ int open_output_file(const char * dest, const char *stem, int output_idx)
   return fd;
 }
 
-void dump_file_callback(rawspec_context * ctx, int output_product)
+void dump_file_callback(
+    rawspec_context * ctx,
+    int output_product,
+    int callback_type)
 {
   int i;
+  if(callback_type == RAWSPEC_CALLBACK_POST_DUMP) {
 #ifdef VERBOSE
-  fprintf(stderr, "cb %d writing %lu bytes:",
-      output_product, ctx->h_pwrbuf_size[output_product]);
-  for(i=0; i<16; i++) {
-    fprintf(stderr, " %02x", ((char *)ctx->h_pwrbuf[output_product])[i] & 0xff);
-  }
-  fprintf(stderr, "\n");
+    fprintf(stderr, "cb %d writing %lu bytes:",
+        output_product, ctx->h_pwrbuf_size[output_product]);
+    for(i=0; i<16; i++) {
+      fprintf(stderr, " %02x", ((char *)ctx->h_pwrbuf[output_product])[i] & 0xff);
+    }
+    fprintf(stderr, "\n");
 #endif // VERBOSE
-  callback_data_t * cb_data = (callback_data_t *)ctx->user_data;
-  write(cb_data[output_product].fd,
-        ctx->h_pwrbuf[output_product],
-        ctx->h_pwrbuf_size[output_product]);
+    callback_data_t * cb_data = (callback_data_t *)ctx->user_data;
+    write(cb_data[output_product].fd,
+          ctx->h_pwrbuf[output_product],
+          ctx->h_pwrbuf_size[output_product]);
 
-  // Increment total spectra counter for this output product
-  cb_data[output_product].total_spectra += ctx->Nds[output_product];
+    // Increment total spectra counter for this output product
+    cb_data[output_product].total_spectra += ctx->Nds[output_product];
+  }
 }

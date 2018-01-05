@@ -13,7 +13,8 @@ int open_output_socket(const char * host, const char * port);
 void set_socket_options(rawspec_context * ctx);
 #endif
 
-void dump_net_callback(rawspec_context * ctx, int output_product);
+void dump_net_callback(
+    rawspec_context * ctx, int output_product, int callback_type);
 
 #ifdef __cplusplus
 }

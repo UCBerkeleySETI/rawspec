@@ -10,7 +10,7 @@
   (((int64_t)stop.tv_sec-start.tv_sec)*1000*1000*1000+(stop.tv_nsec-start.tv_nsec))
 
 void
-dump_callback(rawspec_context * ctx, int output_product)
+dump_callback(rawspec_context * ctx, int output_product, int callback_type)
 {
   printf("cb %d\n", output_product);
 }

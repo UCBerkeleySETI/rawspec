@@ -105,16 +105,31 @@ __global__ void accumulate(float * pwr_buf, unsigned int Na, size_t xpitch, size
   pwr_buf[offset0] = sum;
 }
 
-// Stream callback function that is called right after an output product's GPU
+// Stream callback function that is called right before an output product's GPU
 // power buffer has been copied to the host power buffer.
-static void CUDART_CB dump_stream_callback(cudaStream_t stream,
-                                           cudaError_t status,
-                                           void *data)
+static void CUDART_CB pre_dump_stream_callback(cudaStream_t stream,
+                                               cudaError_t status,
+                                               void *data)
 {
   dump_cb_data_t * dump_cb_data = (dump_cb_data_t *)data;
   if(dump_cb_data->ctx->dump_callback) {
     dump_cb_data->ctx->dump_callback(dump_cb_data->ctx,
-                                     dump_cb_data->output_product);
+                                     dump_cb_data->output_product,
+                                     RAWSPEC_CALLBACK_PRE_DUMP);
+  }
+}
+
+// Stream callback function that is called right after an output product's GPU
+// power buffer has been copied to the host power buffer.
+static void CUDART_CB post_dump_stream_callback(cudaStream_t stream,
+                                                cudaError_t status,
+                                                void *data)
+{
+  dump_cb_data_t * dump_cb_data = (dump_cb_data_t *)data;
+  if(dump_cb_data->ctx->dump_callback) {
+    dump_cb_data->ctx->dump_callback(dump_cb_data->ctx,
+                                     dump_cb_data->output_product,
+                                     RAWSPEC_CALLBACK_POST_DUMP);
   }
 }
 
@@ -658,6 +673,15 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
                                   ctx->Nb*ctx->Ntpb);                // zpitch
       }
 
+      // Add pre-dump stream callback
+      cuda_rc = cudaStreamAddCallback(stream, pre_dump_stream_callback,
+                                      (void *)&gpu_ctx->dump_cb_data[i], 0);
+
+      if(cuda_rc != cudaSuccess) {
+        PRINT_ERRMSG(cuda_rc);
+        return 1;
+      }
+
       // Copy integrated power spectra (or spectrum) to host.  This is done as
       // two 2D copies to get channel 0 in the center of the spectrum.  Special
       // care is taken in the unlikely event that Nt is odd.
@@ -708,8 +732,8 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
         dst += ctx->Nts[i] * ctx->Nc;
       }
 
-      // Add stream callback
-      cuda_rc = cudaStreamAddCallback(stream, dump_stream_callback,
+      // Add post-dump stream callback
+      cuda_rc = cudaStreamAddCallback(stream, post_dump_stream_callback,
                                       (void *)&gpu_ctx->dump_cb_data[i], 0);
 
       if(cuda_rc != cudaSuccess) {

@@ -11,11 +11,15 @@
 
 #define RAWSPEC_BLOCSIZE(pctx) ((pctx)->Nc * (pctx)->Ntpb * (pctx)->Np * 2)
 
+#define RAWSPEC_CALLBACK_PRE_DUMP  (0)
+#define RAWSPEC_CALLBACK_POST_DUMP (1)
+
 // Forward declaration
 typedef struct rawspec_context_s rawspec_context;
 
 typedef void (* rawspec_dump_callback_t)(rawspec_context * ctx,
-                                           int output_product);
+                                           int output_product,
+                                           int callback_type);
 
 // Structure for holding the context.
 struct rawspec_context_s {
@@ -38,8 +42,12 @@ struct rawspec_context_s {
   unsigned int Nas[MAX_OUTPUTS]; // Array of Na values
 
   // dump_callback is a pointer to a user-supplied output callback function.
-  // This function will be called when one of of the output power buffers in
-  // h_pwrbuf[] has new data to be written to disk.
+  // This function will be called twice per dump: one time just before data are
+  // dumped to the the output power buffer (h_pwrbuf[i]) and a second time just
+  // after the data are dumped to the output power buffer.  The first call
+  // provides the client a chance to synchronize with any previous output
+  // thread it may have launched.  The second call is when the client can
+  // output the data (e.g. by launching an output thread).
   rawspec_dump_callback_t dump_callback;
 
   // Pointer to user data.  This is intended for use by the client's dump
