@@ -405,7 +405,7 @@ char tmp[16];
             close(fdin);
             break;
           } else {
-            printf("initialization succeeded for new block dimensions\n");
+            //printf("initialization succeeded for new block dimensions\n");
 #if 0
             if(output_mode == RAWSPEC_NET) {
               set_socket_options(&ctx);
