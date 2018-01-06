@@ -17,6 +17,7 @@ typedef struct {
   float * h_pwrbuf;
   size_t h_pwrbuf_size;
   unsigned int Nds;
+  unsigned int Nf; // Number of fine channels (== Nc*Nts[i])
   // Filterbank header
   fb_hdr_t fb_hdr;
 } callback_data_t;

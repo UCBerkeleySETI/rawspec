@@ -412,6 +412,7 @@ char tmp[16];
               cb_data[i].h_pwrbuf = ctx.h_pwrbuf[i];
               cb_data[i].h_pwrbuf_size = ctx.h_pwrbuf_size[i];
               cb_data[i].Nds = ctx.Nds[i];
+              cb_data[i].Nf  = ctx.Nts[i] * ctx.Nc;
             }
 #if 0
             if(output_mode == RAWSPEC_NET) {
