@@ -180,6 +180,16 @@ void * dump_net_thread_func(void *arg)
   // Scale by rate factor
   sec_per_packet *= cb_data->rate;
 
+#if defined(DEBUG_CALLBACKS) && DEBUG_CALLBACKS != 0
+  if(cb_data->debug_callback) {
+    cb_data->debug_callback--;
+    fprintf(stderr,
+        "tsamp %.4g * spec/pkt %u * chan/pkt %u / Nf %u = sec/pkt %.4g\n",
+        fb_hdr->tsamp, spectra_per_packet, channels_per_packet, cb_data->Nf,
+        sec_per_packet);
+  }
+#endif
+
   // Outer loop over all spectra for this dump
   while(spec_remaining) {
     pkt_nspec = MIN(spectra_per_packet, spec_remaining);

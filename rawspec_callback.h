@@ -9,6 +9,7 @@ typedef struct {
   unsigned int total_spectra;
   unsigned int total_packets;
   double rate;
+  int debug_callback;
   // No way to tell if output_thread is valid expect via separate flag
   int output_thread_valid;
   pthread_t output_thread;

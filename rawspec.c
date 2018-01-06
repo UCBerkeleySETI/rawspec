@@ -30,6 +30,10 @@
 #define STRINGIFY1(s) #s
 #define STRINGIFY(s) STRINGIFY1(s)
 
+#ifndef DEBUG_CALLBACKS
+#define DEBUG_CALLBACKS (0)
+#endif
+
 // Reads `bytes_to_read` bytes from `fd` into the buffer pointed to by `buf`.
 // Returns the total bytes read or -1 on error.  A non-negative return value
 // will be less than `bytes_to_read` only of EOF is reached.
@@ -413,6 +417,7 @@ char tmp[16];
               cb_data[i].h_pwrbuf_size = ctx.h_pwrbuf_size[i];
               cb_data[i].Nds = ctx.Nds[i];
               cb_data[i].Nf  = ctx.Nts[i] * ctx.Nc;
+              cb_data[i].debug_callback = DEBUG_CALLBACKS;
             }
 #if 0
             if(output_mode == RAWSPEC_NET) {

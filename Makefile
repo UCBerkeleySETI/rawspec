@@ -11,6 +11,9 @@ HOST_COMPILER ?= $(CC)
 NVCC          := $(CUDA_PATH)/bin/nvcc -ccbin $(HOST_COMPILER)
 
 CFLAGS = -ggdb -fPIC
+ifdef DEBUG_CALLBACKS
+CFLAGS += -DDEBUG_CALLBACKS=$(DEBUG_CALLBACKS)
+endif
 NVCC_FLAGS = -m64 -g -Xcompiler=-fPIC -I$(CUDA_PATH)/samples/common/inc
 
 CUDA_SHARED_LIBS = -lcufft
