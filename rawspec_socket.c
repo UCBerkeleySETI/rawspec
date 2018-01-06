@@ -145,7 +145,7 @@ void * dump_net_thread_func(void *arg)
 
   // Fields to remember from header
   int hdr_nchans = fb_hdr->nchans;
-  double hdr_fch1   = fb_hdr->fch1;
+  double hdr_fch1 = fb_hdr->fch1;
 
   int channels_per_packet;
   int spectra_per_packet;
@@ -173,9 +173,9 @@ void * dump_net_thread_func(void *arg)
   //
   //       time_per_spectrum * spectra_per_packet
   //      ----------------------------------------
-  //          total_channels / packet_channels
-  sec_per_packet = fb_hdr->tsamp * spectra_per_packet
-                 / (cb_data->Nf / fb_hdr->nchans);
+  //        total_channels / channels_per_packet
+  sec_per_packet = fb_hdr->tsamp * spectra_per_packet * channels_per_packet
+                 / cb_data->Nf;
 
   // Scale by rate factor
   sec_per_packet *= cb_data->rate;
