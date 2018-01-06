@@ -136,6 +136,7 @@ void * dump_net_thread_func(void *arg)
   float * ppwr;
   size_t pkt_size;
   double sec_per_packet;
+  double modf_int;
   time_t sleep_ns;
   struct timespec sleep_time = {0, 0};
 
@@ -227,7 +228,7 @@ void * dump_net_thread_func(void *arg)
       if(cb_data->rate > 0) {
         // Sleep for scaled observational real-time
         sleep_time.tv_sec = (time_t)sec_per_packet;
-        sleep_time.tv_nsec = (time_t)(1e9*modf(sec_per_packet,NULL));
+        sleep_time.tv_nsec = (time_t)(1e9*modf(sec_per_packet, &modf_int));
         nanosleep(&sleep_time, NULL);
       } else if(cb_data->rate < 0) {
         // Sleep for scaled packet transmission time.
