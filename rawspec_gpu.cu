@@ -819,6 +819,15 @@ int rawspec_wait_for_completion(rawspec_context * ctx)
   rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
 
   for(i=0; i < ctx->No; i++) {
+    // Add one final pre-dump stream callback to ensure final output thread can
+    // be joined.
+    rc = cudaStreamAddCallback(gpu_ctx->stream[i], pre_dump_stream_callback,
+                                    (void *)&gpu_ctx->dump_cb_data[i], 0);
+    if(rc != cudaSuccess) {
+      PRINT_ERRMSG(rc);
+      return 1;
+    }
+
     rc = cudaStreamSynchronize(gpu_ctx->stream[i]);
     if(rc != cudaSuccess) {
       return 1;
