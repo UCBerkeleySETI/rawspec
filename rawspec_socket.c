@@ -15,6 +15,9 @@
 
 #define MIN(a,b) ((a < b) ? (a) : (b))
 
+#define ELAPSED_NS(start,stop) \
+  (((int64_t)stop.tv_sec-start.tv_sec)*1000*1000*1000+(stop.tv_nsec-start.tv_nsec))
+
 int open_output_socket(const char * host, const char * port)
 {
   int rc;
@@ -137,8 +140,11 @@ void * dump_net_thread_func(void *arg)
   size_t pkt_size;
   double sec_per_packet;
   double modf_int;
-  time_t sleep_ns;
   struct timespec sleep_time = {0, 0};
+  uint64_t elapsed_ns=0;
+  uint64_t pkt_ns=0;
+  int64_t sleep_ns=0;
+  struct timespec ts_start, ts_stop;
 
   callback_data_t * cb_data = (callback_data_t *)arg;
   fb_hdr_t * fb_hdr = &cb_data->fb_hdr;
@@ -155,8 +161,12 @@ void * dump_net_thread_func(void *arg)
   int pkt_nchan;
   int pkt_nspec;
 
+  uint64_t total_bytes = 0;
   int total_packets = 0;
   int error_packets = 0;
+
+  // Get time at start of output
+  clock_gettime(CLOCK_MONOTONIC, &ts_start);
 
   if(hdr_nchans >= MAX_FLOATS_PER_PACKET) {
     channels_per_packet = MAX_FLOATS_PER_PACKET;
@@ -169,20 +179,8 @@ void * dump_net_thread_func(void *arg)
     }
   }
 
-  // Calculate real-time per packet:
-  //
-  //       time_per_spectrum * spectra_per_packet
-  //      ----------------------------------------
-  //        total_channels / channels_per_packet
-  sec_per_packet = fb_hdr->tsamp * spectra_per_packet * channels_per_packet
-                 / cb_data->Nf;
-
-  // Scale by rate factor
-  sec_per_packet *= cb_data->rate;
-
 #if defined(DEBUG_CALLBACKS) && DEBUG_CALLBACKS != 0
   if(cb_data->debug_callback) {
-    cb_data->debug_callback--;
     fprintf(stderr,
         "tsamp %.4g * spec/pkt %u * chan/pkt %u / Nf %u = sec/pkt %.4g\n",
         fb_hdr->tsamp, spectra_per_packet, channels_per_packet, cb_data->Nf,
@@ -221,6 +219,7 @@ void * dump_net_thread_func(void *arg)
       // TODO Handle EMSGSIZE errors from send()?
       total_packets++;
       pkt_size = ppkt - pkt;
+      total_bytes += pkt_size;
       if(send(cb_data->fd, pkt, pkt_size, 0) == -1) {
         if(errno == ENOTCONN) {
           // ENOTCONN means that there is no listener on the receive side.
@@ -234,16 +233,13 @@ void * dump_net_thread_func(void *arg)
         }
       }
 
-      // Sleep to throttle output rate.
-      if(cb_data->rate > 0) {
-        // Sleep for scaled observational real-time
-        sleep_time.tv_sec = (time_t)sec_per_packet;
-        sleep_time.tv_nsec = (time_t)(1e9*modf(sec_per_packet, &modf_int));
-        nanosleep(&sleep_time, NULL);
-      } else if(cb_data->rate < 0) {
-        // Sleep for scaled packet transmission time.
-        // Assumes 10 Gbps for now.
-        sleep_ns = (time_t)(-cb_data->rate * pkt_size * 8 / 10);
+      clock_gettime(CLOCK_MONOTONIC, &ts_stop);
+      elapsed_ns = ELAPSED_NS(ts_start, ts_stop);
+      sleep_ns = ((int64_t)(8.0 * total_bytes / cb_data->rate)) - elapsed_ns;
+
+      // Sleep to throttle output rate.  Wait for sleep time to build up to 100
+      // usec to minimize oversleeping due to timer granularity problems.
+      if(sleep_ns > 100*1000) {
         sleep_time.tv_sec  = sleep_ns / (1000*1000*1000);
         sleep_time.tv_nsec = sleep_ns % (1000*1000*1000);
         nanosleep(&sleep_time, NULL);
@@ -279,17 +275,36 @@ void * dump_net_thread_func(void *arg)
         cb_data->Nf, error_packets, total_packets);
   }
 
+  // Final sleep to throttle output rate.  Don't worry about granularity for
+  // this final sleep.
+  clock_gettime(CLOCK_MONOTONIC, &ts_stop);
+  elapsed_ns = ELAPSED_NS(ts_start, ts_stop);
+      sleep_ns = ((int64_t)(8.0 * total_bytes / cb_data->rate)) - elapsed_ns;
+  sleep_time.tv_sec  = sleep_ns / (1000*1000*1000);
+  sleep_time.tv_nsec = sleep_ns % (1000*1000*1000);
+  nanosleep(&sleep_time, NULL);
+
+  clock_gettime(CLOCK_MONOTONIC, &ts_stop);
+  elapsed_ns = ELAPSED_NS(ts_start, ts_stop);
+
+#if defined(DEBUG_CALLBACKS) && DEBUG_CALLBACKS != 0
+  if(cb_data->debug_callback) {
+    cb_data->debug_callback--;
+    fprintf(stderr,
+        "fine channels %10d: output thread took %.6f ms elapsed (%.3f Gbps)\n",
+        cb_data->Nf, elapsed_ns / 1e6, (8.0 * total_bytes) / elapsed_ns);
+  }
+#endif
+
   // Increment total spectra and total packets counters
   cb_data->total_spectra += cb_data->Nds;
   cb_data->total_packets += total_packets;
+  cb_data->total_bytes += total_bytes;
+  cb_data->total_ns += elapsed_ns;
 
   return NULL;
 }
 
-// TODO If the integration time allows, this callback can/should spawn a worker
-// thread that outputs the packets at a more leisurely pace to prevent flooding
-// the switch (which could happen if rawspec processes on multiple hosts dump
-// many packets to the same destination at the same time).
 void dump_net_callback(
     rawspec_context * ctx,
     int output_product,

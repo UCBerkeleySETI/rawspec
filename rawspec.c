@@ -85,10 +85,7 @@ void usage(const char *argv0) {
     "  -d, --dest=DEST       Destination directory or host:port\n"
     "  -f, --ffts=N1[,N2...] FFT lengths\n"
     "  -n, --nchan=N         Number of coarse channels to process [all]\n"
-    "  -r, --rate=FLOAT      Relative rate to send packets [1.0]\n"
-    "                        +1.0 is observational real-time\n"
-    "                         0.0 is no rate limit\n"
-    "                        -1.0 is packet tx real-time\n"
+    "  -r, --rate=GBPS       Desired net data rate in Gbps [6.0]\n"
     "  -s, --schan=C         First coarse channel to process [0]\n"
     "  -t, --ints=N1[,N2...] Spectra to integrate\n"
     "\n"
@@ -133,7 +130,13 @@ char tmp[16];
   rawspec_context ctx;
   unsigned int schan = 0;
   unsigned int nchan = 0;
-  double rate = 0.0;
+
+  // For net data rate rate calculations
+  double rate = 6.0;
+  double sum_inv_na;
+  uint64_t total_packets = 0;
+  uint64_t total_bytes = 0;
+  uint64_t total_ns = 0;
 
   // Init rawspec context
   memset(&ctx, 0, sizeof(ctx));
@@ -465,6 +468,26 @@ char tmp[16];
           }
         }
 
+        if(output_mode == RAWSPEC_NET) {
+          // Apportion net data rate to output products proportional to their
+          // data volume.  Interestingly, data volume is proportional to the
+          // inverse of Na.  To apportion the total Gbps, we can calculate a
+          // scaling factor for each output product:
+          //
+          //                                      1.0
+          //     scaling_factor[j] = ----------------------------
+          //                          Nas[j] * sum_i(1.0/Nas[i])
+          sum_inv_na = 0;
+          for(i=0; i<ctx.No; i++) {
+            sum_inv_na += 1.0 / ctx.Nas[i];
+          }
+          for(i=0; i<ctx.No; i++) {
+            // Calculate output rate for this output product
+            cb_data[i].rate = rate / ctx.Nas[i] / sum_inv_na;
+            fprintf(stderr, "output product %d data rate %6.3f Gbps\n",
+                i, cb_data[i].rate);
+          }
+        }
       } // if first file
 
       // For all blocks in file
@@ -626,9 +649,19 @@ char tmp[16];
   for(i=0; i<ctx.No; i++) {
     printf("output product %d: %u spectra", i, cb_data[i].total_spectra);
     if(cb_data[i].total_packets > 0) {
-      printf(" (%u packets)", cb_data[i].total_packets);
+      printf(" (%u packets, %.3f Gbps)", cb_data[i].total_packets,
+         8.0 * cb_data[i].total_bytes / cb_data[i].total_ns);
+
+      total_packets += cb_data[i].total_packets;
+      total_bytes += cb_data[i].total_bytes;
+      total_ns += cb_data[i].total_ns;
     }
     printf("\n");
+  }
+
+  if(total_ns > 0) {
+    printf("combined total  : %lu packets, %.3f Gbps\n",
+        total_packets, 8.0 * total_bytes / total_ns);
   }
 
   return 0;

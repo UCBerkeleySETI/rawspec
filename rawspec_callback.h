@@ -8,6 +8,8 @@ typedef struct {
   int fd; // Output file descriptor or socket
   unsigned int total_spectra;
   unsigned int total_packets;
+  unsigned int total_bytes;
+  uint64_t total_ns;
   double rate;
   int debug_callback;
   // No way to tell if output_thread is valid expect via separate flag
