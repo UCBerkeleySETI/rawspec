@@ -46,17 +46,19 @@ $(shell $(SHELL) gen_version.sh)
 
 all: rawspec rawspectest fileiotest
 
-# TODO Replace with auto-generated dependencies
-rawspec.o: rawspec.h fitshead.h rawutils.h rawspec_callback.h \
-	         rawspec_file.h rawspec_socket.h rawspec_version.h \
-	         rawspec_fbutils.h
-rawspec_fbutils.o: rawspec_fbutils.h
-rawutils.o: rawutils.h
-rawspectest.o: rawspec.h
-rawspec_gpu.o: rawspec.h rawspec_version.h
+# Dependencoes are simple enough to manage manually (for now)
 fileiotest.o: rawspec.h
-rawspec_file.o: rawspec_file.h
-rawspec_socket.o: rawspec_socket.h
+rawspec.o: rawspec.h fitshead.h rawutils.h rawspec_callback.h \
+           rawspec_file.h rawspec_socket.h rawspec_version.h \
+           rawspec_fbutils.h
+rawspec_fbutils.o: rawspec_fbutils.h
+rawspec_file.o: rawspec_file.h rawspec.h \
+                rawspec_callback.h rawspec_fbutils.h
+rawspec_gpu.o: rawspec.h rawspec_version.h
+rawspec_socket.o: rawspec_socket.h rawspec.h \
+                  rawspec_callback.h rawspec_fbutils.h
+rawspectest.o: rawspec.h
+rawutils.o: rawutils.h fitshead.h
 
 %.o: %.cu
 	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) -dc $(GENCODE_FLAGS) -o $@ -c $<
