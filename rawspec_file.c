@@ -18,6 +18,8 @@ int open_output_file(const char * dest, const char *stem, int output_idx)
   fd = open(fname, O_WRONLY | O_CREAT | O_TRUNC, 0664);
   if(fd == -1) {
     perror(fname);
+  } else {
+    posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
   }
   return fd;
 }
