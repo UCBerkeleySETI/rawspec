@@ -310,23 +310,24 @@ void dump_net_callback(
     int output_product,
     int callback_type)
 {
+  int rc;
   callback_data_t * cb_data =
       &((callback_data_t *)ctx->user_data)[output_product];
 
   if(callback_type == RAWSPEC_CALLBACK_PRE_DUMP) {
     if(cb_data->output_thread_valid) {
       // Join output thread
-      if(pthread_join(cb_data->output_thread, NULL)) {
-        perror("pthread_join");
+      if((rc=pthread_join(cb_data->output_thread, NULL))) {
+        fprintf(stderr, "pthread_join: %s\n", strerror(rc));
       }
       // Flag thread as invalid
       cb_data->output_thread_valid = 0;
     }
   } else if(callback_type == RAWSPEC_CALLBACK_POST_DUMP) {
     // Create output thread
-    if(pthread_create(&cb_data->output_thread, NULL,
-                      dump_net_thread_func, cb_data)) {
-      perror("pthread_create");
+    if((rc=pthread_create(&cb_data->output_thread, NULL,
+                      dump_net_thread_func, cb_data))) {
+      fprintf(stderr, "pthread_create: %s\n", strerror(rc));
     } else {
       cb_data->output_thread_valid = 1;
     }
