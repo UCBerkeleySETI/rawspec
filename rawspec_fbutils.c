@@ -231,10 +231,26 @@ void * fb_buf_read_string(void * buf, char * c, int32_t * n)
 
 // Header functions
 
+// Writes a filterbank header padded as close to minlen as possible.  Padding
+// is performed by outputting multiple "rawdatafile" header entries with dummy
+// values before the final "rawdatafile" header entry and real value.  Because
+// the minimum string length is 1, the minimum padding that can be applied is
+// 4+11+4+1 == 20 bytes for a one byte dummy value for the "rawdatafile"
+// keyword.  The maximum padding value that can be applied by one "rawdatafile"
+// header entry is 4+11+4+79 == 98 bytes.  An arbitrary amount of padding is
+// achieved by padding 4+11+4+60 == 79 bytes at a time (i.e. as a sequence of
+// "rawdatafile" keywords each with 60 byte dummy values) so long as the
+// remaining pad length is greater than 98.  This ensures that the final
+// padding entry will be at least 20 characters but no more than 98.
 // TODO Add return value checking
-ssize_t fb_fd_write_header(int fd, const fb_hdr_t * hdr)
+ssize_t fb_fd_write_padded_header(int fd, const fb_hdr_t * hdr, int32_t minlen)
 {
   ssize_t n;
+  int32_t padlen;
+  //                 0        1         2         3         4
+  //                 1234567890123456789012345678901234567890
+  char padstr[80] = "                                        "
+                    "                                       ";
 
   n  = fb_fd_write_string(fd, "HEADER_START");
   n += fb_fd_write_string(fd, "machine_id");
@@ -279,6 +295,24 @@ ssize_t fb_fd_write_header(int fd, const fb_hdr_t * hdr)
   }
   n += fb_fd_write_string(fd, "source_name");
   n += fb_fd_write_string(fd, hdr->source_name);
+
+  // Make strlen(padstr) be 79-(4+11+4)
+  padstr[79-19] = '\0';
+  padlen = minlen - n
+         - (2*sizeof(int32_t)+strlen("rawdatafile")+strlen(hdr->rawdatafile))
+         - (  sizeof(int32_t)+strlen("HEADER_END"));
+  while(padlen > 98) {
+    n += fb_fd_write_string(fd, "rawdatafile");
+    n += fb_fd_write_string(fd, padstr);
+    padlen -= 79;
+  }
+  if(padlen > 19) {
+    padstr[79-19] = ' ';
+    padstr[padlen-19] = '\0';
+    n += fb_fd_write_string(fd, "rawdatafile");
+    n += fb_fd_write_string(fd, padstr);
+  }
+
   n += fb_fd_write_string(fd, "rawdatafile");
   n += fb_fd_write_string(fd, hdr->rawdatafile);
   n += fb_fd_write_string(fd, "HEADER_END");
@@ -286,8 +320,21 @@ ssize_t fb_fd_write_header(int fd, const fb_hdr_t * hdr)
   return n;
 }
 
-void * fb_buf_write_header(void * buf, const fb_hdr_t * hdr)
+ssize_t fb_fd_write_header(int fd, const fb_hdr_t * hdr)
 {
+  fb_fd_write_padded_header(fd, hdr, 0);
+}
+
+// Writes a filterbank header padded as close to minlen as possible.  See
+// comments for fb_fd_write_padded_header() for more details.
+void * fb_buf_write_padded_header(void * buf, const fb_hdr_t * hdr, int32_t minlen)
+{
+  int32_t padlen;
+  //                 0        1         2         3         4
+  //                 1234567890123456789012345678901234567890
+  char padstr[80] = "                                        "
+                    "                                       ";
+  void * buf0 = buf;
   buf = fb_buf_write_string(buf, "HEADER_START");
   buf = fb_buf_write_string(buf, "machine_id");
   buf = fb_buf_write_int(   buf, hdr->machine_id);
@@ -331,11 +378,34 @@ void * fb_buf_write_header(void * buf, const fb_hdr_t * hdr)
   }
   buf = fb_buf_write_string(buf, "source_name");
   buf = fb_buf_write_string(buf, hdr->source_name);
+
+  // Make strlen(padstr) be 79-(4+11+4)
+  padstr[79-19] = '\0';
+  padlen = minlen - (buf - buf0)
+         - (2*sizeof(int32_t)+strlen("rawdatafile")+strlen(hdr->rawdatafile))
+         - (  sizeof(int32_t)+strlen("HEADER_END"));
+  while(padlen > 98) {
+    buf = fb_buf_write_string(buf, "rawdatafile");
+    buf = fb_buf_write_string(buf, padstr);
+    padlen -= 79;
+  }
+  if(padlen > 19) {
+    padstr[79-19] = ' ';
+    padstr[padlen-19] = '\0';
+    buf = fb_buf_write_string(buf, "rawdatafile");
+    buf = fb_buf_write_string(buf, padstr);
+  }
+
   buf = fb_buf_write_string(buf, "rawdatafile");
   buf = fb_buf_write_string(buf, hdr->rawdatafile);
   buf = fb_buf_write_string(buf, "HEADER_END");
 
   return buf;
+}
+
+void * fb_buf_write_header(void * buf, const fb_hdr_t * hdr)
+{
+  fb_buf_write_padded_header(buf, hdr, 0);
 }
 
 // TODO Make this more robust by using the value of *hdr_len on enrty as the
@@ -524,25 +594,31 @@ int main(int argc, char * argv[])
     printf("fch1 %.17g\n", hdr.fch1);
     printf("foff %.17g\n", hdr.foff);
   } else {
+    int i;
     float f = 0;
+    char fname[80];
 
-    int fdfd  = open("fbutils_fd.fil",  O_WRONLY | O_CREAT, 0664);
-    int fdbuf = open("fbutils_buf.fil", O_WRONLY | O_CREAT, 0664);
+    for(i=0; i<100; i++) {
+      sprintf(fname, "fbutils_fd.%02d.fil", i);
+      int fdfd  = open(fname,  O_WRONLY | O_CREAT, 0664);
+      sprintf(fname, "fbutils_buf.%02d.fil", i);
+      int fdbuf = open(fname, O_WRONLY | O_CREAT, 0664);
 
 
-    ssize_t nbytes = fb_fd_write_header(fdfd, &hdr);
-    write(fdfd, (void *)&f, sizeof(float));
-    printf("write %lu+4 fd bytes\n", nbytes);
+      ssize_t nbytes = fb_fd_write_padded_header(fdfd, &hdr, 1024+i);
+      write(fdfd, (void *)&f, sizeof(float));
+      printf("%02d: write %lu+4 fd bytes, ", i, nbytes);
 
-    char buf[1024];
-    char * end = fb_buf_write_header(buf, &hdr);
-    nbytes = end-buf;
-    write(fdbuf, buf, nbytes);
-    write(fdbuf, (void *)&f, sizeof(float));
-    printf("write %lu+4 buf bytes\n", nbytes);
+      char buf[1024];
+      char * end = fb_buf_write_padded_header(buf, &hdr, 1024+i);
+      nbytes = end-buf;
+      write(fdbuf, buf, nbytes);
+      write(fdbuf, (void *)&f, sizeof(float));
+      printf("write %lu+4 buf bytes\n", nbytes);
 
-    close(fdfd);
-    close(fdbuf);
+      close(fdfd);
+      close(fdbuf);
+    }
   }
 
   return 0;

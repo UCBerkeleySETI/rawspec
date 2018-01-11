@@ -150,7 +150,9 @@ void * fb_buf_read_string(void * buf, char * c, int32_t * n);
 
 // Header functions
 
+ssize_t fb_fd_write_padded_header(int fd, const fb_hdr_t * hdr, int32_t minlen);
 ssize_t fb_fd_write_header(int fd, const fb_hdr_t * hdr);
+void * fb_buf_write_padded_header(void * buf, const fb_hdr_t * hdr, int32_t minlen);
 void * fb_buf_write_header(void * buf, const fb_hdr_t * hdr);
 
 ssize_t fb_fd_read_header(int fd, fb_hdr_t * hdr, size_t * hdr_len);
