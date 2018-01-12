@@ -137,6 +137,7 @@ void * dump_net_thread_func(void *arg)
   char pkt[90000];
   char * ppkt = pkt;
   float * ppwr;
+  int32_t data_offset;
   size_t pkt_size;
   double sec_per_packet;
   double modf_int;
@@ -208,6 +209,24 @@ void * dump_net_thread_func(void *arg)
 
       // Output header to packet buffer
       ppkt = fb_buf_write_header(pkt, fb_hdr);
+
+      // Calculate data offset as next multiple of 512 in packet socket UDP
+      // frame (which starts 0x6c bytes from start of page aligned frame).
+      data_offset = 0x6c + (ppkt - pkt);
+      if(data_offset % 512 != 0) {
+        data_offset += 512 - (data_offset % 512);
+      }
+      // If data offset is beyond header
+      if(data_offset > (0x6c + ppkt - pkt)) {
+        // If data offset is less than 20 bytes beyond header
+        if(data_offset < (0x6c + ppkt - pkt) + 20) {
+          // Add 512 more bytes since less than 20 is not paddable
+          data_offset += 512;
+        }
+        // Output padded header to packet buffer
+        ppkt = fb_buf_write_padded_header(pkt, fb_hdr,
+                                          data_offset - 0x6c);
+      }
 
       // Copy spectra to buffer
       for(i=0; i<pkt_nspec; i++) {
