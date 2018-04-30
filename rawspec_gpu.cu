@@ -33,8 +33,8 @@ typedef struct {
   cufftHandle plan[MAX_OUTPUTS];
   // Array of Ns values (number of specta (FFTs) per input buffer for Nt)
   unsigned int Nss[MAX_OUTPUTS];
-  // Array of cudaStream_t values
-  cudaStream_t stream[MAX_OUTPUTS];
+  // Compute stream (as opposed to a "copy stream")
+  cudaStream_t compute_stream;
   // Array of grids for accumulate kernel
   dim3 grid[MAX_OUTPUTS];
   // Array of number of threads to use per block for accumulate kernel
@@ -287,11 +287,11 @@ int rawspec_initialize(rawspec_context * ctx)
 
   // NULL out pointers (and invalidate plans)
   gpu_ctx->d_fft_in = NULL;
+  gpu_ctx->compute_stream = NO_STREAM;
   for(i=0; i<MAX_OUTPUTS; i++) {
     gpu_ctx->d_fft_out[i] = NULL;
     gpu_ctx->d_pwr_out[i] = NULL;
     gpu_ctx->plan[i] = NO_PLAN;
-    gpu_ctx->stream[i] = NO_STREAM;
     gpu_ctx->dump_cb_data[i].ctx = ctx;
     gpu_ctx->dump_cb_data[i].output_product = i;
   }
@@ -446,7 +446,16 @@ int rawspec_initialize(rawspec_context * ctx)
     return 1;
   }
 
-  // Generate FFT plans and associate callbacks
+  // Create the "compute stream"
+  cuda_rc = cudaStreamCreateWithFlags(&gpu_ctx->compute_stream,
+                                      cudaStreamNonBlocking);
+  if(cuda_rc != cudaSuccess) {
+    PRINT_ERRMSG(cuda_rc);
+    rawspec_cleanup(ctx);
+    return 1;
+  }
+
+  // Generate FFT plans and associate callbacks and stream
   for(i=0; i < ctx->No; i++) {
     // Make the plan
     cufft_rc = cufftPlanMany(&gpu_ctx->plan[i],      // *plan handle
@@ -488,18 +497,9 @@ int rawspec_initialize(rawspec_context * ctx)
       rawspec_cleanup(ctx);
       return 1;
     }
-  }
 
-  // Create streams and associate with plans
-  for(i=0; i < ctx->No; i++) {
-    cuda_rc = cudaStreamCreateWithFlags(&gpu_ctx->stream[i], cudaStreamNonBlocking);
-    if(cuda_rc != cudaSuccess) {
-      PRINT_ERRMSG(cuda_rc);
-      rawspec_cleanup(ctx);
-      return 1;
-    }
-
-    cufft_rc = cufftSetStream(gpu_ctx->plan[i], gpu_ctx->stream[i]);
+    // Associate stream and associate with plan
+    cufft_rc = cufftSetStream(gpu_ctx->plan[i], gpu_ctx->compute_stream);
     if(cufft_rc != CUFFT_SUCCESS) {
       PRINT_ERRMSG(cufft_rc);
       rawspec_cleanup(ctx);
@@ -547,6 +547,10 @@ void rawspec_cleanup(rawspec_context * ctx)
       cudaFree(gpu_ctx->d_fft_in);
     }
 
+    if(gpu_ctx->compute_stream != NO_STREAM) {
+      cudaStreamDestroy(gpu_ctx->compute_stream);
+    }
+
     for(i=0; i<MAX_OUTPUTS; i++) {
       if(gpu_ctx->d_fft_out[i]) {
         cudaFree(gpu_ctx->d_fft_out[i]);
@@ -556,9 +560,6 @@ void rawspec_cleanup(rawspec_context * ctx)
       }
       if(gpu_ctx->plan[i] != NO_PLAN) {
         cufftDestroy(gpu_ctx->plan[i]);
-      }
-      if(gpu_ctx->stream[i] != NO_STREAM) {
-        cudaStreamDestroy(gpu_ctx->stream[i]);
       }
     }
 
@@ -629,7 +630,6 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
   size_t width;
   size_t height;
   cufftHandle plan;
-  cudaStream_t stream;
   cudaError_t cuda_rc;
   cufftResult cufft_rc;
   rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
@@ -640,9 +640,8 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
   // For each output product
   for(i=0; i < ctx->No; i++) {
 
-    // Get plan and stream
-    plan   = gpu_ctx->plan[i];
-    stream = gpu_ctx->stream[i];
+    // Get plan
+    plan = gpu_ctx->plan[i];
 
     // For each polarization
     for(p=0; p < ctx->Np; p++) {
@@ -666,7 +665,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
       if(ctx->Nds[i] < gpu_ctx->Nss[i]) {
         accumulate<<<gpu_ctx->grid[i],
                      gpu_ctx->nthreads[i],
-                     0, stream>>>(gpu_ctx->d_pwr_out[i],
+                     0, gpu_ctx->compute_stream>>>(gpu_ctx->d_pwr_out[i],
                                   MIN(ctx->Nas[i], gpu_ctx->Nss[i]), // Na
                                   ctx->Nts[i],                       // xpitch
                                   ctx->Nas[i]*ctx->Nts[i],           // ypitch
@@ -674,7 +673,8 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
       }
 
       // Add pre-dump stream callback
-      cuda_rc = cudaStreamAddCallback(stream, pre_dump_stream_callback,
+      cuda_rc = cudaStreamAddCallback(gpu_ctx->compute_stream,
+                                      pre_dump_stream_callback,
                                       (void *)&gpu_ctx->dump_cb_data[i], 0);
 
       if(cuda_rc != cudaSuccess) {
@@ -702,7 +702,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
                                     width,
                                     height,
                                     cudaMemcpyDeviceToHost,
-                                    stream);
+                                    gpu_ctx->compute_stream);
 
         if(cuda_rc != cudaSuccess) {
           PRINT_ERRMSG(cuda_rc);
@@ -719,7 +719,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
                                     width,
                                     height,
                                     cudaMemcpyDeviceToHost,
-                                    stream);
+                                    gpu_ctx->compute_stream);
 
         if(cuda_rc != cudaSuccess) {
           PRINT_ERRMSG(cuda_rc);
@@ -733,7 +733,8 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
       }
 
       // Add post-dump stream callback
-      cuda_rc = cudaStreamAddCallback(stream, post_dump_stream_callback,
+      cuda_rc = cudaStreamAddCallback(gpu_ctx->compute_stream,
+                                      post_dump_stream_callback,
                                       (void *)&gpu_ctx->dump_cb_data[i], 0);
 
       if(cuda_rc != cudaSuccess) {
@@ -744,7 +745,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
       // Add power buffer clearing cudaMemset call to stream
       cuda_rc = cudaMemsetAsync(gpu_ctx->d_pwr_out[i], 0,
                                 ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float),
-                                stream);
+                                gpu_ctx->compute_stream);
 
       if(cuda_rc != cudaSuccess) {
         PRINT_ERRMSG(cuda_rc);
@@ -790,24 +791,19 @@ int rawspec_reset_integration(rawspec_context * ctx)
   return 0;
 }
 
-// Returns the number of output products that are complete for the current
-// input buffer.  More precisely, it returns the number of output products that
-// are no longer processing (or never were processing) the input buffer.
+// Returns true if the "compute stream" is done processing.
 unsigned int rawspec_check_for_completion(rawspec_context * ctx)
 {
-  int i;
-  int num_complete = 0;
+  int complete = 0;
   cudaError_t rc;
   rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
 
-  for(i=0; i<ctx->No; i++) {
-    rc = cudaStreamQuery(gpu_ctx->stream[i]);
-    if(rc == cudaSuccess) {
-      num_complete++;
-    }
+  rc = cudaStreamQuery(gpu_ctx->compute_stream);
+  if(rc == cudaSuccess) {
+    complete++;
   }
 
-  return num_complete;
+  return complete;
 }
 
 // Waits for any pending output products to be compete processing the current
@@ -821,17 +817,17 @@ int rawspec_wait_for_completion(rawspec_context * ctx)
   for(i=0; i < ctx->No; i++) {
     // Add one final pre-dump stream callback to ensure final output thread can
     // be joined.
-    rc = cudaStreamAddCallback(gpu_ctx->stream[i], pre_dump_stream_callback,
+    rc = cudaStreamAddCallback(gpu_ctx->compute_stream, pre_dump_stream_callback,
                                     (void *)&gpu_ctx->dump_cb_data[i], 0);
     if(rc != cudaSuccess) {
       PRINT_ERRMSG(rc);
       return 1;
     }
+  }
 
-    rc = cudaStreamSynchronize(gpu_ctx->stream[i]);
-    if(rc != cudaSuccess) {
-      return 1;
-    }
+  rc = cudaStreamSynchronize(gpu_ctx->compute_stream);
+  if(rc != cudaSuccess) {
+    return 1;
   }
 
   return 0;
