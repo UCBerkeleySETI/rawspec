@@ -31,6 +31,10 @@ typedef struct {
   float * d_pwr_out[MAX_OUTPUTS];
   // Array of handles to FFT plans
   cufftHandle plan[MAX_OUTPUTS];
+  // Device pointer to work area (shared by all plans!)
+  void * d_work_area;
+  // Size of work area
+  size_t work_size;
   // Array of Ns values (number of specta (FFTs) per input buffer for Nt)
   unsigned int Nss[MAX_OUTPUTS];
   // Compute stream (as opposed to a "copy stream")
@@ -154,6 +158,7 @@ int rawspec_initialize(rawspec_context * ctx)
 {
   int i;
   size_t inbuf_size;
+  size_t work_size = 0;
   cudaError_t cuda_rc;
   cufftResult cufft_rc;
 
@@ -287,6 +292,8 @@ int rawspec_initialize(rawspec_context * ctx)
 
   // NULL out pointers (and invalidate plans)
   gpu_ctx->d_fft_in = NULL;
+  gpu_ctx->d_work_area = NULL;
+  gpu_ctx->work_size = 0;
   gpu_ctx->compute_stream = NO_STREAM;
   for(i=0; i<MAX_OUTPUTS; i++) {
     gpu_ctx->d_fft_out[i] = NULL;
@@ -457,19 +464,37 @@ int rawspec_initialize(rawspec_context * ctx)
 
   // Generate FFT plans and associate callbacks and stream
   for(i=0; i < ctx->No; i++) {
+    // Create plan handle (does not "make the plan", that happens later)
+    cufft_rc = cufftCreate(&gpu_ctx->plan[i]);
+    if(cufft_rc != CUFFT_SUCCESS) {
+      PRINT_ERRMSG(cufft_rc);
+      rawspec_cleanup(ctx);
+      return 1;
+    }
+
+    // Prevent auto-allocation of work area for plan
+    cufft_rc = cufftSetAutoAllocation(gpu_ctx->plan[i], 0);
+    if(cufft_rc != CUFFT_SUCCESS) {
+      PRINT_ERRMSG(cufft_rc);
+      rawspec_cleanup(ctx);
+      return 1;
+    }
+
     // Make the plan
-    cufft_rc = cufftPlanMany(&gpu_ctx->plan[i],      // *plan handle
-                             1,                      // rank
-                             (int *)&ctx->Nts[i],    // *n
-                             (int *)&ctx->Nts[i],    // *inembed (unused for 1d)
-                             ctx->Np,                // istride
-                             ctx->Nts[i]*ctx->Np,    // idist
-                             (int *)&ctx->Nts[i],    // *onembed (unused for 1d)
-                             1,                      // ostride
-                             ctx->Nts[i],            // odist
-                             CUFFT_C2C,              // type
-                             gpu_ctx->Nss[i]*ctx->Nc // batch
-                            );
+    cufft_rc = cufftMakePlanMany(
+                    gpu_ctx->plan[i],        // plan handle
+                    1,                       // rank
+                    (int *)&ctx->Nts[i],     // *n
+                    (int *)&ctx->Nts[i],     // *inembed (unused for 1d)
+                    ctx->Np,                 // istride
+                    ctx->Nts[i]*ctx->Np,     // idist
+                    (int *)&ctx->Nts[i],     // *onembed (unused for 1d)
+                    1,                       // ostride
+                    ctx->Nts[i],             // odist
+                    CUFFT_C2C,               // type
+                    gpu_ctx->Nss[i]*ctx->Nc, // batch
+                    &work_size               // work area size
+               );
 
     if(cufft_rc != CUFFT_SUCCESS) {
       PRINT_ERRMSG(cufft_rc);
@@ -500,6 +525,37 @@ int rawspec_initialize(rawspec_context * ctx)
 
     // Associate stream and associate with plan
     cufft_rc = cufftSetStream(gpu_ctx->plan[i], gpu_ctx->compute_stream);
+    if(cufft_rc != CUFFT_SUCCESS) {
+      PRINT_ERRMSG(cufft_rc);
+      rawspec_cleanup(ctx);
+      return 1;
+    }
+
+    // Get work size for this plan
+    cufft_rc = cufftGetSize(gpu_ctx->plan[i], &work_size);
+    if(cufft_rc != CUFFT_SUCCESS) {
+      PRINT_ERRMSG(cufft_rc);
+      rawspec_cleanup(ctx);
+      return 1;
+    }
+
+    // Save size if it's largest one so far
+    if(gpu_ctx->work_size < work_size) {
+      gpu_ctx->work_size = work_size;
+    }
+  }
+
+  // Allocate work area
+  cuda_rc = cudaMalloc(&gpu_ctx->d_work_area, gpu_ctx->work_size);
+  if(cuda_rc != cudaSuccess) {
+    PRINT_ERRMSG(cuda_rc);
+    rawspec_cleanup(ctx);
+    return 1;
+  }
+
+  // Associate work area with plans
+  for(i=0; i < ctx->No; i++) {
+    cufft_rc = cufftSetWorkArea(gpu_ctx->plan[i], gpu_ctx->d_work_area);
     if(cufft_rc != CUFFT_SUCCESS) {
       PRINT_ERRMSG(cufft_rc);
       rawspec_cleanup(ctx);
@@ -545,6 +601,10 @@ void rawspec_cleanup(rawspec_context * ctx)
 
     if(gpu_ctx->d_fft_in) {
       cudaFree(gpu_ctx->d_fft_in);
+    }
+
+    if(gpu_ctx->d_work_area) {
+      cudaFree(gpu_ctx->d_work_area);
     }
 
     if(gpu_ctx->compute_stream != NO_STREAM) {
