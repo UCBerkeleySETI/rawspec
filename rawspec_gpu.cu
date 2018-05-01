@@ -25,8 +25,8 @@ typedef struct {
 typedef struct {
   // Device pointer to FFT input buffer
   char2 * d_fft_in;
-  // Array of device pointers to FFT output buffers
-  cufftComplex * d_fft_out[MAX_OUTPUTS];
+  // Device pointer to FFT output buffer
+  cufftComplex * d_fft_out;
   // Array of device pointers to power buffers
   float * d_pwr_out[MAX_OUTPUTS];
   // Array of handles to FFT plans
@@ -157,7 +157,7 @@ const char * rawspec_version_string()
 int rawspec_initialize(rawspec_context * ctx)
 {
   int i;
-  size_t inbuf_size;
+  size_t buf_size;
   size_t work_size = 0;
   cudaError_t cuda_rc;
   cufftResult cufft_rc;
@@ -292,11 +292,11 @@ int rawspec_initialize(rawspec_context * ctx)
 
   // NULL out pointers (and invalidate plans)
   gpu_ctx->d_fft_in = NULL;
+  gpu_ctx->d_fft_out = NULL;
   gpu_ctx->d_work_area = NULL;
   gpu_ctx->work_size = 0;
   gpu_ctx->compute_stream = NO_STREAM;
   for(i=0; i<MAX_OUTPUTS; i++) {
-    gpu_ctx->d_fft_out[i] = NULL;
     gpu_ctx->d_pwr_out[i] = NULL;
     gpu_ctx->plan[i] = NO_PLAN;
     gpu_ctx->dump_cb_data[i].ctx = ctx;
@@ -386,13 +386,13 @@ int rawspec_initialize(rawspec_context * ctx)
   // The input buffer is padded to the next multiple of 32KB to facilitate 2D
   // texture lookups by treating the input buffer as a 2D array that is 32KB
   // wide.
-  inbuf_size = ctx->Nb*ctx->Ntpb*ctx->Np*ctx->Nc*sizeof(char2);
-  if((inbuf_size & 0x7fff) != 0) {
+  buf_size = ctx->Nb*ctx->Ntpb*ctx->Np*ctx->Nc*sizeof(char2);
+  if((buf_size & 0x7fff) != 0) {
     // Round up to next multiple of 32KB
-    inbuf_size = (inbuf_size & ~0x7fff) + 0x8000;
+    buf_size = (buf_size & ~0x7fff) + 0x8000;
   }
 
-  cuda_rc = cudaMalloc(&gpu_ctx->d_fft_in, inbuf_size);
+  cuda_rc = cudaMalloc(&gpu_ctx->d_fft_in, buf_size);
   if(cuda_rc != cudaSuccess) {
     PRINT_ERRMSG(cuda_rc);
     rawspec_cleanup(ctx);
@@ -400,9 +400,19 @@ int rawspec_initialize(rawspec_context * ctx)
   }
 
   // Bind texture to device input buffer
-  // Width is 32KB, height is inbuf_size/32KB, pitch is 32KB
+  // Width is 32KB, height is buf_size/32KB, pitch is 32KB
   cuda_rc = cudaBindTexture2D(NULL, char_tex, gpu_ctx->d_fft_in,
-                              1<<15, inbuf_size>>15, 1<<15);
+                              1<<15, buf_size>>15, 1<<15);
+  if(cuda_rc != cudaSuccess) {
+    PRINT_ERRMSG(cuda_rc);
+    rawspec_cleanup(ctx);
+    return 1;
+  }
+
+  // FFT output buffer
+  buf_size = ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(cufftComplex);
+  printf("FFT output buffer size == %lu\n", buf_size);
+  cuda_rc = cudaMalloc(&gpu_ctx->d_fft_out, buf_size);
   if(cuda_rc != cudaSuccess) {
     PRINT_ERRMSG(cuda_rc);
     rawspec_cleanup(ctx);
@@ -411,13 +421,6 @@ int rawspec_initialize(rawspec_context * ctx)
 
   // For each output product
   for(i=0; i < ctx->No; i++) {
-    // FFT output buffer
-    cuda_rc = cudaMalloc(&gpu_ctx->d_fft_out[i], ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(cufftComplex));
-    if(cuda_rc != cudaSuccess) {
-      PRINT_ERRMSG(cuda_rc);
-      rawspec_cleanup(ctx);
-      return 1;
-    }
     // Power output buffer
     cuda_rc = cudaMalloc(&gpu_ctx->d_pwr_out[i], ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
     if(cuda_rc != cudaSuccess) {
@@ -611,10 +614,11 @@ void rawspec_cleanup(rawspec_context * ctx)
       cudaStreamDestroy(gpu_ctx->compute_stream);
     }
 
+    if(gpu_ctx->d_fft_out) {
+      cudaFree(gpu_ctx->d_fft_out);
+    }
+
     for(i=0; i<MAX_OUTPUTS; i++) {
-      if(gpu_ctx->d_fft_out[i]) {
-        cudaFree(gpu_ctx->d_fft_out[i]);
-      }
       if(gpu_ctx->d_pwr_out[i]) {
         cudaFree(gpu_ctx->d_pwr_out[i]);
       }
@@ -708,7 +712,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
       // Add FFT to stream
       cufft_rc = cufftExecC2C(plan,
                               ((cufftComplex *)gpu_ctx->d_fft_in) + p,
-                              gpu_ctx->d_fft_out[i],
+                              gpu_ctx->d_fft_out,
                               fft_dir <= 0 ? CUFFT_INVERSE : CUFFT_FORWARD);
 
       if(cufft_rc != CUFFT_SUCCESS) {
