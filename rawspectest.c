@@ -43,6 +43,8 @@ int main(int argc, char * argv[])
   ctx.h_blkbufs = NULL;
   // Dump callback
   ctx.dump_callback = dump_callback;
+  // Total power mode
+  ctx.Npolout = 4;
 
   // Initialize
   if(rawspec_initialize(&ctx)) {

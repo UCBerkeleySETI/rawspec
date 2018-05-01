@@ -24,9 +24,14 @@ typedef void (* rawspec_dump_callback_t)(rawspec_context * ctx,
 // Structure for holding the context.
 struct rawspec_context_s {
   unsigned int No; // Number of output products (max MAX_OUTPUTS)
-  unsigned int Np; // Number of polarizations
+  unsigned int Np; // Number of polarizations (in input data)
   unsigned int Nc; // Number of coarse channels
   unsigned int Ntpb; // Number of time samples per block
+
+  // Noutpol is the number of output polarization values per fine channel.
+  // This valid values for this field are 1 (total power only) and 4 (full
+  // cross-pol powers).  A value of 4 is only valid if Np is 2.
+  unsigned int Npolout;
 
   // Nts is an array of Nt values, one per output product.  The Nt value is the
   // number of time samples per FFT for a given output product.  All Nt values
@@ -71,7 +76,12 @@ struct rawspec_context_s {
   // managed by library (but can be used by the caller as needed).
 
   // Host pointers to the output power buffers.
-  // The sizes, in bytes, will be Nc * Nts[i].
+  // In total power mode, the sizes (in bytes) will be:
+  //     Nds[i] * Nc * Nts[i] * sizeof(float)
+  // In total power mode, the output buffer is [P00+P11]
+  // In full pol mode, the sizes (in bytes) will be:
+  //     4 * Nds[i] * Nc * Nts[i] * sizeof(float)
+  // In full pol mode, the output buffer is [P00, P11, P01re, P01im].
   float * h_pwrbuf[MAX_OUTPUTS];
   size_t h_pwrbuf_size[MAX_OUTPUTS];
 
