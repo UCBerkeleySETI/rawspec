@@ -64,6 +64,11 @@ int main(int argc, char * argv[])
   // Set sample 9 of pol 1 to (0+1j), in block Nb-1
   ctx.h_blkbufs[ctx.Nb-1][9*2*2+3] = 127;
 
+  // Salt the output buffers (to detect whether they are not fully written)
+  for(i=0; i<ctx.No; i++) {
+    memset(ctx.h_pwrbuf[i], 0x55, ctx.h_pwrbuf_size[i]);
+  }
+
   for(i=0; i<4; i++) {
     clock_gettime(CLOCK_MONOTONIC, &ts_start);
 
@@ -96,12 +101,12 @@ int main(int argc, char * argv[])
 
   for(i=0; i<ctx.No; i++) {
     nfine = ctx.Nc * ctx.Nts[i];
-    for(j=0; j<4; j++) {
+    for(j=0; j<16; j++) {
       if(ctx.Npolout == 1) {
         printf("output product %d chan %d %f\n", i, j, ctx.h_pwrbuf[i][j]);
       } else {
         printf("output product %d chan %d %f %f %f %f\n", i, j,
-            ctx.h_pwrbuf[i][  nfine+j],
+            ctx.h_pwrbuf[i][        j],
             ctx.h_pwrbuf[i][1*nfine+j],
             ctx.h_pwrbuf[i][2*nfine+j],
             ctx.h_pwrbuf[i][3*nfine+j]);

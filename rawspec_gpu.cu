@@ -439,7 +439,7 @@ int rawspec_initialize(rawspec_context * ctx)
 
     // Calculate grid dimensions
     gpu_ctx->grid[i].x = (ctx->Nts[i] + MAX_THREADS - 1) / MAX_THREADS;
-    gpu_ctx->grid[i].y = ctx->Npolout * ctx->Nds[i];
+    gpu_ctx->grid[i].y = ctx->Nds[i];
     gpu_ctx->grid[i].z = ctx->Nc;
 
     // Calculate number of threads per block
@@ -859,7 +859,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
   // For each output product
   for(i=0; i < ctx->No; i++) {
 
-    // For each polarization
+    // For each input polarization
     for(p=0; p < ctx->Np; p++) {
       // Get plan
       plan = gpu_ctx->plan[i][p];
@@ -882,14 +882,19 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
       // number of spectra per input buffer, then we need to accumulate the
       // sub-integrations together.
       if(ctx->Nds[i] < gpu_ctx->Nss[i]) {
-        // TODO Loop Npolout times
-        accumulate<<<gpu_ctx->grid[i],
-                     gpu_ctx->nthreads[i],
-                     0, gpu_ctx->compute_stream>>>(gpu_ctx->d_pwr_out[i],
-                                  MIN(ctx->Nas[i], gpu_ctx->Nss[i]), // Na
-                                  ctx->Nts[i],                       // xpitch
-                                  ctx->Nas[i]*ctx->Nts[i],           // ypitch
-                                  ctx->Npolout*ctx->Nb*ctx->Ntpb);   // zpitch
+printf("calling accumulate kernel for output product %d\n", i);
+        for(p=0; p < ctx->Npolout; p++) {
+          accumulate<<<gpu_ctx->grid[i],
+                       gpu_ctx->nthreads[i],
+                       0, gpu_ctx->compute_stream>>>
+                         (
+                           gpu_ctx->d_pwr_out[i] + p*ctx->Nb*ctx->Ntpb*ctx->Nc,
+                           MIN(ctx->Nas[i], gpu_ctx->Nss[i]), // Na
+                           ctx->Nts[i],                       // xpitch
+                           ctx->Nas[i]*ctx->Nts[i],           // ypitch
+                           ctx->Nb*ctx->Ntpb                  // zpitch
+                         );
+        }
       }
 
       // Add pre-dump stream callback
@@ -902,56 +907,56 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
         return 1;
       }
 
-      // Copy integrated power spectra (or spectrum) to host.  This is done as
-      // two 2D copies to get channel 0 in the center of the spectrum.  Special
-      // care is taken in the unlikely event that Nt is odd.
-      src    = gpu_ctx->d_pwr_out[i];
-      dst    = ctx->h_pwrbuf[i];
-      // Source/dest pitches of a single polarization
-      spitch = gpu_ctx->Nss[i] * ctx->Nts[i] * sizeof(float);
-      dpitch = ctx->Nts[i] * sizeof(float);
-      height = ctx->Nc;
+      for(p=0; p < ctx->Npolout; p++) {
+        // Copy integrated power spectra (or spectrum) to host.  This is done as
+        // two 2D copies to get channel 0 in the center of the spectrum.  Special
+        // care is taken in the unlikely event that Nt is odd.
+        src    = gpu_ctx->d_pwr_out[i] + p*ctx->Nb*ctx->Ntpb*ctx->Nc;
+        dst    = ctx->h_pwrbuf[i] + p*ctx->Nds[i]*ctx->Nts[i]*ctx->Nc;
+        spitch = gpu_ctx->Nss[i] * ctx->Nts[i] * sizeof(float);
+        dpitch = ctx->Nts[i] * sizeof(float);
+        height = ctx->Nc;
 
-      for(d=0; d<ctx->Nds[i]; d++) {
+        for(d=0; d < ctx->Nds[i]; d++) {
 
-        // TODO Loop Npolout times
-        // Lo to hi
-        width  = ((ctx->Nts[i]+1) / 2) * sizeof(float);
-        cuda_rc = cudaMemcpy2DAsync(dst + ctx->Nts[i]/2,
-                                    ctx->Npolout * dpitch,
-                                    src,
-                                    ctx->Npolout * spitch,
-                                    width,
-                                    height,
-                                    cudaMemcpyDeviceToHost,
-                                    gpu_ctx->compute_stream);
+          // Lo to hi
+          width  = ((ctx->Nts[i]+1) / 2) * sizeof(float);
+          cuda_rc = cudaMemcpy2DAsync(dst + ctx->Nts[i]/2,
+                                      dpitch,
+                                      src,
+                                      spitch,
+                                      width,
+                                      height,
+                                      cudaMemcpyDeviceToHost,
+                                      gpu_ctx->compute_stream);
 
-        if(cuda_rc != cudaSuccess) {
-          PRINT_ERRMSG(cuda_rc);
-          rawspec_cleanup(ctx);
-          return 1;
+          if(cuda_rc != cudaSuccess) {
+            PRINT_ERRMSG(cuda_rc);
+            rawspec_cleanup(ctx);
+            return 1;
+          }
+
+          // Hi to lo
+          width  = (ctx->Nts[i] / 2) * sizeof(float);
+          cuda_rc = cudaMemcpy2DAsync(dst,
+                                      dpitch,
+                                      src + (ctx->Nts[i]+1) / 2,
+                                      spitch,
+                                      width,
+                                      height,
+                                      cudaMemcpyDeviceToHost,
+                                      gpu_ctx->compute_stream);
+
+          if(cuda_rc != cudaSuccess) {
+            PRINT_ERRMSG(cuda_rc);
+            rawspec_cleanup(ctx);
+            return 1;
+          }
+
+          // Increment src and dst pointers
+          src += ctx->Nts[i] * ctx->Nas[i];
+          dst += ctx->Nts[i] * ctx->Nc;
         }
-
-        // Hi to lo
-        width  = (ctx->Nts[i] / 2) * sizeof(float);
-        cuda_rc = cudaMemcpy2DAsync(dst,
-                                    ctx->Npolout * dpitch,
-                                    src + (ctx->Nts[i]+1) / 2,
-                                    ctx->Npolout * spitch,
-                                    width,
-                                    height,
-                                    cudaMemcpyDeviceToHost,
-                                    gpu_ctx->compute_stream);
-
-        if(cuda_rc != cudaSuccess) {
-          PRINT_ERRMSG(cuda_rc);
-          rawspec_cleanup(ctx);
-          return 1;
-        }
-
-        // Increment src and dst pointers
-        src += ctx->Nts[i] * ctx->Nas[i];
-        dst += ctx->Nts[i] * ctx->Nc;
       }
 
       // Add post-dump stream callback
