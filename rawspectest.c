@@ -26,6 +26,7 @@ int main(int argc, char * argv[])
   uint64_t elapsed_ns=0;
 
   int blocsize = 92274688;
+  size_t nfine;
 
   ctx.No = 3;
   ctx.Np = 2;
@@ -58,8 +59,10 @@ int main(int argc, char * argv[])
   for(i=0; i<4; i++) {
     memset(ctx.h_blkbufs[i], 0, blocsize);
   }
-  // Set sample 8 of pol 0 to (1+0j)
-  ctx.h_blkbufs[0][8*2*2] = 127;
+  // Set sample 8 of pol 0 to (1+0j), in block Nb-1
+  ctx.h_blkbufs[ctx.Nb-1][8*2*2] = 127;
+  // Set sample 9 of pol 1 to (0+1j), in block Nb-1
+  ctx.h_blkbufs[ctx.Nb-1][9*2*2+3] = 127;
 
   for(i=0; i<4; i++) {
     clock_gettime(CLOCK_MONOTONIC, &ts_start);
@@ -92,8 +95,17 @@ int main(int argc, char * argv[])
   printf("processing done\n");
 
   for(i=0; i<ctx.No; i++) {
+    nfine = ctx.Nc * ctx.Nts[i];
     for(j=0; j<4; j++) {
-      printf("output product %d chan %d %f\n", i, j, ctx.h_pwrbuf[i][j]);
+      if(ctx.Npolout == 1) {
+        printf("output product %d chan %d %f\n", i, j, ctx.h_pwrbuf[i][j]);
+      } else {
+        printf("output product %d chan %d %f %f %f %f\n", i, j,
+            ctx.h_pwrbuf[i][  nfine+j],
+            ctx.h_pwrbuf[i][1*nfine+j],
+            ctx.h_pwrbuf[i][2*nfine+j],
+            ctx.h_pwrbuf[i][3*nfine+j]);
+      }
     }
   }
 
