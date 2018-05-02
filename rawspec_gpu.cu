@@ -21,6 +21,29 @@ typedef struct {
   int output_product;
 } dump_cb_data_t;
 
+// In full-pol mode (Npolout == 4), the CuFFT store callbacks are different
+// depending on whether it is for pol0 or pol1:
+//
+// The store_callback_pol0 function stores the voltage data into the first half
+// of the 2x-sized FFT output buffer and accummulates the pol0 power into the
+// first quarter of the 4x-sized power buffer.
+//
+// The store_callback_pol1 function accumulates the pol1 power into the second
+// quarter of the 4x-sized power buffer, reads the corresponding pol0 voltage
+// from the first half of the 2x-sized FFT output buffer, accumulates the
+// complex pol0-pol1 power in the third (real) and fourth (imaginary) quarters
+// of the 4x-sized power buffer.
+//
+// We use a "store_cb_data_t" structure to pass device pointers to the
+// various buffers involved.
+typedef struct {
+  cufftComplex * fft_out_pol0;
+  float * pwr_buf_p00;
+  float * pwr_buf_p11;
+  float * pwr_buf_p01_re;
+  float * pwr_buf_p01_im;
+} store_cb_data_t;
+
 // GPU context structure
 typedef struct {
   // Device pointer to FFT input buffer
@@ -29,8 +52,12 @@ typedef struct {
   cufftComplex * d_fft_out;
   // Array of device pointers to power buffers
   float * d_pwr_out[MAX_OUTPUTS];
-  // Array of handles to FFT plans
-  cufftHandle plan[MAX_OUTPUTS];
+  // Array of handles to FFT plans.
+  // Each output product gets a pair of plans (one for each pol).
+  cufftHandle plan[MAX_OUTPUTS][2];
+  // Array of device pointers to store_cb_data_t structures
+  // (one per output product)
+  store_cb_data_t *d_scb_data[MAX_OUTPUTS];
   // Device pointer to work area (shared by all plans!)
   void * d_work_area;
   // Size of work area
@@ -58,6 +85,8 @@ typedef struct {
 // Texture declarations
 texture<char, 2, cudaReadModeNormalizedFloat> char_tex;
 
+// The load_callback gets the input value through the texture memory to achieve
+// a "for free" mapping of 8-bit integer values into 32-bit float values.
 __device__ cufftComplex load_callback(void *p_v_in,
                                       size_t offset,
                                       void *p_v_user,
@@ -70,6 +99,9 @@ __device__ cufftComplex load_callback(void *p_v_in,
   return c;
 }
 
+// For total-power-only mode (Npolout == 1), the store_callback just needs to
+// accumulate the power into the one and only power buffer.  It doesn't matter
+// if it's for pol0 or pol1 since they all get added together eventually.
 __device__ void store_callback(void *p_v_out,
                                size_t offset,
                                cufftComplex element,
@@ -80,8 +112,44 @@ __device__ void store_callback(void *p_v_out,
   ((float *)p_v_user)[offset] += pwr;
 }
 
+// The store_callback_pol0 function stores the voltage data into the first half
+// of the 2x-sized FFT output buffer and accummulates the pol0 power into the
+// first quarter of the 4x-sized power buffer.
+__device__ void store_callback_pol0(void *p_v_out,
+                                    size_t offset,
+                                    cufftComplex p0,
+                                    void *p_v_user,
+                                    void *p_v_shared)
+{
+  store_cb_data_t * d_scb_data = (store_cb_data_t *)p_v_user;
+  float pwr = p0.x * p0.x + p0.y * p0.y;
+  d_scb_data->pwr_buf_p00[offset] += pwr;
+  d_scb_data->fft_out_pol0[offset] = p0;
+}
+
+// The store_callback_pol1 function accumulates the pol1 power into the second
+// quarter of the 4x-sized power buffer, reads the corresponding pol0 voltage
+// from the first half of the 2x-sized FFT output buffer, accumulates the
+// complex pol0-pol1 power in the third (real) and fourth (imaginary) quarters
+// of the 4x-sized power buffer.
+__device__ void store_callback_pol1(void *p_v_out,
+                                    size_t offset,
+                                    cufftComplex p1,
+                                    void *p_v_user,
+                                    void *p_v_shared)
+{
+  store_cb_data_t * d_scb_data = (store_cb_data_t *)p_v_user;
+  float pwr = p1.x * p1.x + p1.y * p1.y;
+  d_scb_data->pwr_buf_p11[offset] += pwr;
+  cufftComplex p0 = d_scb_data->fft_out_pol0[offset];
+  d_scb_data->pwr_buf_p01_re[offset] += p0.x * p1.x + p0.y * p1.y;
+  d_scb_data->pwr_buf_p01_im[offset] += p0.y * p1.x - p0.x * p1.y;
+}
+
 __device__ cufftCallbackLoadC d_cufft_load_callback = load_callback;
 __device__ cufftCallbackStoreC d_cufft_store_callback = store_callback;
+__device__ cufftCallbackStoreC d_cufft_store_callback_pol0 = store_callback_pol0;
+__device__ cufftCallbackStoreC d_cufft_store_callback_pol1 = store_callback_pol1;
 
 #define MAX_THREADS (1024)
 
@@ -157,14 +225,17 @@ const char * rawspec_version_string()
 int rawspec_initialize(rawspec_context * ctx)
 {
   int i;
+  int p;
   size_t buf_size;
   size_t work_size = 0;
+  store_cb_data_t h_scb_data;
   cudaError_t cuda_rc;
   cufftResult cufft_rc;
 
   // Host copies of cufft callback pointers
   cufftCallbackLoadC h_cufft_load_callback;
   cufftCallbackStoreC h_cufft_store_callback;
+  cufftCallbackStoreC h_cufft_store_callback_pols[2];
 
   // Validate No
   if(ctx->No == 0 || ctx->No > MAX_OUTPUTS) {
@@ -303,7 +374,9 @@ int rawspec_initialize(rawspec_context * ctx)
   gpu_ctx->compute_stream = NO_STREAM;
   for(i=0; i<MAX_OUTPUTS; i++) {
     gpu_ctx->d_pwr_out[i] = NULL;
-    gpu_ctx->plan[i] = NO_PLAN;
+    gpu_ctx->d_scb_data[i] = NULL;
+    gpu_ctx->plan[i][0] = NO_PLAN;
+    gpu_ctx->plan[i][1] = NO_PLAN;
     gpu_ctx->dump_cb_data[i].ctx = ctx;
     gpu_ctx->dump_cb_data[i].output_product = i;
   }
@@ -366,7 +439,7 @@ int rawspec_initialize(rawspec_context * ctx)
 
     // Calculate grid dimensions
     gpu_ctx->grid[i].x = (ctx->Nts[i] + MAX_THREADS - 1) / MAX_THREADS;
-    gpu_ctx->grid[i].y = ctx->Nds[i];
+    gpu_ctx->grid[i].y = ctx->Npolout * ctx->Nds[i];
     gpu_ctx->grid[i].z = ctx->Nc;
 
     // Calculate number of threads per block
@@ -449,6 +522,35 @@ int rawspec_initialize(rawspec_context * ctx)
       rawspec_cleanup(ctx);
       return 1;
     }
+    // Save pointer to FFT output buffer in store_cb_data
+    h_scb_data.fft_out_pol0 = gpu_ctx->d_fft_out;
+    // Save pointers into power ouput buffer
+    h_scb_data.pwr_buf_p00 = gpu_ctx->d_pwr_out[i];
+    h_scb_data.pwr_buf_p11 =
+        gpu_ctx->d_pwr_out[i] + ctx->Nb*ctx->Ntpb*ctx->Nc;
+    h_scb_data.pwr_buf_p01_re =
+        gpu_ctx->d_pwr_out[i] + 2*ctx->Nb*ctx->Ntpb*ctx->Nc;
+    h_scb_data.pwr_buf_p01_im =
+        gpu_ctx->d_pwr_out[i] + 3*ctx->Nb*ctx->Ntpb*ctx->Nc;
+
+    // Allocate device memory for store_cb_data_t array
+    cuda_rc = cudaMalloc(&gpu_ctx->d_scb_data[i], sizeof(store_cb_data_t));
+    if(cuda_rc != cudaSuccess) {
+      PRINT_ERRMSG(cuda_rc);
+      rawspec_cleanup(ctx);
+      return 1;
+    }
+
+    // Copy store_cb_data_t arary from host to device
+    cuda_rc = cudaMemcpy(gpu_ctx->d_scb_data[i],
+                         &h_scb_data,
+                         sizeof(store_cb_data_t),
+                         cudaMemcpyHostToDevice);
+    if(cuda_rc != cudaSuccess) {
+      PRINT_ERRMSG(cuda_rc);
+      rawspec_cleanup(ctx);
+      return 1;
+    }
   }
 
   // Get host pointers to cufft callbacks
@@ -470,6 +572,24 @@ int rawspec_initialize(rawspec_context * ctx)
     return 1;
   }
 
+  cuda_rc = cudaMemcpyFromSymbol(&h_cufft_store_callback_pols[0],
+                                 d_cufft_store_callback_pol0,
+                                 sizeof(h_cufft_store_callback_pols[0]));
+  if(cuda_rc != cudaSuccess) {
+    PRINT_ERRMSG(cuda_rc);
+    rawspec_cleanup(ctx);
+    return 1;
+  }
+
+  cuda_rc = cudaMemcpyFromSymbol(&h_cufft_store_callback_pols[1],
+                                 d_cufft_store_callback_pol1,
+                                 sizeof(h_cufft_store_callback_pols[1]));
+  if(cuda_rc != cudaSuccess) {
+    PRINT_ERRMSG(cuda_rc);
+    rawspec_cleanup(ctx);
+    return 1;
+  }
+
   // Create the "compute stream"
   cuda_rc = cudaStreamCreateWithFlags(&gpu_ctx->compute_stream,
                                       cudaStreamNonBlocking);
@@ -481,87 +601,96 @@ int rawspec_initialize(rawspec_context * ctx)
 
   // Generate FFT plans and associate callbacks and stream
   for(i=0; i < ctx->No; i++) {
-    // Create plan handle (does not "make the plan", that happens later)
-    cufft_rc = cufftCreate(&gpu_ctx->plan[i]);
-    if(cufft_rc != CUFFT_SUCCESS) {
-      PRINT_ERRMSG(cufft_rc);
-      rawspec_cleanup(ctx);
-      return 1;
-    }
+    for(p=0; p<2; p++) {
+      // Create plan handle (does not "make the plan", that happens later)
+      cufft_rc = cufftCreate(&gpu_ctx->plan[i][p]);
+      if(cufft_rc != CUFFT_SUCCESS) {
+        PRINT_ERRMSG(cufft_rc);
+        rawspec_cleanup(ctx);
+        return 1;
+      }
 
-    // Prevent auto-allocation of work area for plan
-    cufft_rc = cufftSetAutoAllocation(gpu_ctx->plan[i], 0);
-    if(cufft_rc != CUFFT_SUCCESS) {
-      PRINT_ERRMSG(cufft_rc);
-      rawspec_cleanup(ctx);
-      return 1;
-    }
+      // Prevent auto-allocation of work area for plan
+      cufft_rc = cufftSetAutoAllocation(gpu_ctx->plan[i][p], 0);
+      if(cufft_rc != CUFFT_SUCCESS) {
+        PRINT_ERRMSG(cufft_rc);
+        rawspec_cleanup(ctx);
+        return 1;
+      }
 
-    printf("cufftMakePlanMany for output product %d...", i);
-    // Make the plan
-    cufft_rc = cufftMakePlanMany(
-                    gpu_ctx->plan[i],        // plan handle
-                    1,                       // rank
-                    (int *)&ctx->Nts[i],     // *n
-                    (int *)&ctx->Nts[i],     // *inembed (unused for 1d)
-                    ctx->Np,                 // istride
-                    ctx->Nts[i]*ctx->Np,     // idist
-                    (int *)&ctx->Nts[i],     // *onembed (unused for 1d)
-                    1,                       // ostride
-                    ctx->Nts[i],             // odist
-                    CUFFT_C2C,               // type
-                    gpu_ctx->Nss[i]*ctx->Nc, // batch
-                    &work_size               // work area size
-               );
+      printf("cufftMakePlanMany for output product %d...", i);
+      // Make the plan
+      cufft_rc = cufftMakePlanMany(
+                      gpu_ctx->plan[i][p],     // plan handle
+                      1,                       // rank
+                      (int *)&ctx->Nts[i],     // *n
+                      (int *)&ctx->Nts[i],     // *inembed (unused for 1d)
+                      ctx->Np,                 // istride
+                      ctx->Nts[i]*ctx->Np,     // idist
+                      (int *)&ctx->Nts[i],     // *onembed (unused for 1d)
+                      1,                       // ostride
+                      ctx->Nts[i],             // odist
+                      CUFFT_C2C,               // type
+                      gpu_ctx->Nss[i]*ctx->Nc, // batch
+                      &work_size               // work area size
+                 );
 
-    if(cufft_rc != CUFFT_SUCCESS) {
-      PRINT_ERRMSG(cufft_rc);
-      rawspec_cleanup(ctx);
-      return 1;
-    }
-    printf("ok\n");
+      if(cufft_rc != CUFFT_SUCCESS) {
+        PRINT_ERRMSG(cufft_rc);
+        rawspec_cleanup(ctx);
+        return 1;
+      }
+      printf("ok\n");
 
-    // Now associate the callbacks with the plan.
-    cufft_rc = cufftXtSetCallback(gpu_ctx->plan[i],
-                                  (void **)&h_cufft_load_callback,
-                                  CUFFT_CB_LD_COMPLEX,
-                                  (void **)&gpu_ctx->d_fft_in);
-    if(cufft_rc != CUFFT_SUCCESS) {
-      PRINT_ERRMSG(cufft_rc);
-      rawspec_cleanup(ctx);
-      return 1;
-    }
+      // Now associate the callbacks with the plan.
+      // Load callback
+      cufft_rc = cufftXtSetCallback(gpu_ctx->plan[i][p],
+                                    (void **)&h_cufft_load_callback,
+                                    CUFFT_CB_LD_COMPLEX,
+                                    (void **)&gpu_ctx->d_fft_in);
+      if(cufft_rc != CUFFT_SUCCESS) {
+        PRINT_ERRMSG(cufft_rc);
+        rawspec_cleanup(ctx);
+        return 1;
+      }
+      // Store callback(s)
+      if(ctx->Npolout == 1) {
+        cufft_rc = cufftXtSetCallback(gpu_ctx->plan[i][p],
+                                      (void **)&h_cufft_store_callback,
+                                      CUFFT_CB_ST_COMPLEX,
+                                      (void **)&gpu_ctx->d_pwr_out[i]);
+      } else {
+        cufft_rc = cufftXtSetCallback(gpu_ctx->plan[i][p],
+                                      (void **)&h_cufft_store_callback_pols[p],
+                                      CUFFT_CB_ST_COMPLEX,
+                                      (void **)&gpu_ctx->d_scb_data[i]);
+      }
+      if(cufft_rc != CUFFT_SUCCESS) {
+        PRINT_ERRMSG(cufft_rc);
+        rawspec_cleanup(ctx);
+        return 1;
+      }
 
-    // TODO Create more callbacks!
-    cufft_rc = cufftXtSetCallback(gpu_ctx->plan[i],
-                                  (void **)&h_cufft_store_callback,
-                                  CUFFT_CB_ST_COMPLEX,
-                                  (void **)&gpu_ctx->d_pwr_out[i]);
-    if(cufft_rc != CUFFT_SUCCESS) {
-      PRINT_ERRMSG(cufft_rc);
-      rawspec_cleanup(ctx);
-      return 1;
-    }
+      // Associate stream and associate with plan
+      cufft_rc = cufftSetStream(gpu_ctx->plan[i][p], gpu_ctx->compute_stream);
+      if(cufft_rc != CUFFT_SUCCESS) {
+        PRINT_ERRMSG(cufft_rc);
+        rawspec_cleanup(ctx);
+        return 1;
+      }
 
-    // Associate stream and associate with plan
-    cufft_rc = cufftSetStream(gpu_ctx->plan[i], gpu_ctx->compute_stream);
-    if(cufft_rc != CUFFT_SUCCESS) {
-      PRINT_ERRMSG(cufft_rc);
-      rawspec_cleanup(ctx);
-      return 1;
-    }
+      // Get work size for this plan
+      cufft_rc = cufftGetSize(gpu_ctx->plan[i][p], &work_size);
+      if(cufft_rc != CUFFT_SUCCESS) {
+        PRINT_ERRMSG(cufft_rc);
+        rawspec_cleanup(ctx);
+        return 1;
+      }
 
-    // Get work size for this plan
-    cufft_rc = cufftGetSize(gpu_ctx->plan[i], &work_size);
-    if(cufft_rc != CUFFT_SUCCESS) {
-      PRINT_ERRMSG(cufft_rc);
-      rawspec_cleanup(ctx);
-      return 1;
-    }
-
-    // Save size if it's largest one so far
-    if(gpu_ctx->work_size < work_size) {
-      gpu_ctx->work_size = work_size;
+      // Save size if it's largest one so far
+      if(gpu_ctx->work_size < work_size) {
+        gpu_ctx->work_size = work_size;
+      }
     }
   }
 
@@ -577,11 +706,13 @@ int rawspec_initialize(rawspec_context * ctx)
 
   // Associate work area with plans
   for(i=0; i < ctx->No; i++) {
-    cufft_rc = cufftSetWorkArea(gpu_ctx->plan[i], gpu_ctx->d_work_area);
-    if(cufft_rc != CUFFT_SUCCESS) {
-      PRINT_ERRMSG(cufft_rc);
-      rawspec_cleanup(ctx);
-      return 1;
+    for(p=0; p<2; p++) {
+      cufft_rc = cufftSetWorkArea(gpu_ctx->plan[i][p], gpu_ctx->d_work_area);
+      if(cufft_rc != CUFFT_SUCCESS) {
+        PRINT_ERRMSG(cufft_rc);
+        rawspec_cleanup(ctx);
+        return 1;
+      }
     }
   }
 
@@ -595,6 +726,7 @@ int rawspec_initialize(rawspec_context * ctx)
 void rawspec_cleanup(rawspec_context * ctx)
 {
   int i;
+  int p;
   rawspec_gpu_context * gpu_ctx;
 
   for(i=0; i<MAX_OUTPUTS; i++) {
@@ -641,8 +773,10 @@ void rawspec_cleanup(rawspec_context * ctx)
       if(gpu_ctx->d_pwr_out[i]) {
         cudaFree(gpu_ctx->d_pwr_out[i]);
       }
-      if(gpu_ctx->plan[i] != NO_PLAN) {
-        cufftDestroy(gpu_ctx->plan[i]);
+      for(p=0; p<2; p++) {
+        if(gpu_ctx->plan[i][p] != NO_PLAN) {
+          cufftDestroy(gpu_ctx->plan[i][p]);
+        }
       }
     }
 
@@ -716,6 +850,8 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
   cudaError_t cuda_rc;
   cufftResult cufft_rc;
   rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
+  // Length of an FFT output buffer (only needed when Npolout!=1)
+  size_t fft_outbuf_length = ctx->Npolout == 1 ? 0 : ctx->Nb*ctx->Ntpb*ctx->Nc;
 
   // Increment inbuf_count
   gpu_ctx->inbuf_count++;
@@ -723,15 +859,15 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
   // For each output product
   for(i=0; i < ctx->No; i++) {
 
-    // Get plan
-    plan = gpu_ctx->plan[i];
-
     // For each polarization
     for(p=0; p < ctx->Np; p++) {
+      // Get plan
+      plan = gpu_ctx->plan[i][p];
+
       // Add FFT to stream
       cufft_rc = cufftExecC2C(plan,
                               ((cufftComplex *)gpu_ctx->d_fft_in) + p,
-                              gpu_ctx->d_fft_out,
+                              gpu_ctx->d_fft_out + p * fft_outbuf_length,
                               fft_dir <= 0 ? CUFFT_INVERSE : CUFFT_FORWARD);
 
       if(cufft_rc != CUFFT_SUCCESS) {
@@ -771,7 +907,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
       // care is taken in the unlikely event that Nt is odd.
       src    = gpu_ctx->d_pwr_out[i];
       dst    = ctx->h_pwrbuf[i];
-      // Source pitch of a single polarization
+      // Source/dest pitches of a single polarization
       spitch = gpu_ctx->Nss[i] * ctx->Nts[i] * sizeof(float);
       dpitch = ctx->Nts[i] * sizeof(float);
       height = ctx->Nc;
@@ -782,7 +918,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
         // Lo to hi
         width  = ((ctx->Nts[i]+1) / 2) * sizeof(float);
         cuda_rc = cudaMemcpy2DAsync(dst + ctx->Nts[i]/2,
-                                    dpitch,
+                                    ctx->Npolout * dpitch,
                                     src,
                                     ctx->Npolout * spitch,
                                     width,
@@ -799,7 +935,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
         // Hi to lo
         width  = (ctx->Nts[i] / 2) * sizeof(float);
         cuda_rc = cudaMemcpy2DAsync(dst,
-                                    dpitch,
+                                    ctx->Npolout * dpitch,
                                     src + (ctx->Nts[i]+1) / 2,
                                     ctx->Npolout * spitch,
                                     width,
