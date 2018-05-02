@@ -28,7 +28,7 @@ struct rawspec_context_s {
   unsigned int Nc; // Number of coarse channels
   unsigned int Ntpb; // Number of time samples per block
 
-  // Noutpol is the number of output polarization values per fine channel.
+  // Npolout is the number of output polarization values per fine channel.
   // This valid values for this field are 1 (total power only) and 4 (full
   // cross-pol powers).  A value of 4 is only valid if Np is 2.
   unsigned int Npolout;
