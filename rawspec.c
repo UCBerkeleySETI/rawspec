@@ -63,6 +63,7 @@ static struct option long_opts[] = {
   {"dest",    1, NULL, 'd'},
   {"ffts",    1, NULL, 'f'},
   {"nchan",   1, NULL, 'n'},
+  {"pols",    1, NULL, 'p'},
   {"rate",    1, NULL, 'r'},
   {"schan",   1, NULL, 's'},
   {"ints",    1, NULL, 't'},
@@ -85,6 +86,8 @@ void usage(const char *argv0) {
     "  -d, --dest=DEST       Destination directory or host:port\n"
     "  -f, --ffts=N1[,N2...] FFT lengths\n"
     "  -n, --nchan=N         Number of coarse channels to process [all]\n"
+    "  -p  --pols={1|4}      Number of output polarizations [1]\n"
+    "                        1=total power, 4=cross pols\n"
     "  -r, --rate=GBPS       Desired net data rate in Gbps [6.0]\n"
     "  -s, --schan=C         First coarse channel to process [0]\n"
     "  -t, --ints=N1[,N2...] Spectra to integrate\n"
@@ -140,10 +143,11 @@ char tmp[16];
 
   // Init rawspec context
   memset(&ctx, 0, sizeof(ctx));
+  ctx.Npolout = 1;
 
   // Parse command line.
   argv0 = argv[0];
-  while((opt=getopt_long(argc,argv,"d:f:n:r:s:t:hv",long_opts,NULL))!=-1) {
+  while((opt=getopt_long(argc,argv,"d:f:n:p:r:s:t:hv",long_opts,NULL))!=-1) {
     switch (opt) {
       case 'h': // Help
         usage(argv0);
@@ -177,6 +181,15 @@ char tmp[16];
 
       case 'n': // Number of coarse channels to process
         nchan = strtoul(optarg, NULL, 0);
+        break;
+
+      case 'p': // Number of pol products to output
+        ctx.Npolout = strtoul(optarg, NULL, 0);
+        if(ctx.Npolout!=1 && ctx.Npolout!=4) {
+          fprintf(stderr,
+              "error: number of output pols must be 1 or 4\n");
+          return 1;
+        }
         break;
 
       case 'r': // Relative rate to send packets
@@ -228,6 +241,13 @@ char tmp[16];
     return 1;
   }
 
+  // Full-pol mode is not supported for network output
+  if(ctx.Npolout != 1 && output_mode != RAWSPEC_FILE) {
+    fprintf(stderr,
+        "error: full-pol mode is not supported for network output\n");
+    return 1;
+  }
+
   // Validate user input
   for(i=0; i < MAX_OUTPUTS; i++) {
     // If both Nt and Na are zero, stop validating/counting
@@ -273,7 +293,7 @@ char tmp[16];
     cb_data[i].fb_hdr.nbeams =  1;
     cb_data[i].fb_hdr.ibeam  =  1;
     cb_data[i].fb_hdr.nbits  = 32;
-    cb_data[i].fb_hdr.nifs   =  1;
+    cb_data[i].fb_hdr.nifs   = ctx.Npolout;
     cb_data[i].rate          = rate;
   }
 
