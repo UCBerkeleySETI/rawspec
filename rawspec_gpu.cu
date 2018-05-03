@@ -912,7 +912,7 @@ printf("calling accumulate kernel for output product %d\n", i);
         // two 2D copies to get channel 0 in the center of the spectrum.  Special
         // care is taken in the unlikely event that Nt is odd.
         src    = gpu_ctx->d_pwr_out[i] + p*ctx->Nb*ctx->Ntpb*ctx->Nc;
-        dst    = ctx->h_pwrbuf[i] + p*ctx->Nds[i]*ctx->Nts[i]*ctx->Nc;
+        dst    = ctx->h_pwrbuf[i] + p*ctx->Nts[i]*ctx->Nc;
         spitch = gpu_ctx->Nss[i] * ctx->Nts[i] * sizeof(float);
         dpitch = ctx->Nts[i] * sizeof(float);
         height = ctx->Nc;
@@ -955,7 +955,7 @@ printf("calling accumulate kernel for output product %d\n", i);
 
           // Increment src and dst pointers
           src += ctx->Nts[i] * ctx->Nas[i];
-          dst += ctx->Nts[i] * ctx->Nc;
+          dst += ctx->Npolout * ctx->Nts[i] * ctx->Nc;
         }
       }
 
