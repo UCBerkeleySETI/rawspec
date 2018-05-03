@@ -11,9 +11,24 @@
 int open_output_file(const char * dest, const char *stem, int output_idx)
 {
   int fd;
+  const char * basename;
   char fname[PATH_MAX+1];
 
-  snprintf(fname, PATH_MAX, "%s/%s.rawspec.%04d.fil", dest, stem, output_idx);
+  // If dest is given and it's not empty
+  if(dest && dest[0]) {
+    // Look for last '/' in stem
+    basename = strrchr(stem, '/');
+    if(basename) {
+      // If found, advance beyond it to first char of basename
+      basename++;
+    } else {
+      // If not found, use stem as basename
+      basename = stem;
+    }
+    snprintf(fname, PATH_MAX, "%s/%s.rawspec.%04d.fil", dest, basename, output_idx);
+  } else {
+    snprintf(fname, PATH_MAX, "%s.rawspec.%04d.fil", stem, output_idx);
+  }
   fname[PATH_MAX] = '\0';
   fd = open(fname, O_WRONLY | O_CREAT | O_TRUNC, 0664);
   if(fd == -1) {

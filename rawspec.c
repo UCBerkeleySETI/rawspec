@@ -120,7 +120,7 @@ char tmp[16];
   char * argv0;
   char * pchar;
   char * bfname;
-  char * dest = "."; // default output destination is current directory
+  char * dest = NULL; // default output dest is same place as input stem
   rawspec_output_mode_t output_mode = RAWSPEC_FILE;
   char * dest_port = NULL; // dest port for network output
   int fdout;
