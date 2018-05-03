@@ -470,7 +470,9 @@ int rawspec_initialize(rawspec_context * ctx)
     buf_size = (buf_size & ~0x7fff) + 0x8000;
   }
 
+#ifdef VERBOSE_ALLOC
   printf("FFT input buffer size == %lu\n", buf_size);
+#endif
   cuda_rc = cudaMalloc(&gpu_ctx->d_fft_in, buf_size);
   if(cuda_rc != cudaSuccess) {
     PRINT_ERRMSG(cuda_rc);
@@ -493,7 +495,9 @@ int rawspec_initialize(rawspec_context * ctx)
   if(ctx->Npolout == 4) {
     buf_size *= 2;
   }
+#ifdef VERBOSE_ALLOC
   printf("FFT output buffer size == %lu\n", buf_size);
+#endif
   cuda_rc = cudaMalloc(&gpu_ctx->d_fft_out, buf_size);
   if(cuda_rc != cudaSuccess) {
     PRINT_ERRMSG(cuda_rc);
@@ -504,9 +508,11 @@ int rawspec_initialize(rawspec_context * ctx)
   // For each output product
   for(i=0; i < ctx->No; i++) {
     // Power output buffer
+#ifdef VERBOSE_ALLOC
     printf("Power output buffer size == %u * %lu == %lu\n",
         ctx->Npolout,  ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float),
         ctx->Npolout * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
+#endif
     cuda_rc = cudaMalloc(&gpu_ctx->d_pwr_out[i],
         ctx->Npolout * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
     if(cuda_rc != cudaSuccess) {
@@ -618,7 +624,9 @@ int rawspec_initialize(rawspec_context * ctx)
         return 1;
       }
 
+#ifdef VERBOSE_ALLOC
       printf("cufftMakePlanMany for output product %d...", i);
+#endif
       // Make the plan
       cufft_rc = cufftMakePlanMany(
                       gpu_ctx->plan[i][p],     // plan handle
@@ -640,7 +648,9 @@ int rawspec_initialize(rawspec_context * ctx)
         rawspec_cleanup(ctx);
         return 1;
       }
+#ifdef VERBOSE_ALLOC
       printf("ok\n");
+#endif
 
       // Now associate the callbacks with the plan.
       // Load callback
@@ -695,14 +705,18 @@ int rawspec_initialize(rawspec_context * ctx)
   }
 
   // Allocate work area
+#ifdef VERBOSE_ALLOC
   printf("allocating work area %lu bytes...", work_size);
+#endif
   cuda_rc = cudaMalloc(&gpu_ctx->d_work_area, gpu_ctx->work_size);
   if(cuda_rc != cudaSuccess) {
     PRINT_ERRMSG(cuda_rc);
     rawspec_cleanup(ctx);
     return 1;
   }
+#ifdef VERBOSE_ALLOC
   printf("ok\n");
+#endif
 
   // Associate work area with plans
   for(i=0; i < ctx->No; i++) {
@@ -882,7 +896,6 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
       // number of spectra per input buffer, then we need to accumulate the
       // sub-integrations together.
       if(ctx->Nds[i] < gpu_ctx->Nss[i]) {
-printf("calling accumulate kernel for output product %d\n", i);
         for(p=0; p < ctx->Npolout; p++) {
           accumulate<<<gpu_ctx->grid[i],
                        gpu_ctx->nthreads[i],
