@@ -56,7 +56,7 @@ int main(int argc, char * argv[])
          RAWSPEC_BLOCSIZE(&ctx));
 
   // Setup input data
-  for(i=0; i<4; i++) {
+  for(i=0; i<ctx.Nb; i++) {
     memset(ctx.h_blkbufs[i], 0, blocsize);
   }
   // Set sample 8 of pol 0 to (1+0j), in block Nb-1
