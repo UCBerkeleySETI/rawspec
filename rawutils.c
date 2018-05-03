@@ -219,6 +219,10 @@ off_t raw_read_header(int fd, raw_hdr_t * raw_hdr)
     raw_hdr->npol = 2;
   }
 
+  // Save header pos/size
+  raw_hdr->hdr_pos = pos;
+  raw_hdr->hdr_size = raw_header_size(hdr, hdr_size, 0);
+
   // Get actual size of header (plus any padding)
   hdr_size = raw_header_size(hdr, hdr_size, raw_hdr->directio);
   //printf("RRP: hdr=%lu\n", hdr_size);

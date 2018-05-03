@@ -13,6 +13,7 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <getopt.h>
+#include <sys/sendfile.h>
 
 #include "rawspec.h"
 #include "rawspec_file.h"
@@ -62,6 +63,7 @@ ssize_t read_fully(int fd, void * buf, size_t bytes_to_read)
 static struct option long_opts[] = {
   {"dest",    1, NULL, 'd'},
   {"ffts",    1, NULL, 'f'},
+  {"hdrs",    0, NULL, 'H'},
   {"nchan",   1, NULL, 'n'},
   {"pols",    1, NULL, 'p'},
   {"rate",    1, NULL, 'r'},
@@ -85,6 +87,7 @@ void usage(const char *argv0) {
     "Options:\n"
     "  -d, --dest=DEST       Destination directory or host:port\n"
     "  -f, --ffts=N1[,N2...] FFT lengths\n"
+    "  -H, --hdrs            Save headers to separate file\n"
     "  -n, --nchan=N         Number of coarse channels to process [all]\n"
     "  -p  --pols={1|4}      Number of output polarizations [1]\n"
     "                        1=total power, 4=cross pols\n"
@@ -98,6 +101,37 @@ void usage(const char *argv0) {
   );
 }
 
+int open_headers_file(const char * dest, const char *stem)
+{
+  int fd;
+  const char * basename;
+  char fname[PATH_MAX+1];
+
+  // If dest is given and it's not empty
+  if(dest && dest[0]) {
+    // Look for last '/' in stem
+    basename = strrchr(stem, '/');
+    if(basename) {
+      // If found, advance beyond it to first char of basename
+      basename++;
+    } else {
+      // If not found, use stem as basename
+      basename = stem;
+    }
+    snprintf(fname, PATH_MAX, "%s/%s.rawspec.headers", dest, basename);
+  } else {
+    snprintf(fname, PATH_MAX, "%s.rawspec.headers", stem);
+  }
+  fname[PATH_MAX] = '\0';
+  fd = open(fname, O_WRONLY | O_CREAT | O_TRUNC, 0664);
+  if(fd == -1) {
+    perror(fname);
+  } else {
+    posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
+  }
+  return fd;
+}
+
 int main(int argc, char *argv[])
 {
   int si; // Indexes the stems
@@ -108,7 +142,9 @@ int j, k;
 char tmp[16];
   void * pv;
   int fdin;
+  int fdhdrs;
   int next_stem;
+  int save_headers = 0;
   unsigned int Nc;   // Number of coarse channels
   unsigned int Np;   // Number of polarizations
   unsigned int Ntpb; // Number of time samples per block
@@ -147,7 +183,7 @@ char tmp[16];
 
   // Parse command line.
   argv0 = argv[0];
-  while((opt=getopt_long(argc,argv,"d:f:n:p:r:s:t:hv",long_opts,NULL))!=-1) {
+  while((opt=getopt_long(argc,argv,"d:f:Hn:p:r:s:t:hv",long_opts,NULL))!=-1) {
     switch (opt) {
       case 'h': // Help
         usage(argv0);
@@ -177,6 +213,10 @@ char tmp[16];
           }
           ctx.Nts[i] = strtoul(pchar, NULL, 0);
         }
+        break;
+
+      case 'H': // Save headers
+        save_headers = 1;
         break;
 
       case 'n': // Number of coarse channels to process
@@ -246,6 +286,13 @@ char tmp[16];
     fprintf(stderr,
         "error: full-pol mode is not supported for network output\n");
     return 1;
+  }
+
+  // Saving headers is only supported for file output
+  if(save_headers && output_mode != RAWSPEC_FILE) {
+    fprintf(stderr,
+        "warning: saving headers is only supported for file output\n");
+    save_headers = 0;
   }
 
   // Validate user input
@@ -488,6 +535,13 @@ char tmp[16];
           }
         }
 
+        if(save_headers) {
+          // Open headers output file
+          fdhdrs = open_headers_file(dest, argv[si]);
+          // Copy first header to headers file
+          sendfile(fdhdrs, fdin, &raw_hdr.hdr_pos, raw_hdr.hdr_size);
+        }
+
         if(output_mode == RAWSPEC_NET) {
           // Apportion net data rate to output products proportional to their
           // data volume.  Interestingly, data volume is proportional to the
@@ -622,6 +676,10 @@ char tmp[16];
                     fname, strerror(errno));
           }
           break;
+        }
+        if(save_headers) {
+          // Copy header to headers file
+          sendfile(fdhdrs, fdin, &raw_hdr.hdr_pos, raw_hdr.hdr_size);
         }
 
         bi++;
