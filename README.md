@@ -152,3 +152,15 @@ Fri May  4 15:57:16 2018
 |    0     28709    C   rawspec                                       3511MiB |
 +-----------------------------------------------------------------------------+
 ```
+
+# Installation
+
+```
+$ git clone https://github.com/UCBerkeleySETI/rawspec.git
+
+$ cd rawspec
+
+$ make
+
+$ sudo make install
+```
