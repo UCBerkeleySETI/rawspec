@@ -39,8 +39,9 @@ int main(int argc, char * argv[])
   ctx.Nas[0] = (1<<(20 - 20));
   ctx.Nas[1] = (1<<(20 -  3));
   ctx.Nas[2] = (1<<(20 - 10));
-  // Auto-calculate Nb and let library manage input block buffers
+  // Auto-calculate Nb/Nb_host and let library manage input block buffers
   ctx.Nb = 0;
+  ctx.Nb_host = 0;
   ctx.h_blkbufs = NULL;
   // Dump callback
   ctx.dump_callback = dump_callback;
@@ -56,13 +57,13 @@ int main(int argc, char * argv[])
          RAWSPEC_BLOCSIZE(&ctx));
 
   // Setup input data
-  for(i=0; i<ctx.Nb; i++) {
+  for(i=0; i<ctx.Nb_host; i++) {
     memset(ctx.h_blkbufs[i], 0, blocsize);
   }
-  // Set sample 8 of pol 0 to (1+0j), in block Nb-1
-  ctx.h_blkbufs[ctx.Nb-1][8*2*2] = 127;
-  // Set sample 9 of pol 1 to (0+1j), in block Nb-1
-  ctx.h_blkbufs[ctx.Nb-1][9*2*2+3] = 127;
+  // Set sample 8 of pol 0 to (1+0j), in block Nb_host-1
+  ctx.h_blkbufs[ctx.Nb_host-1][8*2*2] = 127;
+  // Set sample 9 of pol 1 to (0+1j), in block Nb_host-1
+  ctx.h_blkbufs[ctx.Nb_host-1][9*2*2+3] = 127;
 
   // Salt the output buffers (to detect whether they are not fully written)
   for(i=0; i<ctx.No; i++) {

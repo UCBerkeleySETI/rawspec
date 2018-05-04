@@ -294,13 +294,6 @@ int rawspec_initialize(rawspec_context * ctx)
       return 1;
     }
   } else {
-    // Cannot calculate Nb for caller-managed h_blkbufs
-    if(ctx->h_blkbufs) {
-      fprintf(stderr,
-          "Must specify number of input blocks when caller-managed\n");
-      return 1;
-    }
-
     // Calculate Nb
     // If Ntmax is less than one block
     if(ctx->Ntmax < ctx->Ntpb) {
@@ -320,6 +313,15 @@ int rawspec_initialize(rawspec_context * ctx)
       }
       ctx->Nb = ctx->Ntmax / ctx->Ntpb;
     }
+  }
+
+  // Ensure Nb_host is non-zero when host input buffers are caller managed
+  if(ctx->Nb_host == 0 && ctx->h_blkbufs) {
+    fprintf(stderr,
+        "Must specify number of host input blocks when caller-managed\n");
+    return 1;
+  } else if(ctx->Nb_host == 0) {
+    ctx->Nb_host = ctx->Nb;
   }
 
   // Validate Nas
@@ -390,8 +392,8 @@ int rawspec_initialize(rawspec_context * ctx)
     gpu_ctx->caller_managed = 0;
 
     // Alllocate host input block buffers
-    ctx->h_blkbufs = (char **)malloc(ctx->Nb * sizeof(char *));
-    for(i=0; i < ctx->Nb; i++) {
+    ctx->h_blkbufs = (char **)malloc(ctx->Nb_host * sizeof(char *));
+    for(i=0; i < ctx->Nb_host; i++) {
       // Block buffer can use write combining
       cuda_rc = cudaHostAlloc(&ctx->h_blkbufs[i],
                          ctx->Ntpb*ctx->Np*ctx->Nc*sizeof(char2),
@@ -408,7 +410,7 @@ int rawspec_initialize(rawspec_context * ctx)
 
     // Register these buffers with CUDA.  It is the caller's responsibility to
     // ensure that the blocks meet memory alignment requirements, etc.
-    for(i=0; i < ctx->Nb; i++) {
+    for(i=0; i < ctx->Nb_host; i++) {
       cuda_rc = cudaHostRegister(&ctx->h_blkbufs[i],
                          ctx->Ntpb*ctx->Np*ctx->Nc*sizeof(char2),
                          cudaHostRegisterDefault);
@@ -754,12 +756,12 @@ void rawspec_cleanup(rawspec_context * ctx)
     gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
 
     if(gpu_ctx->caller_managed) {
-      for(i=0; i < ctx->Nb; i++) {
+      for(i=0; i < ctx->Nb_host; i++) {
         cudaHostUnregister(ctx->h_blkbufs[i]);
       }
     } else {
       if(ctx->h_blkbufs) {
-        for(i=0; i < ctx->Nb; i++) {
+        for(i=0; i < ctx->Nb_host; i++) {
           cudaFreeHost(ctx->h_blkbufs[i]);
         }
         free(ctx->h_blkbufs);
@@ -814,7 +816,7 @@ int rawspec_copy_blocks_to_gpu(rawspec_context * ctx,
   size_t width = ctx->Ntpb * ctx->Np * sizeof(char2);
 
   for(b=0; b < num_blocks; b++) {
-    sblk = (src_idx + b) % ctx->Nb;
+    sblk = (src_idx + b) % ctx->Nb_host;
     dblk = (dst_idx + b) % ctx->Nb;
 
     rc = cudaMemcpy2D(gpu_ctx->d_fft_in + dblk * width / sizeof(char2),

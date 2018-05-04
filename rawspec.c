@@ -472,8 +472,9 @@ char tmp[16];
           ctx.Ntpb = Ntpb;
 
           // Initialize for new dimensions
-          ctx.Nb = 0;
-          ctx.h_blkbufs = NULL;
+          ctx.Nb = 0;           // auto-calculate
+          ctx.Nb_host = 0;      // auto-calculate
+          ctx.h_blkbufs = NULL; // auto-allocate
           if(rawspec_initialize(&ctx)) {
             fprintf(stderr, "rawspec initialization failed\n");
             close(fdin);
@@ -595,7 +596,7 @@ char tmp[16];
             pktidx += dpktidx;
 
             // Fill block buffer with zeros
-            memset(ctx.h_blkbufs[bi%ctx.Nb], 0, raw_hdr.blocsize);
+            memset(ctx.h_blkbufs[bi%ctx.Nb_host], 0, raw_hdr.blocsize);
 
 #ifdef VERBOSE
             printf("%3d %016lx:", bi, pktidx);
@@ -626,7 +627,7 @@ char tmp[16];
 
         // Read ctx.Nc coarse channels from this block
         bytes_read = read_fully(fdin,
-                                ctx.h_blkbufs[bi % ctx.Nb],
+                                ctx.h_blkbufs[bi % ctx.Nb_host],
                                 2 * ctx.Np * ctx.Nc * ctx.Ntpb);
 
         // Seek past channels after schan+nchan
@@ -646,7 +647,7 @@ char tmp[16];
 #ifdef VERBOSE
         printf("%3d %016lx:", bi, raw_hdr.pktidx);
         for(j=0; j<16; j++) {
-          printf(" %02x", ctx.h_blkbufs[bi%ctx.Nb][j] & 0xff);
+          printf(" %02x", ctx.h_blkbufs[bi%ctx.Nb_host][j] & 0xff);
         }
         printf("\n");
 #endif // VERBOSE

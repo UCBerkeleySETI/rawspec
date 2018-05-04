@@ -34,7 +34,7 @@ void do_read(rawspec_context *ctx, int fd, size_t blocsize)
   clock_gettime(CLOCK_MONOTONIC, &ts_start);
 
   while(bytes_read) {
-    bytes_read = read(fd, ctx->h_blkbufs[i++ % ctx->Nb], blocsize);
+    bytes_read = read(fd, ctx->h_blkbufs[i++ % ctx->Nb_host], blocsize);
     total_bytes_read += bytes_read;
   }
 
@@ -71,7 +71,7 @@ void do_memcpy(rawspec_context *ctx, int fd, size_t blocsize)
   }
 
   for(i=0; i<num_blocks; i++) {
-    memcpy(ctx->h_blkbufs[i % ctx->Nb], din+i*blocsize, blocsize);
+    memcpy(ctx->h_blkbufs[i % ctx->Nb_host], din+i*blocsize, blocsize);
     total_bytes_read += blocsize;
   }
 
@@ -104,7 +104,7 @@ void do_mmap(rawspec_context *ctx, int fd, size_t blocsize)
   clock_gettime(CLOCK_MONOTONIC, &ts_start);
 
   for(i=0; i<num_blocks; i++) {
-    if(mmap(ctx->h_blkbufs[i % ctx->Nb], blocsize, PROT_READ,
+    if(mmap(ctx->h_blkbufs[i % ctx->Nb_host], blocsize, PROT_READ,
             MAP_PRIVATE | MAP_FIXED | MAP_POPULATE,
             fd, i*blocsize) == MAP_FAILED) {
       perror("mmap");
@@ -123,7 +123,7 @@ void do_mmap(rawspec_context *ctx, int fd, size_t blocsize)
          elapsed_ns / 1e9,
          total_bytes_read / (double)elapsed_ns);
 
-  for(i=0; i<ctx->Nb; i++) {
+  for(i=0; i<ctx->Nb_host; i++) {
     munmap(ctx->h_blkbufs[i], blocsize);
   }
 }
@@ -148,8 +148,10 @@ int main(int argc, char *argv[])
   ctx.Nas[0] = (1<<(20 - 20));
   ctx.Nas[1] = (1<<(20 -  3));
   ctx.Nas[2] = (1<<(20 - 10));
-  // Auto-calculate Nb
+  // Auto-calculate Nb/Nb_host and let library manage input block buffers
   ctx.Nb = 0;
+  ctx.Nb_host = 0;
+  ctx.h_blkbufs = NULL;
   if(argc<2) {
     fprintf(stderr, "usage: %s FILENAME\n", argv[0]);
     return 1;

@@ -61,15 +61,19 @@ struct rawspec_context_s {
   void * user_data;
 
   // Nb is the number of input blocks per GPU input buffer.
-  // Set to zero to NULL to have the library calculate Nb (as Ntmax/Ntpb).
+  // Set to zero to have the library calculate Nb_dev (as Ntmax/Ntpb).
   unsigned int Nb;
 
-  // Array of host pointers to Nb block buffers.  Set h_blkbufs to NULL to have
-  // the library allocate the host input block buffers.  For client managed
-  // buffers, the user must allocate and array of Nb pointers, initialize them
-  // to point to the caller allocated blocks, and set the Nb field of this
-  // structure.  The size of each host input block buffer is Nc * Ntpb * Np * 2
-  // (in bytes).
+  // Nb_host is the number of input block buffers on the host.
+  // Set to zero to have the library calculate Nb_host (as Ntmax/Ntpb).
+  unsigned int Nb_host;
+
+  // Array of host pointers to Nb_host block buffers.  Set h_blkbufs to NULL to
+  // have the library allocate the host input block buffers.  For client
+  // managed buffers, the user must allocate an array of Nb_host pointers,
+  // initialize them to point to the caller allocated blocks, and set the Nb
+  // field of this structure.  The size of each host input block buffer is Nc *
+  // Ntpb * Np * 2 (in bytes).
   char ** h_blkbufs;
 
   // Fields above here should be specified by client.  Fields below here are
