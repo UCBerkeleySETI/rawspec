@@ -48,7 +48,7 @@ all: rawspec rawspectest fileiotest
 
 # Dependencoes are simple enough to manage manually (for now)
 fileiotest.o: rawspec.h
-rawspec.o: rawspec.h fitshead.h rawutils.h rawspec_callback.h \
+rawspec.o: rawspec.h fitshead.h rawspec_rawutils.h rawspec_callback.h \
            rawspec_file.h rawspec_socket.h rawspec_version.h \
            rawspec_fbutils.h
 rawspec_fbutils.o: rawspec_fbutils.h
@@ -58,7 +58,7 @@ rawspec_gpu.o: rawspec.h rawspec_version.h
 rawspec_socket.o: rawspec_socket.h rawspec.h \
                   rawspec_callback.h rawspec_fbutils.h
 rawspectest.o: rawspec.h
-rawutils.o: rawutils.h fitshead.h
+rawspec_rawutils.o: rawspec_rawutils.h fitshead.h
 
 %.o: %.cu
 	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) -dc $(GENCODE_FLAGS) -o $@ -c $<
@@ -67,7 +67,7 @@ librawspec.so: rawspec_gpu.o rawspec_fbutils.o
 	$(VERBOSE) $(NVCC) -shared $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ $(CUDA_STATIC_LIBS)
 
 rawspec: librawspec.so
-rawspec: rawspec.o rawutils.o hget.o rawspec_file.o rawspec_socket.o
+rawspec: rawspec.o rawspec_rawutils.o hget.o rawspec_file.o rawspec_socket.o
 	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ -L. -lrawspec
 
 rawspectest: librawspec.so

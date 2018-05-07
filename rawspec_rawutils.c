@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "rawutils.h"
+#include "rawspec_rawutils.h"
 #include "fitshead.h"
 
 int raw_get_int(const char * buf, const char * key, int def)

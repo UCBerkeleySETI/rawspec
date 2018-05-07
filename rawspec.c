@@ -20,7 +20,7 @@
 #include "rawspec_socket.h"
 #include "rawspec_callback.h"
 #include "rawspec_version.h"
-#include "rawutils.h"
+#include "rawspec_rawutils.h"
 #include "rawspec_fbutils.h"
 #include "fitshead.h"
 
