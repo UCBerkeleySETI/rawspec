@@ -136,6 +136,35 @@ int rawspec_raw_header_size(char * hdr, size_t len, int directio)
   return 0;
 }
 
+// Parses rawspec related RAW header params from buf into raw_hdr.
+void rawspec_raw_parse_header(const char * buf, rawspec_raw_hdr_t * raw_hdr)
+{
+  int smjd;
+  int imjd;
+  char tmp[80];
+
+  raw_hdr->blocsize = rawspec_raw_get_int(buf, "BLOCSIZE", 0);
+  raw_hdr->npol     = rawspec_raw_get_int(buf, "NPOL",     0);
+  raw_hdr->obsnchan = rawspec_raw_get_int(buf, "OBSNCHAN", 0);
+  raw_hdr->obsfreq  = rawspec_raw_get_dbl(buf, "OBSFREQ",  0.0);
+  raw_hdr->obsbw    = rawspec_raw_get_dbl(buf, "OBSBW",    0.0);
+  raw_hdr->tbin     = rawspec_raw_get_dbl(buf, "TBIN",     0.0);
+  raw_hdr->directio = rawspec_raw_get_int(buf, "DIRECTIO", 0);
+  raw_hdr->pktidx   = rawspec_raw_get_int(buf, "PKTIDX",  -1);
+
+  rawspec_raw_get_str(buf, "RA_STR", "0.0", tmp, 80);
+  raw_hdr->ra = rawspec_raw_hmsstr_to_h(tmp);
+
+  rawspec_raw_get_str(buf, "DEC_STR", "0.0", tmp, 80);
+  raw_hdr->dec = rawspec_raw_dmsstr_to_d(tmp);
+
+  imjd = rawspec_raw_get_int(buf, "STT_IMJD", 51545);
+  smjd = rawspec_raw_get_int(buf, "STT_SMJD", 0);
+  raw_hdr->mjd = ((double)imjd) + ((double)smjd)/86400.0;
+
+  rawspec_raw_get_str(buf, "SRC_NAME", "Unknown", raw_hdr->src_name, 80);
+}
+
 // Reads RAW file params from fd.  On entry, fd is assumed to be at the start
 // of a RAW header section.  On success, this function returns the file offset
 // of the subsequent data block and the file descriptor `fd` will also refer to
@@ -144,13 +173,10 @@ int rawspec_raw_header_size(char * hdr, size_t len, int directio)
 off_t rawspec_raw_read_header(int fd, rawspec_raw_hdr_t * raw_hdr)
 {
   int i;
-  int smjd;
-  int imjd;
   // Ensure that hdr is aligned to a 512-byte boundary so that it can be used
   // with files opened with O_DIRECT.
   char hdr[MAX_RAW_HDR_SIZE] __attribute__ ((aligned (512)));
   int hdr_size;
-  char tmp[80];
   off_t pos = lseek(fd, 0, SEEK_CUR);
 
   // Read header (plus some data, probably)
@@ -162,26 +188,7 @@ off_t rawspec_raw_read_header(int fd, rawspec_raw_hdr_t * raw_hdr)
     return 0;
   }
 
-  raw_hdr->blocsize = rawspec_raw_get_int(hdr, "BLOCSIZE", 0);
-  raw_hdr->npol     = rawspec_raw_get_int(hdr, "NPOL",     0);
-  raw_hdr->obsnchan = rawspec_raw_get_int(hdr, "OBSNCHAN", 0);
-  raw_hdr->obsfreq  = rawspec_raw_get_dbl(hdr, "OBSFREQ",  0.0);
-  raw_hdr->obsbw    = rawspec_raw_get_dbl(hdr, "OBSBW",    0.0);
-  raw_hdr->tbin     = rawspec_raw_get_dbl(hdr, "TBIN",     0.0);
-  raw_hdr->directio = rawspec_raw_get_int(hdr, "DIRECTIO", 0);
-  raw_hdr->pktidx   = rawspec_raw_get_int(hdr, "PKTIDX",  -1);
-
-  rawspec_raw_get_str(hdr, "RA_STR", "0.0", tmp, 80);
-  raw_hdr->ra = rawspec_raw_hmsstr_to_h(tmp);
-
-  rawspec_raw_get_str(hdr, "DEC_STR", "0.0", tmp, 80);
-  raw_hdr->dec = rawspec_raw_dmsstr_to_d(tmp);
-
-  imjd = rawspec_raw_get_int(hdr, "STT_IMJD", 51545);
-  smjd = rawspec_raw_get_int(hdr, "STT_SMJD", 0);
-  raw_hdr->mjd = ((double)imjd) + ((double)smjd)/86400.0;
-
-  rawspec_raw_get_str(hdr, "SRC_NAME", "Unknown", raw_hdr->src_name, 80);
+  rawspec_raw_parse_header(hdr, raw_hdr);
 
   if(raw_hdr->blocsize ==  0) {
     fprintf(stderr, " BLOCSIZE not found in header\n");

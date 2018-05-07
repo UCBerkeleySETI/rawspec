@@ -45,6 +45,9 @@ double rawspec_raw_dmsstr_to_d(char * dmsstr);
 
 int rawspec_raw_header_size(char * hdr, size_t len, int directio);
 
+// Parses rawspec related RAW header params from buf into raw_hdr.
+void rawspec_raw_parse_header(const char * buf, rawspec_raw_hdr_t * raw_hdr);
+
 // Reads obs params from fd.  On entry, fd is assumed to be at the start of a
 // RAW header section.  On success, this function returns the file offset of
 // the subsequent data block and the file descriptor `fd` will also refer to
