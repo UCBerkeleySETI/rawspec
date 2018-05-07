@@ -93,7 +93,7 @@ install: rawspec.h librawspec.so
 	cp -p m4/rawspec.m4 $(DATADIR)/aclocal
 
 clean:
-	rm -f *.o *.so rawspec rawspectest fileiotest tags
+	rm -f *.o *.so rawspec rawspectest fileiotest tags rawspec_version.h
 
 tags:
 	ctags -R .
