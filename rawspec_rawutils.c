@@ -7,7 +7,7 @@
 #include "rawspec_rawutils.h"
 #include "fitshead.h"
 
-int raw_get_int(const char * buf, const char * key, int def)
+int rawspec_raw_get_int(const char * buf, const char * key, int def)
 {
   char tmpstr[48];
   int value;
@@ -22,7 +22,7 @@ int raw_get_int(const char * buf, const char * key, int def)
   return value;
 }
 
-int raw_get_s64(const char * buf, const char * key, int64_t def)
+int rawspec_raw_get_s64(const char * buf, const char * key, int64_t def)
 {
   char tmpstr[48];
   int64_t value;
@@ -37,7 +37,7 @@ int raw_get_s64(const char * buf, const char * key, int64_t def)
   return value;
 }
 
-int raw_get_u64(const char * buf, const char * key, uint64_t def)
+int rawspec_raw_get_u64(const char * buf, const char * key, uint64_t def)
 {
   char tmpstr[48];
   uint64_t value;
@@ -52,7 +52,7 @@ int raw_get_u64(const char * buf, const char * key, uint64_t def)
   return value;
 }
 
-double raw_get_dbl(const char * buf, const char * key, double def)
+double rawspec_raw_get_dbl(const char * buf, const char * key, double def)
 {
   char tmpstr[48];
   double value;
@@ -67,7 +67,7 @@ double raw_get_dbl(const char * buf, const char * key, double def)
   return value;
 }
 
-void raw_get_str(const char * buf, const char * key, const char * def,
+void rawspec_raw_get_str(const char * buf, const char * key, const char * def,
                  char * out, size_t len)
 {
   if (hgets(buf, key, len, out) == 0) {
@@ -76,9 +76,7 @@ void raw_get_str(const char * buf, const char * key, const char * def,
   }
 }
 
-#define raw_hmsstr_to_h(hmsstr) (raw_dmsstr_to_d(hmsstr))
-
-double raw_dmsstr_to_d(char * dmsstr)
+double rawspec_raw_dmsstr_to_d(char * dmsstr)
 {
   int sign = 1;
   double d = 0.0;
@@ -117,7 +115,7 @@ double raw_dmsstr_to_d(char * dmsstr)
   return sign * d;
 }
 
-int raw_header_size(char * hdr, size_t len, int directio)
+int rawspec_raw_header_size(char * hdr, size_t len, int directio)
 {
   int i;
 
@@ -143,7 +141,7 @@ int raw_header_size(char * hdr, size_t len, int directio)
 // of the subsequent data block and the file descriptor `fd` will also refer to
 // that location in the file.  On EOF, this function returns 0.  On failure,
 // this function returns -1 and the location to which fd refers is undefined.
-off_t raw_read_header(int fd, raw_hdr_t * raw_hdr)
+off_t rawspec_raw_read_header(int fd, rawspec_raw_hdr_t * raw_hdr)
 {
   int i;
   int smjd;
@@ -164,26 +162,26 @@ off_t raw_read_header(int fd, raw_hdr_t * raw_hdr)
     return 0;
   }
 
-  raw_hdr->blocsize = raw_get_int(hdr, "BLOCSIZE", 0);
-  raw_hdr->npol     = raw_get_int(hdr, "NPOL",     0);
-  raw_hdr->obsnchan = raw_get_int(hdr, "OBSNCHAN", 0);
-  raw_hdr->obsfreq  = raw_get_dbl(hdr, "OBSFREQ",  0.0);
-  raw_hdr->obsbw    = raw_get_dbl(hdr, "OBSBW",    0.0);
-  raw_hdr->tbin     = raw_get_dbl(hdr, "TBIN",     0.0);
-  raw_hdr->directio = raw_get_int(hdr, "DIRECTIO", 0);
-  raw_hdr->pktidx   = raw_get_int(hdr, "PKTIDX",  -1);
+  raw_hdr->blocsize = rawspec_raw_get_int(hdr, "BLOCSIZE", 0);
+  raw_hdr->npol     = rawspec_raw_get_int(hdr, "NPOL",     0);
+  raw_hdr->obsnchan = rawspec_raw_get_int(hdr, "OBSNCHAN", 0);
+  raw_hdr->obsfreq  = rawspec_raw_get_dbl(hdr, "OBSFREQ",  0.0);
+  raw_hdr->obsbw    = rawspec_raw_get_dbl(hdr, "OBSBW",    0.0);
+  raw_hdr->tbin     = rawspec_raw_get_dbl(hdr, "TBIN",     0.0);
+  raw_hdr->directio = rawspec_raw_get_int(hdr, "DIRECTIO", 0);
+  raw_hdr->pktidx   = rawspec_raw_get_int(hdr, "PKTIDX",  -1);
 
-  raw_get_str(hdr, "RA_STR", "0.0", tmp, 80);
-  raw_hdr->ra = raw_hmsstr_to_h(tmp);
+  rawspec_raw_get_str(hdr, "RA_STR", "0.0", tmp, 80);
+  raw_hdr->ra = rawspec_raw_hmsstr_to_h(tmp);
 
-  raw_get_str(hdr, "DEC_STR", "0.0", tmp, 80);
-  raw_hdr->dec = raw_dmsstr_to_d(tmp);
+  rawspec_raw_get_str(hdr, "DEC_STR", "0.0", tmp, 80);
+  raw_hdr->dec = rawspec_raw_dmsstr_to_d(tmp);
 
-  imjd = raw_get_int(hdr, "STT_IMJD", 51545);
-  smjd = raw_get_int(hdr, "STT_SMJD", 0);
+  imjd = rawspec_raw_get_int(hdr, "STT_IMJD", 51545);
+  smjd = rawspec_raw_get_int(hdr, "STT_SMJD", 0);
   raw_hdr->mjd = ((double)imjd) + ((double)smjd)/86400.0;
 
-  raw_get_str(hdr, "SRC_NAME", "Unknown", raw_hdr->src_name, 80);
+  rawspec_raw_get_str(hdr, "SRC_NAME", "Unknown", raw_hdr->src_name, 80);
 
   if(raw_hdr->blocsize ==  0) {
     fprintf(stderr, " BLOCSIZE not found in header\n");
@@ -221,10 +219,10 @@ off_t raw_read_header(int fd, raw_hdr_t * raw_hdr)
 
   // Save header pos/size
   raw_hdr->hdr_pos = pos;
-  raw_hdr->hdr_size = raw_header_size(hdr, hdr_size, 0);
+  raw_hdr->hdr_size = rawspec_raw_header_size(hdr, hdr_size, 0);
 
   // Get actual size of header (plus any padding)
-  hdr_size = raw_header_size(hdr, hdr_size, raw_hdr->directio);
+  hdr_size = rawspec_raw_header_size(hdr, hdr_size, raw_hdr->directio);
   //printf("RRP: hdr=%lu\n", hdr_size);
 
   // Seek forward from original position past header (and any padding)

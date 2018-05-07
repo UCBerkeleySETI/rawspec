@@ -164,7 +164,7 @@ char tmp[16];
   size_t bytes_read;
   size_t total_bytes_read;
   off_t pos;
-  raw_hdr_t raw_hdr;
+  rawspec_raw_hdr_t raw_hdr;
   callback_data_t cb_data[MAX_OUTPUTS];
   rawspec_context ctx;
   unsigned int schan = 0;
@@ -405,7 +405,7 @@ char tmp[16];
       posix_fadvise(fdin, 0, 0, POSIX_FADV_SEQUENTIAL);
 
       // Read obs params
-      pos = raw_read_header(fdin, &raw_hdr);
+      pos = rawspec_raw_read_header(fdin, &raw_hdr);
       if(pos <= 0) {
         if(pos == -1) {
           fprintf(stderr, "error getting obs params from %s\n", fname);
@@ -670,7 +670,7 @@ char tmp[16];
         pktidx = raw_hdr.pktidx;
 
         // Read obs params of next block
-        pos = raw_read_header(fdin, &raw_hdr);
+        pos = rawspec_raw_read_header(fdin, &raw_hdr);
         if(pos <= 0) {
           if(pos == -1) {
             fprintf(stderr, "error getting obs params from %s [%s]\n",
