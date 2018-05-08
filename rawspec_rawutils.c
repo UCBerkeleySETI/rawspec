@@ -5,7 +5,7 @@
 #include <string.h>
 
 #include "rawspec_rawutils.h"
-#include "fitshead.h"
+#include "hget.h"
 
 int32_t rawspec_raw_get_s32(const char * buf, const char * key, int32_t def)
 {
@@ -22,7 +22,6 @@ int32_t rawspec_raw_get_s32(const char * buf, const char * key, int32_t def)
   return value;
 }
 
-#ifdef HAVE_HGETU4
 uint32_t rawspec_raw_get_u32(const char * buf, const char * key, uint32_t def)
 {
   char tmpstr[48];
@@ -37,7 +36,6 @@ uint32_t rawspec_raw_get_u32(const char * buf, const char * key, uint32_t def)
 
   return value;
 }
-#endif
 
 int64_t rawspec_raw_get_s64(const char * buf, const char * key, int64_t def)
 {

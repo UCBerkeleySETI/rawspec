@@ -22,7 +22,6 @@
 #include "rawspec_version.h"
 #include "rawspec_rawutils.h"
 #include "rawspec_fbutils.h"
-#include "fitshead.h"
 
 #define ELAPSED_NS(start,stop) \
   (((int64_t)stop.tv_sec-start.tv_sec)*1000*1000*1000+(stop.tv_nsec-start.tv_nsec))

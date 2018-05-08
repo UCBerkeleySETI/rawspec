@@ -1,3 +1,45 @@
+// This file was originally hget.c by Doug Mink of the SAO.  It has been
+// converted into a .h file of static functions for internal use within a C
+// compilation unit.  You may want to consider using the original hget.c/hput.c
+// rather than this file.
+
+#ifndef HGET_H
+#define HGET_H
+
+#include <stdio.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>             /* NULL, strlen, strstr, strcpy */
+#include <limits.h>
+
+#define VLENGTH 81
+#define multiline 0
+#define lhead0 0
+
+static char *
+hgetc(const char *hstring, const char *keyword0, char *value_buffer);
+
+static int
+hgets(const char *hstring, const char *keyword, const const int lstr, char *str);
+
+static int
+isnum(const char *string);
+
+static char *
+ksearch(const char *hstring, const char *keyword);
+
+static char *
+strsrch(const char *s1, const char *s2);
+
+static char *
+strnsrch(const char *s1, const char *s2, const const int ls1);
+
+static char *
+strcsrch(const char *s1, const char *s2);
+
+static char *
+strncsrch(const char *s1, const char *s2, const const int ls1);
+
 /*** File libwcs/hget.c
  *** August 22, 2007
  *** By Doug Mink, dmink@cfa.harvard.edu
@@ -57,6 +99,7 @@
  * Subroutine:  strfix (string,blankfill,zerodrop) removes extraneous characters
  */
 
+#if 0
 #include <string.h>             /* NULL, strlen, strstr, strcpy */
 #include <stdio.h>
 #include "fitshead.h"   /* FITS header extraction subroutines */
@@ -72,11 +115,7 @@
 #endif
 #define VLENGTH 81
 
-#ifdef USE_SAOLIB
-static int use_saolib=0;
-#endif
-
-char *hgetc(const char *hstring, const char *keyword0, char *value_buffer);
+static char *hgetc(const char *hstring, const char *keyword0, char *value_buffer);
 
 /* Don't know why this is global, seems to be just a 
  * temp buffer for parsing strings.  Made local copies in
@@ -135,7 +174,6 @@ gethlength(char *header)
     }
 }
 
-
 /* Extract Integer*4 value for variable from FITS header string */
 
 int
@@ -167,11 +205,11 @@ hgeti4c(const char *hstring, const char *keyword, const char *wchar, int *ival)
         return (hgeti4(hstring, keyword1, ival));
     }
 }
-
+#endif // 0
 
 /* Extract integer*8 value for variable from FITS header string */
 
-int
+static int
 hgeti8 (hstring,keyword,i8val)
 
 const char *hstring;    /* character string containing FITS header information
@@ -207,7 +245,7 @@ int64_t *i8val;
 
 /* Extract unsigned integer*8 value for variable from FITS header string */
 
-int
+static int
 hgetu8 (hstring,keyword,i8val)
 
 const char *hstring;    /* character string containing FITS header information
@@ -243,7 +281,7 @@ uint64_t *i8val;
 
 /* Extract long value for variable from FITS header string */
 
-int
+static int
 hgeti4(const char *hstring, const char *keyword, int *ival)
 
 /* character string containing FITS header information
@@ -324,6 +362,42 @@ the n'th token in the value is returned.
     }
 }
 
+/* Extract unsigned integer*4 value for variable from FITS header string */
+
+static uint32_t
+hgetu4 (hstring,keyword,i4val)
+
+const char *hstring;    /* character string containing FITS header information
+                   in the format <keyword>= <value> {/ <comment>} */
+const char *keyword;    /* character string containing the name of the keyword
+                   the value of which is returned.  hget searches for a
+                   line beginning with this string.  if "[n]" is present,
+                   the n'th token in the value is returned.
+                   (the first 8 characters must be unique) */
+uint32_t *i4val;
+{
+    char *value;
+    char *endptr;
+    char value_buffer[VLENGTH + 1];
+
+    /* Get value and comment from header string */
+    value = hgetc (hstring,keyword, value_buffer);
+
+    /* Translate value from ASCII to binary */
+    if (value != NULL) {
+        if (value[0] == '#') value++;
+        *i4val = strtoul(value, &endptr, 0);
+        if(endptr && endptr[0]) {
+            fprintf(stderr, "%s:%s got invalid integer character '%c' (%d)\n",
+                __FUNCTION__, keyword, endptr[0], endptr[0]);
+            *i4val = (uint32_t)atof(value);
+        }
+        return 1;
+    } else {
+        return 0;
+    }
+}
+#if 0
 
 /* Extract integer*2 value for variable from fits header string */
 
@@ -570,11 +644,12 @@ hgetr8c(const char *hstring, const char *keyword, const char *wchar, double *dva
         return (hgetr8(hstring, keyword1, dval));
     }
 }
+#endif // 0
 
 
 /* Extract real*8 value for variable from FITS header string */
 
-int
+static int
 hgetr8(const char *hstring, const char *keyword, double *dval)
 
 /* character string containing FITS header information
@@ -635,7 +710,7 @@ the n'th token in the value is returned.
         return (0);
     }
 }
-
+#if 0
 
 /* Extract logical value for variable from FITS header string */
 
@@ -1030,11 +1105,11 @@ hgetsc(const char *hstring, const char *keyword, const char *wchar, const const 
         return (hgets(hstring, keyword1, lstr, str));
     }
 }
-
+#endif // 0
 
 /* Extract string value for variable from FITS header string */
 
-int
+static int
 hgets(const char *hstring, const char *keyword, const const int lstr, char *str)
 
 /* character string containing FITS header information
@@ -1077,7 +1152,7 @@ the n'th token in the value is returned.
     }
 }
 
-
+#if 0
 /* Extract number of decimal places for value in FITS header string */
 
 int
@@ -1119,11 +1194,11 @@ the n'th token in the value is returned.
         return (0);
     }
 }
-
+#endif // 0
 
 /* Extract character value for variable from FITS header string */
 
-char *
+static char *
 hgetc(const char *hstring, const char *keyword0, char *value_buffer)
 
 /* character string containing FITS header information
@@ -1439,6 +1514,7 @@ the n'th token in the value is returned.
 #endif
 }
 
+#if 0
 
 /* Find beginning of fillable blank line before FITS header keyword line */
 
@@ -1561,11 +1637,11 @@ or '$'.  it is truncated to 8 characters. */
         return (NULL);
     }
 }
-
+#endif // 0
 
 /* Find FITS header line containing specified keyword */
 
-char *
+static char *
 ksearch(const char *hstring, const char *keyword)
 
 /* Find entry for keyword keyword in FITS header string hstring.
@@ -1678,6 +1754,8 @@ or '$'.  it is truncated to 8 characters. */
         }
 #endif
 }
+
+#if 0
 
 
 /* Return the right ascension in degrees from sexagesimal hours or decimal degrees */
@@ -1815,11 +1893,12 @@ str2dec(const char *in)
     }
     return (dec);
 }
+#endif // 0
 
 
 /* Find string s2 within null-terminated string s1 */
 
-char *
+static char *
 strsrch(const char *s1, const char *s2)
 
 /* String to search */
@@ -1834,7 +1913,7 @@ strsrch(const char *s1, const char *s2)
 
 /* Find string s2 within string s1 */
 
-char *
+static char *
 strnsrch(const char *s1, const char *s2, const const int ls1)
 
 /* String to search */
@@ -1914,7 +1993,7 @@ strnsrch(const char *s1, const char *s2, const const int ls1)
 
 /* Find string s2 within null-terminated string s1 (case-free search) */
 
-char *
+static char *
 strcsrch(const char *s1, const char *s2)
 
 /* String to search */
@@ -1929,7 +2008,7 @@ strcsrch(const char *s1, const char *s2)
 
 /* Find string s2 within string s1 (case-free search) */
 
-char *
+static char *
 strncsrch(const char *s1, const char *s2, const const int ls1)
 
 /* String to search */
@@ -2073,7 +2152,7 @@ strncsrch(const char *s1, const char *s2, const const int ls1)
     return (NULL);
 }
 
-
+#if 0
 int
 notnum(const char *string)
 
@@ -2088,6 +2167,7 @@ notnum(const char *string)
         return (1);
     }
 }
+#endif // 0
 
 
 /* ISNUM-- Return 1 if string is an integer number,
@@ -2096,7 +2176,7 @@ notnum(const char *string)
                   else 0
  */
 
-int
+static int
 isnum(const char *string)
 
 /* Character string */
@@ -2198,6 +2278,8 @@ isnum(const char *string)
         return (0);
     }
 }
+
+#if 0
 
 
 /* NUMDEC -- Return number of decimal places in numeric string (-1 if not number) */
@@ -2457,3 +2539,6 @@ strfix(char *string, int fillblank, int dropzero)
  * Aug 22 2007  If closing quote not found, make one up
  * Sep  6 2016  Added third arg to hgetc() to correct a 'return ptr to stack' issue.
  */
+#endif // 0
+
+#endif // HGET_H
