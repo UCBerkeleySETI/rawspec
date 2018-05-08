@@ -28,11 +28,13 @@ typedef struct {
 extern "C" {
 #endif
 
-int rawspec_raw_get_int(const char * buf, const char * key, int def);
+int32_t rawspec_raw_get_s32(const char * buf, const char * key, int32_t def);
 
-int rawspec_raw_get_s64(const char * buf, const char * key, int64_t def);
+uint32_t rawspec_raw_get_u32(const char * buf, const char * key, uint32_t def);
 
-int rawspec_raw_get_u64(const char * buf, const char * key, uint64_t def);
+int64_t rawspec_raw_get_s64(const char * buf, const char * key, int64_t def);
+
+uint64_t rawspec_raw_get_u64(const char * buf, const char * key, uint64_t def);
 
 double rawspec_raw_get_dbl(const char * buf, const char * key, double def);
 

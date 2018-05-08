@@ -7,10 +7,10 @@
 #include "rawspec_rawutils.h"
 #include "fitshead.h"
 
-int rawspec_raw_get_int(const char * buf, const char * key, int def)
+int32_t rawspec_raw_get_s32(const char * buf, const char * key, int32_t def)
 {
   char tmpstr[48];
-  int value;
+  int32_t value;
   if (hgeti4(buf, key, &value) == 0) {
     if (hgets(buf, key, 48, tmpstr) == 0) {
       value = def;
@@ -22,7 +22,24 @@ int rawspec_raw_get_int(const char * buf, const char * key, int def)
   return value;
 }
 
-int rawspec_raw_get_s64(const char * buf, const char * key, int64_t def)
+#ifdef HAVE_HGETU4
+uint32_t rawspec_raw_get_u32(const char * buf, const char * key, uint32_t def)
+{
+  char tmpstr[48];
+  uint32_t value;
+  if (hgetu4(buf, key, &value) == 0) {
+    if (hgets(buf, key, 48, tmpstr) == 0) {
+      value = def;
+    } else {
+      value = strtoul(tmpstr, NULL, 0);
+    }
+  }
+
+  return value;
+}
+#endif
+
+int64_t rawspec_raw_get_s64(const char * buf, const char * key, int64_t def)
 {
   char tmpstr[48];
   int64_t value;
@@ -37,7 +54,7 @@ int rawspec_raw_get_s64(const char * buf, const char * key, int64_t def)
   return value;
 }
 
-int rawspec_raw_get_u64(const char * buf, const char * key, uint64_t def)
+uint64_t rawspec_raw_get_u64(const char * buf, const char * key, uint64_t def)
 {
   char tmpstr[48];
   uint64_t value;
@@ -143,14 +160,14 @@ void rawspec_raw_parse_header(const char * buf, rawspec_raw_hdr_t * raw_hdr)
   int imjd;
   char tmp[80];
 
-  raw_hdr->blocsize = rawspec_raw_get_int(buf, "BLOCSIZE", 0);
-  raw_hdr->npol     = rawspec_raw_get_int(buf, "NPOL",     0);
-  raw_hdr->obsnchan = rawspec_raw_get_int(buf, "OBSNCHAN", 0);
+  raw_hdr->blocsize = rawspec_raw_get_s32(buf, "BLOCSIZE", 0);
+  raw_hdr->npol     = rawspec_raw_get_s32(buf, "NPOL",     0);
+  raw_hdr->obsnchan = rawspec_raw_get_s32(buf, "OBSNCHAN", 0);
   raw_hdr->obsfreq  = rawspec_raw_get_dbl(buf, "OBSFREQ",  0.0);
   raw_hdr->obsbw    = rawspec_raw_get_dbl(buf, "OBSBW",    0.0);
   raw_hdr->tbin     = rawspec_raw_get_dbl(buf, "TBIN",     0.0);
-  raw_hdr->directio = rawspec_raw_get_int(buf, "DIRECTIO", 0);
-  raw_hdr->pktidx   = rawspec_raw_get_int(buf, "PKTIDX",  -1);
+  raw_hdr->directio = rawspec_raw_get_s32(buf, "DIRECTIO", 0);
+  raw_hdr->pktidx   = rawspec_raw_get_u64(buf, "PKTIDX",  -1);
 
   rawspec_raw_get_str(buf, "RA_STR", "0.0", tmp, 80);
   raw_hdr->ra = rawspec_raw_hmsstr_to_h(tmp);
@@ -158,8 +175,8 @@ void rawspec_raw_parse_header(const char * buf, rawspec_raw_hdr_t * raw_hdr)
   rawspec_raw_get_str(buf, "DEC_STR", "0.0", tmp, 80);
   raw_hdr->dec = rawspec_raw_dmsstr_to_d(tmp);
 
-  imjd = rawspec_raw_get_int(buf, "STT_IMJD", 51545);
-  smjd = rawspec_raw_get_int(buf, "STT_SMJD", 0);
+  imjd = rawspec_raw_get_s32(buf, "STT_IMJD", 51545); // TODO use double?
+  smjd = rawspec_raw_get_s32(buf, "STT_SMJD", 0);     // TODO use double?
   raw_hdr->mjd = ((double)imjd) + ((double)smjd)/86400.0;
 
   rawspec_raw_get_str(buf, "SRC_NAME", "Unknown", raw_hdr->src_name, 80);
