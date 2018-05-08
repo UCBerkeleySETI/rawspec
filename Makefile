@@ -87,6 +87,7 @@ install: rawspec.h librawspec.so
 	mkdir -p $(INCDIR)
 	cp -p rawspec.h $(INCDIR)
 	cp -p rawspec_fbutils.h $(INCDIR)
+	cp -p rawspec_rawutils.h $(INCDIR)
 	mkdir -p $(LIBDIR)
 	cp -p librawspec.so $(LIBDIR)
 	mkdir -p $(DATADIR)/aclocal
