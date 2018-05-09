@@ -337,7 +337,7 @@ char tmp[16];
     cb_data[i].fb_hdr.telescope_id = 6; // GBT
     cb_data[i].fb_hdr.data_type = 1;
     cb_data[i].fb_hdr.nbeams =  1;
-    cb_data[i].fb_hdr.ibeam  =  1;
+    cb_data[i].fb_hdr.ibeam  = -1;
     cb_data[i].fb_hdr.nbits  = 32;
     cb_data[i].fb_hdr.nifs   = ctx.Npolout;
     cb_data[i].rate          = rate;
@@ -507,6 +507,7 @@ char tmp[16];
           cb_data[i].fb_hdr.src_raj = raw_hdr.ra;
           cb_data[i].fb_hdr.src_dej = raw_hdr.dec;
           cb_data[i].fb_hdr.tstart = raw_hdr.mjd;
+          cb_data[i].fb_hdr.ibeam = raw_hdr.beam_id;
           strncpy(cb_data[i].fb_hdr.source_name, raw_hdr.src_name, 80);
           cb_data[i].fb_hdr.source_name[80] = '\0';
           strncpy(cb_data[i].fb_hdr.rawdatafile, bfname, 80);

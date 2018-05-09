@@ -16,6 +16,7 @@ typedef struct {
   double ra;  // hours
   double dec; // degrees
   double mjd;
+  int beam_id; // -1 is unknown or single beam receiver
   char src_name[81];
   off_t hdr_pos; // Offset of start of header
   size_t hdr_size; // Size of header in bytes (not including DIRECTIO padding)
