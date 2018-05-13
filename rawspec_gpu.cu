@@ -13,7 +13,7 @@
 #define PRINT_ERRMSG(error)                  \
   fprintf(stderr, "got error %s at %s:%d\n", \
       _cudaGetErrorEnum(error),  \
-      __FILE__, __LINE__)
+      __FILE__, __LINE__); fflush(stderr)
 
 // Stream callback data structure
 typedef struct {
@@ -241,6 +241,7 @@ int rawspec_initialize(rawspec_context * ctx)
   if(ctx->No == 0 || ctx->No > MAX_OUTPUTS) {
     fprintf(stderr, "output products must be in range [1..%d], not %d\n",
         MAX_OUTPUTS, ctx->No);
+    fflush(stderr);
     return 1;
   }
 
@@ -248,6 +249,7 @@ int rawspec_initialize(rawspec_context * ctx)
   if(ctx->Np == 0 || ctx->Np > 2) {
     fprintf(stderr,
         "number of polarizations must be in range [1..2], not %d\n", ctx->Np);
+    fflush(stderr);
     return 1;
   }
 
@@ -259,6 +261,7 @@ int rawspec_initialize(rawspec_context * ctx)
   // Validate Ntpb
   if(ctx->Ntpb == 0) {
     fprintf(stderr, "number of time samples per block cannot be zero\n");
+    fflush(stderr);
     return 1;
   }
 
@@ -267,6 +270,7 @@ int rawspec_initialize(rawspec_context * ctx)
   for(i=0; i<ctx->No; i++) {
     if(ctx->Nts[i] == 0) {
       fprintf(stderr, "Nts[%d] cannot be 0\n", i);
+      fflush(stderr);
       return 1;
     }
     if(ctx->Ntmax < ctx->Nts[i]) {
@@ -279,6 +283,7 @@ int rawspec_initialize(rawspec_context * ctx)
     if(ctx->Ntmax % ctx->Nts[i] != 0) {
       fprintf(stderr, "Nts[%d] (%u) is not a factor of Ntmax (%u)\n",
           i, ctx->Nts[i], ctx->Ntmax);
+      fflush(stderr);
       return 1;
     }
   }
@@ -291,6 +296,7 @@ int rawspec_initialize(rawspec_context * ctx)
       fprintf(stderr,
           "Ntmax (%u) is not a factor of Nb*Ntpb (%u * %u = %u)\n",
           ctx->Ntmax, ctx->Nb, ctx->Ntpb, ctx->Nb*ctx->Ntpb);
+      fflush(stderr);
       return 1;
     }
   } else {
@@ -301,6 +307,7 @@ int rawspec_initialize(rawspec_context * ctx)
       if(ctx->Ntpb % ctx->Ntmax != 0) {
         fprintf(stderr, "Ntmax (%u) is not a factor of Ntpb (%u)\n",
             ctx->Ntmax, ctx->Ntpb);
+        fflush(stderr);
         return 1;
       }
       ctx->Nb = 1;
@@ -309,6 +316,7 @@ int rawspec_initialize(rawspec_context * ctx)
       if(ctx->Ntmax % ctx->Ntpb != 0) {
         fprintf(stderr, "Ntpb (%u) is not a factor of Nmax (%u)\n",
             ctx->Ntpb, ctx->Ntmax);
+        fflush(stderr);
         return 1;
       }
       ctx->Nb = ctx->Ntmax / ctx->Ntpb;
@@ -319,6 +327,7 @@ int rawspec_initialize(rawspec_context * ctx)
   if(ctx->Nb_host == 0 && ctx->h_blkbufs) {
     fprintf(stderr,
         "Must specify number of host input blocks when caller-managed\n");
+    fflush(stderr);
     return 1;
   } else if(ctx->Nb_host == 0) {
     ctx->Nb_host = ctx->Nb;
@@ -328,6 +337,7 @@ int rawspec_initialize(rawspec_context * ctx)
   for(i=0; i < ctx->No; i++) {
     if(ctx->Nas[i] == 0) {
       fprintf(stderr, "Nas[%d] cannot be 0\n", i);
+      fflush(stderr);
       return 1;
     }
     // If mulitple integrations per input buffer
@@ -337,6 +347,7 @@ int rawspec_initialize(rawspec_context * ctx)
         fprintf(stderr,
             "Nts[%d] * Nas[%d] (%u * %u) must divide Nb * Ntpb (%u * %u)\n",
             i, i, ctx->Nts[i], ctx->Nas[i], ctx->Nb, ctx->Ntpb);
+        fflush(stderr);
         return 1;
       }
     } else {
@@ -345,6 +356,7 @@ int rawspec_initialize(rawspec_context * ctx)
         fprintf(stderr,
             "Nb * Ntpb (%u * %u) must divide Nts[%d] * Nas[%d] (%u * %u)\n",
             ctx->Nb, ctx->Ntpb, i, i, ctx->Nts[i], ctx->Nas[i]);
+        fflush(stderr);
         return 1;
       }
     }
@@ -363,6 +375,7 @@ int rawspec_initialize(rawspec_context * ctx)
   if(!gpu_ctx) {
     fprintf(stderr, "unable to allocate %lu bytes for rawspec GPU context\n",
         sizeof(rawspec_gpu_context));
+    fflush(stderr);
     rawspec_cleanup(ctx);
     return 1;
   }
