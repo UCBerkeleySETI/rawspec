@@ -361,6 +361,8 @@ int rawspec_initialize(rawspec_context * ctx)
   rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)malloc(sizeof(rawspec_gpu_context));
 
   if(!gpu_ctx) {
+    fprintf(stderr, "unable to allocate %lu bytes for rawspec GPU context\n",
+        sizeof(rawspec_gpu_context));
     rawspec_cleanup(ctx);
     return 1;
   }
