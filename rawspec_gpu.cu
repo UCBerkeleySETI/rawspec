@@ -426,7 +426,7 @@ int rawspec_initialize(rawspec_context * ctx)
     // Register these buffers with CUDA.  It is the caller's responsibility to
     // ensure that the blocks meet memory alignment requirements, etc.
     for(i=0; i < ctx->Nb_host; i++) {
-      cuda_rc = cudaHostRegister(&ctx->h_blkbufs[i],
+      cuda_rc = cudaHostRegister(ctx->h_blkbufs[i],
                          ctx->Ntpb*ctx->Np*ctx->Nc*sizeof(char2),
                          cudaHostRegisterDefault);
       if(cuda_rc != cudaSuccess) {
