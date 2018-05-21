@@ -417,6 +417,7 @@ int rawspec_initialize(rawspec_context * ctx)
                          cudaHostAllocWriteCombined);
       if(cuda_rc != cudaSuccess) {
         PRINT_ERRMSG(cuda_rc);
+        rawspec_cleanup(ctx);
         return 1;
       }
     }
@@ -433,6 +434,7 @@ int rawspec_initialize(rawspec_context * ctx)
                          cudaHostRegisterDefault);
       if(cuda_rc != cudaSuccess) {
         PRINT_ERRMSG(cuda_rc);
+        rawspec_cleanup(ctx);
         return 1;
       }
     }
