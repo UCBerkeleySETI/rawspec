@@ -207,7 +207,7 @@ char tmp[16];
             pchar != NULL; i++, pchar = strtok(NULL, ",")) {
           if(i>=MAX_OUTPUTS){
             fprintf(stderr,
-                "error: up to %d output products supported.\n", MAX_OUTPUTS);
+                "error: up to %d fine channel counts supported.\n", MAX_OUTPUTS);
             return 1;
           }
           ctx.Nts[i] = strtoul(pchar, NULL, 0);
@@ -244,7 +244,7 @@ char tmp[16];
             pchar != NULL; i++, pchar = strtok(NULL, ",")) {
           if(i>=MAX_OUTPUTS){
             fprintf(stderr,
-                "error: up to %d output products supported.\n", MAX_OUTPUTS);
+                "error: up to %d integration counts supported.\n", MAX_OUTPUTS);
             return 1;
           }
           ctx.Nas[i] = strtoul(pchar, NULL, 0);
