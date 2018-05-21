@@ -15,6 +15,9 @@ ifdef DEBUG_CALLBACKS
 CFLAGS += -DDEBUG_CALLBACKS=$(DEBUG_CALLBACKS)
 endif
 NVCC_FLAGS = -m64 -g -Xcompiler=-fPIC -I$(CUDA_PATH)/samples/common/inc
+ifdef VERBOSE_ALLOC
+NVCC_FLAGS += -DVERBOSE_ALLOC=$(VERBOSE_ALLOC)
+endif
 
 CUDA_SHARED_LIBS = -lcufft
 CUDA_STATIC_LIBS = -lcufft_static -lculibos
