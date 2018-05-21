@@ -503,6 +503,10 @@ char tmp[16];
           if(rawspec_initialize(&ctx)) {
             fprintf(stderr, "rawspec initialization failed\n");
             close(fdin);
+            // Forget new dimensions
+            ctx.Nc   = 0;
+            ctx.Np   = 0;
+            ctx.Ntpb = 0;
             break;
           } else {
             //printf("initialization succeeded for new block dimensions\n");
