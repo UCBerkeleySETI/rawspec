@@ -212,6 +212,10 @@ char tmp[16];
           }
           ctx.Nts[i] = strtoul(pchar, NULL, 0);
         }
+        // If no comma (i.e. single value)
+        if(i==0) {
+          ctx.Nts[0] = strtoul(optarg, NULL, 0);
+        }
         break;
 
       case 'H': // Save headers
@@ -248,6 +252,10 @@ char tmp[16];
             return 1;
           }
           ctx.Nas[i] = strtoul(pchar, NULL, 0);
+        }
+        // If no comma (i.e. single value)
+        if(i==0) {
+          ctx.Nas[0] = strtoul(optarg, NULL, 0);
         }
         break;
 
