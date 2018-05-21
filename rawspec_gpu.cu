@@ -371,6 +371,14 @@ int rawspec_initialize(rawspec_context * ctx)
   }
   ctx->gpu_ctx = NULL;
 
+  // Set CUDA device (validates gpu_index)
+  cuda_rc = cudaSetDevice(ctx->gpu_index);
+  if(cuda_rc != cudaSuccess) {
+    PRINT_ERRMSG(cuda_rc);
+    // TODO return distinct error code
+    return 1;
+  }
+
   // Allocate GPU context
   rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)malloc(sizeof(rawspec_gpu_context));
 

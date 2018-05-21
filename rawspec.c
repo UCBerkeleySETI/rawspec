@@ -62,6 +62,7 @@ ssize_t read_fully(int fd, void * buf, size_t bytes_to_read)
 static struct option long_opts[] = {
   {"dest",    1, NULL, 'd'},
   {"ffts",    1, NULL, 'f'},
+  {"gpu",     1, NULL, 'g'},
   {"hdrs",    0, NULL, 'H'},
   {"nchan",   1, NULL, 'n'},
   {"pols",    1, NULL, 'p'},
@@ -86,6 +87,7 @@ void usage(const char *argv0) {
     "Options:\n"
     "  -d, --dest=DEST        Destination directory or host:port\n"
     "  -f, --ffts=N1[,N2...]  FFT lengths\n"
+    "  -g, --GPU=IDX          Select GPU device to use [0]\n"
     "  -H, --hdrs             Save headers to separate file\n"
     "  -n, --nchan=N          Number of coarse channels to process [all]\n"
     "  -p  --pols={1|4}[,...] Number of output polarizations [1]\n"
@@ -184,7 +186,7 @@ char tmp[16];
 
   // Parse command line.
   argv0 = argv[0];
-  while((opt=getopt_long(argc,argv,"d:f:Hn:p:r:s:t:hv",long_opts,NULL))!=-1) {
+  while((opt=getopt_long(argc,argv,"d:f:g:Hn:p:r:s:t:hv",long_opts,NULL))!=-1) {
     switch (opt) {
       case 'h': // Help
         usage(argv0);
@@ -218,6 +220,11 @@ char tmp[16];
         if(i==0) {
           ctx.Nts[0] = strtoul(optarg, NULL, 0);
         }
+        break;
+
+      case 'g': // GPU device to use
+        ctx.gpu_index = strtoul(optarg, NULL, 0);
+        printf("using requested GPU: %d\n", ctx.gpu_index);
         break;
 
       case 'H': // Save headers

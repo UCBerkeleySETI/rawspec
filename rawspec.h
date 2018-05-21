@@ -77,6 +77,9 @@ struct rawspec_context_s {
   // Ntpb * Np * 2 (in bytes).
   char ** h_blkbufs;
 
+  // Which GPU to use.  Set to 0 for single GPU system.
+  int gpu_index;
+
   // Fields above here should be specified by client.  Fields below here are
   // managed by library (but can be used by the caller as needed).
 
