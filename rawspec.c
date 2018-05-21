@@ -84,18 +84,18 @@ void usage(const char *argv0) {
     "Usage: %s [options] STEM [...]\n"
     "\n"
     "Options:\n"
-    "  -d, --dest=DEST       Destination directory or host:port\n"
-    "  -f, --ffts=N1[,N2...] FFT lengths\n"
-    "  -H, --hdrs            Save headers to separate file\n"
-    "  -n, --nchan=N         Number of coarse channels to process [all]\n"
-    "  -p  --pols={1|4}      Number of output polarizations [1]\n"
-    "                        1=total power, 4=cross pols\n"
-    "  -r, --rate=GBPS       Desired net data rate in Gbps [6.0]\n"
-    "  -s, --schan=C         First coarse channel to process [0]\n"
-    "  -t, --ints=N1[,N2...] Spectra to integrate\n"
+    "  -d, --dest=DEST        Destination directory or host:port\n"
+    "  -f, --ffts=N1[,N2...]  FFT lengths\n"
+    "  -H, --hdrs             Save headers to separate file\n"
+    "  -n, --nchan=N          Number of coarse channels to process [all]\n"
+    "  -p  --pols={1|4}[,...] Number of output polarizations [1]\n"
+    "                         1=total power, 4=cross pols\n"
+    "  -r, --rate=GBPS        Desired net data rate in Gbps [6.0]\n"
+    "  -s, --schan=C          First coarse channel to process [0]\n"
+    "  -t, --ints=N1[,N2...]  Spectra to integrate\n"
     "\n"
-    "  -h, --help            Show this message\n"
-    "  -v, --version         Show version and exit\n"
+    "  -h, --help             Show this message\n"
+    "  -v, --version          Show version and exit\n"
     , bname
   );
 }
@@ -178,7 +178,9 @@ char tmp[16];
 
   // Init rawspec context
   memset(&ctx, 0, sizeof(ctx));
-  ctx.Npolout = 1;
+  for(i=0; i<MAX_OUTPUTS; i++) {
+    ctx.Npolout[i] = 1;
+  }
 
   // Parse command line.
   argv0 = argv[0];
@@ -227,11 +229,18 @@ char tmp[16];
         break;
 
       case 'p': // Number of pol products to output
-        ctx.Npolout = strtoul(optarg, NULL, 0);
-        if(ctx.Npolout!=1 && ctx.Npolout!=4) {
-          fprintf(stderr,
-              "error: number of output pols must be 1 or 4\n");
-          return 1;
+        for(i=0, pchar = strtok(optarg,",");
+            pchar != NULL; i++, pchar = strtok(NULL, ",")) {
+          if(i>=MAX_OUTPUTS){
+            fprintf(stderr,
+                "error: up to %d pol modes supported.\n", MAX_OUTPUTS);
+            return 1;
+          }
+          ctx.Npolout[i] = strtoul(pchar, NULL, 0);
+        }
+        // If no comma (i.e. single value)
+        if(i==0) {
+          ctx.Npolout[0] = strtoul(optarg, NULL, 0);
         }
         break;
 
@@ -288,13 +297,6 @@ char tmp[16];
     return 1;
   }
 
-  // Full-pol mode is not supported for network output
-  if(ctx.Npolout != 1 && output_mode != RAWSPEC_FILE) {
-    fprintf(stderr,
-        "error: full-pol mode is not supported for network output\n");
-    return 1;
-  }
-
   // Saving headers is only supported for file output
   if(save_headers && output_mode != RAWSPEC_FILE) {
     fprintf(stderr,
@@ -331,6 +333,22 @@ char tmp[16];
     ctx.Nas[2] = 3072;
   }
 
+  // Validate polout values
+  for(i=0; i<ctx.No; i++) {
+    if(ctx.Npolout[i]!=1 && ctx.Npolout[i]!=4) {
+      fprintf(stderr,
+          "error: number of output pols must be 1 or 4\n");
+      return 1;
+    }
+
+    // Full-pol mode is not supported for network output
+    if(ctx.Npolout[i] != 1 && output_mode != RAWSPEC_FILE) {
+      fprintf(stderr,
+          "error: full-pol mode is not supported for network output\n");
+      return 1;
+    }
+  }
+
   // Init user_data to be array of callback data structures
   ctx.user_data = &cb_data;
 
@@ -347,7 +365,7 @@ char tmp[16];
     cb_data[i].fb_hdr.nbeams =  1;
     cb_data[i].fb_hdr.ibeam  = -1;
     cb_data[i].fb_hdr.nbits  = 32;
-    cb_data[i].fb_hdr.nifs   = ctx.Npolout;
+    cb_data[i].fb_hdr.nifs   = ctx.Npolout[i];
     cb_data[i].rate          = rate;
   }
 

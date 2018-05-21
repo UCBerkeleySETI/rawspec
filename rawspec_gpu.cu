@@ -253,9 +253,11 @@ int rawspec_initialize(rawspec_context * ctx)
     return 1;
   }
 
-  // Validate/set Npolout
-  if(ctx->Npolout != 4 || ctx->Np != 2) {
-    ctx->Npolout = 1;
+  // Validate/set Npolout values
+  for(i=0; i<ctx->No; i++) {
+    if(ctx->Npolout[i] != 4 || ctx->Np != 2) {
+      ctx->Npolout[i] = 1;
+    }
   }
 
   // Validate Ntpb
@@ -464,7 +466,8 @@ int rawspec_initialize(rawspec_context * ctx)
 
     // Host buffer needs to accommodate the number of integrations that will be
     // dumped at one time (Nd).
-    ctx->h_pwrbuf_size[i] = ctx->Npolout * ctx->Nds[i]*ctx->Nts[i]*ctx->Nc*sizeof(float);
+    ctx->h_pwrbuf_size[i] = ctx->Npolout[i] *
+                            ctx->Nds[i]*ctx->Nts[i]*ctx->Nc*sizeof(float);
     cuda_rc = cudaHostAlloc(&ctx->h_pwrbuf[i], ctx->h_pwrbuf_size[i],
                        cudaHostAllocDefault);
 
@@ -509,8 +512,12 @@ int rawspec_initialize(rawspec_context * ctx)
 
   // FFT output buffer
   buf_size = ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(cufftComplex);
-  if(ctx->Npolout == 4) {
-    buf_size *= 2;
+  // If any output product is full-pol then we need to double output buffer
+  for(i=0; i < ctx->No; i++) {
+    if(ctx->Npolout[i] == 4) {
+      buf_size *= 2;
+      break;
+    }
   }
 #ifdef VERBOSE_ALLOC
   printf("FFT output buffer size == %lu\n", buf_size);
@@ -527,11 +534,11 @@ int rawspec_initialize(rawspec_context * ctx)
     // Power output buffer
 #ifdef VERBOSE_ALLOC
     printf("Power output buffer size == %u * %lu == %lu\n",
-        ctx->Npolout,  ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float),
-        ctx->Npolout * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
+        ctx->Npolout[i],  ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float),
+        ctx->Npolout[i] * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
 #endif
     cuda_rc = cudaMalloc(&gpu_ctx->d_pwr_out[i],
-        ctx->Npolout * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
+        ctx->Npolout[i] * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
     if(cuda_rc != cudaSuccess) {
       PRINT_ERRMSG(cuda_rc);
       rawspec_cleanup(ctx);
@@ -539,7 +546,7 @@ int rawspec_initialize(rawspec_context * ctx)
     }
     // Clear power output buffer
     cuda_rc = cudaMemset(gpu_ctx->d_pwr_out[i], 0,
-        ctx->Npolout * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
+        ctx->Npolout[i] * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
     if(cuda_rc != cudaSuccess) {
       PRINT_ERRMSG(cuda_rc);
       rawspec_cleanup(ctx);
@@ -549,8 +556,12 @@ int rawspec_initialize(rawspec_context * ctx)
     h_scb_data.fft_out_pol0 = gpu_ctx->d_fft_out;
     // Save pointers into power ouput buffer
     h_scb_data.pwr_buf_p00 = gpu_ctx->d_pwr_out[i];
+    // These next fields are only used if Npolout == 4,
+    // so we can initialize them that way even if Npolout == 1
+    // (because they will never be used). It might be slightly
+    // safer to init them to the same as pwr_buf_p00 if Npolout == 1.
     h_scb_data.pwr_buf_p11 =
-        gpu_ctx->d_pwr_out[i] + ctx->Nb*ctx->Ntpb*ctx->Nc;
+        gpu_ctx->d_pwr_out[i] + 1*ctx->Nb*ctx->Ntpb*ctx->Nc;
     h_scb_data.pwr_buf_p01_re =
         gpu_ctx->d_pwr_out[i] + 2*ctx->Nb*ctx->Ntpb*ctx->Nc;
     h_scb_data.pwr_buf_p01_im =
@@ -681,7 +692,7 @@ int rawspec_initialize(rawspec_context * ctx)
         return 1;
       }
       // Store callback(s)
-      if(ctx->Npolout == 1) {
+      if(ctx->Npolout[i] == 1) {
         cufft_rc = cufftXtSetCallback(gpu_ctx->plan[i][p],
                                       (void **)&h_cufft_store_callback,
                                       CUFFT_CB_ST_COMPLEX,
@@ -881,14 +892,15 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
   cudaError_t cuda_rc;
   cufftResult cufft_rc;
   rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
-  // Length of an FFT output buffer (only needed when Npolout!=1)
-  size_t fft_outbuf_length = ctx->Npolout == 1 ? 0 : ctx->Nb*ctx->Ntpb*ctx->Nc;
+  size_t fft_outbuf_length;
 
   // Increment inbuf_count
   gpu_ctx->inbuf_count++;
 
   // For each output product
   for(i=0; i < ctx->No; i++) {
+    // Length of an FFT output buffer when Npotout==4, must be 0 when Npolout==1
+    fft_outbuf_length = ctx->Npolout[i] == 1 ? 0 : ctx->Nb*ctx->Ntpb*ctx->Nc;
 
     // For each input polarization
     for(p=0; p < ctx->Np; p++) {
@@ -913,7 +925,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
       // number of spectra per input buffer, then we need to accumulate the
       // sub-integrations together.
       if(ctx->Nds[i] < gpu_ctx->Nss[i]) {
-        for(p=0; p < ctx->Npolout; p++) {
+        for(p=0; p < ctx->Npolout[i]; p++) {
           accumulate<<<gpu_ctx->grid[i],
                        gpu_ctx->nthreads[i],
                        0, gpu_ctx->compute_stream>>>
@@ -937,7 +949,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
         return 1;
       }
 
-      for(p=0; p < ctx->Npolout; p++) {
+      for(p=0; p < ctx->Npolout[i]; p++) {
         // Copy integrated power spectra (or spectrum) to host.  This is done as
         // two 2D copies to get channel 0 in the center of the spectrum.  Special
         // care is taken in the unlikely event that Nt is odd.
@@ -985,7 +997,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
 
           // Increment src and dst pointers
           src += ctx->Nts[i] * ctx->Nas[i];
-          dst += ctx->Npolout * ctx->Nts[i] * ctx->Nc;
+          dst += ctx->Npolout[i] * ctx->Nts[i] * ctx->Nc;
         }
       }
 
@@ -1001,7 +1013,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
 
       // Add power buffer clearing cudaMemset call to stream
       cuda_rc = cudaMemsetAsync(gpu_ctx->d_pwr_out[i], 0,
-                                ctx->Npolout*ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float),
+                                ctx->Npolout[i]*ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float),
                                 gpu_ctx->compute_stream);
 
       if(cuda_rc != cudaSuccess) {
@@ -1036,7 +1048,7 @@ int rawspec_reset_integration(rawspec_context * ctx)
   for(i=0; i < ctx->No; i++) {
     // Clear power output buffer
     cuda_rc = cudaMemset(gpu_ctx->d_pwr_out[i], 0,
-        ctx->Npolout*ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
+        ctx->Npolout[i]*ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
     if(cuda_rc != cudaSuccess) {
       PRINT_ERRMSG(cuda_rc);
       return 0;

@@ -45,8 +45,10 @@ int main(int argc, char * argv[])
   ctx.h_blkbufs = NULL;
   // Dump callback
   ctx.dump_callback = dump_callback;
-  // Total power mode
-  ctx.Npolout = 4;
+  // Pol modes for each output product
+  ctx.Npolout[0] = 1;
+  ctx.Npolout[1] = 1;
+  ctx.Npolout[2] = 4;
 
   // Initialize
   if(rawspec_initialize(&ctx)) {
@@ -103,7 +105,7 @@ int main(int argc, char * argv[])
   for(i=0; i<ctx.No; i++) {
     nfine = ctx.Nc * ctx.Nts[i];
     for(j=0; j<16; j++) {
-      if(ctx.Npolout == 1) {
+      if(ctx.Npolout[i] == 1) {
         printf("output product %d chan %d %f\n", i, j, ctx.h_pwrbuf[i][j]);
       } else {
         printf("output product %d chan %d %f %f %f %f\n", i, j,
