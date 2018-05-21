@@ -179,6 +179,7 @@ void rawspec_raw_parse_header(const char * buf, rawspec_raw_hdr_t * raw_hdr)
   raw_hdr->mjd = ((double)imjd) + ((double)smjd)/86400.0;
 
   rawspec_raw_get_str(buf, "SRC_NAME", "Unknown", raw_hdr->src_name, 80);
+  rawspec_raw_get_str(buf, "TELESCOP", "Unknown", raw_hdr->telescop, 80);
 }
 
 // Reads RAW file params from fd.  On entry, fd is assumed to be at the start

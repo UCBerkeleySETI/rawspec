@@ -530,6 +530,38 @@ ssize_t fb_fd_read_header(int fd, fb_hdr_t * hdr, size_t * hdr_len)
   return len;
 }
 
+int fb_telescope_id(const char *telescope_name)
+{
+	int id = -1;
+
+  // This mapping from copied from aliases.c from the sigproc code base
+  if (strcasecmp(telescope_name,"FAKE")==0)
+    id=0;
+  else if (strcasecmp(telescope_name,"ARECIBO")==0)
+    id=1;
+  else if (strcasecmp(telescope_name,"OOTY")==0)
+    id=2;
+  else if (strcasecmp(telescope_name,"NANCAY")==0)
+    id=3;
+  else if (strcasecmp(telescope_name,"PARKES")==0)
+    id=4;
+  else if (strcasecmp(telescope_name,"JODRELL")==0)
+    id=5;
+  else if (strcasecmp(telescope_name,"GBT")==0)
+    id=6;
+  else if (strcasecmp(telescope_name,"GMRT")==0)
+    id=7;
+  else if (strcasecmp(telescope_name,"EFFELSBERG")==0)
+    id=8;
+  else if (strcasecmp(telescope_name,"140FT")==0)
+    id=9;
+  else if (strcasecmp(telescope_name,"ATS")==0)
+    id=10;
+  else if (strcasecmp(telescope_name,"LEUSCHNER")==0)
+    id=11;
+
+	return id;
+}
 
 #ifdef FBUTILS_TEST
 

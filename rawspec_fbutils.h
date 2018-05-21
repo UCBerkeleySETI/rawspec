@@ -158,6 +158,7 @@ void * fb_buf_write_header(void * buf, const fb_hdr_t * hdr);
 ssize_t fb_fd_read_header(int fd, fb_hdr_t * hdr, size_t * hdr_len);
 void * fb_buf_read_header(void * buf, fb_hdr_t * hdr, size_t * hdr_len);
 
+int fb_telescope_id(const char *telescope_name);
 #ifdef __cplusplus
 }
 #endif

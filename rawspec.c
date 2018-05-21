@@ -367,10 +367,10 @@ char tmp[16];
   // Init pre-defined filterbank headers and save rate
   for(i=0; i<ctx.No; i++) {
     cb_data[i].fb_hdr.machine_id = 20;
-    cb_data[i].fb_hdr.telescope_id = 6; // GBT
+    cb_data[i].fb_hdr.telescope_id = -1; // Unknown
     cb_data[i].fb_hdr.data_type = 1;
     cb_data[i].fb_hdr.nbeams =  1;
-    cb_data[i].fb_hdr.ibeam  = -1;
+    cb_data[i].fb_hdr.ibeam  = -1; // Unknown or single pixel
     cb_data[i].fb_hdr.nbits  = 32;
     cb_data[i].fb_hdr.nifs   = ctx.Npolout[i];
     cb_data[i].rate          = rate;
@@ -541,6 +541,7 @@ char tmp[16];
         // Update filterbank headers based on raw params and Nts etc.
         for(i=0; i<ctx.No; i++) {
           // Same for all products
+          cb_data[i].fb_hdr.telescope_id = fb_telescope_id(raw_hdr.telescop);
           cb_data[i].fb_hdr.src_raj = raw_hdr.ra;
           cb_data[i].fb_hdr.src_dej = raw_hdr.dec;
           cb_data[i].fb_hdr.tstart = raw_hdr.mjd;
