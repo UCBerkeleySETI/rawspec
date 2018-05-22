@@ -50,6 +50,8 @@ int main(int argc, char * argv[])
   ctx.Npolout[1] = 1;
   ctx.Npolout[2] = 4;
 
+  ctx.gpu_index = 0;
+
   // Initialize
   if(rawspec_initialize(&ctx)) {
     fprintf(stderr, "initialization failed\n");
