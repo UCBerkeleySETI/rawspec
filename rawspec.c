@@ -65,6 +65,7 @@ static struct option long_opts[] = {
   {"gpu",     1, NULL, 'g'},
   {"hdrs",    0, NULL, 'H'},
   {"nchan",   1, NULL, 'n'},
+  {"outidx",  1, NULL, 'o'},
   {"pols",    1, NULL, 'p'},
   {"rate",    1, NULL, 'r'},
   {"schan",   1, NULL, 's'},
@@ -90,6 +91,7 @@ void usage(const char *argv0) {
     "  -g, --GPU=IDX          Select GPU device to use [0]\n"
     "  -H, --hdrs             Save headers to separate file\n"
     "  -n, --nchan=N          Number of coarse channels to process [all]\n"
+    "  -o, --outidx=N         First index number for output files [0]\n"
     "  -p  --pols={1|4}[,...] Number of output polarizations [1]\n"
     "                         1=total power, 4=cross pols\n"
     "  -r, --rate=GBPS        Desired net data rate in Gbps [6.0]\n"
@@ -170,6 +172,7 @@ char tmp[16];
   rawspec_context ctx;
   unsigned int schan = 0;
   unsigned int nchan = 0;
+  unsigned int outidx = 0;
 
   // For net data rate rate calculations
   double rate = 6.0;
@@ -186,7 +189,7 @@ char tmp[16];
 
   // Parse command line.
   argv0 = argv[0];
-  while((opt=getopt_long(argc,argv,"d:f:g:Hn:p:r:s:t:hv",long_opts,NULL))!=-1) {
+  while((opt=getopt_long(argc,argv,"d:f:g:Hn:o:p:r:s:t:hv",long_opts,NULL))!=-1) {
     switch (opt) {
       case 'h': // Help
         usage(argv0);
@@ -233,6 +236,10 @@ char tmp[16];
 
       case 'n': // Number of coarse channels to process
         nchan = strtoul(optarg, NULL, 0);
+        break;
+
+      case 'o': // Index number for first output product file name
+        outidx = strtoul(optarg, NULL, 0);
         break;
 
       case 'p': // Number of pol products to output
@@ -561,7 +568,7 @@ char tmp[16];
           cb_data[i].fb_hdr.tsamp = raw_hdr.tbin * ctx.Nts[i] * ctx.Nas[i];
 
           if(output_mode == RAWSPEC_FILE) {
-            cb_data[i].fd = open_output_file(dest, argv[si], i);
+            cb_data[i].fd = open_output_file(dest, argv[si], outidx + i);
             if(cb_data[i].fd == -1) {
               // If we can't open this output file, we probably won't be able to
               // open any more output files, so print message and bail out.
