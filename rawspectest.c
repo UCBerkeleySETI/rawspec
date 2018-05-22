@@ -28,17 +28,19 @@ int main(int argc, char * argv[])
   int blocsize = 92274688;
   size_t nfine;
 
-  ctx.No = 3;
+  ctx.No = 4;
   ctx.Np = 2;
   ctx.Nc = 88;
   ctx.Ntpb = blocsize / (2 * ctx.Np * ctx.Nc);
   ctx.Nts[0] = (1<<20);
   ctx.Nts[1] = (1<<3);
   ctx.Nts[2] = (1<<10);
+  ctx.Nts[3] = (1<<10);
   // One dump per output product
   ctx.Nas[0] = (1<<(20 - 20));
   ctx.Nas[1] = (1<<(20 -  3));
   ctx.Nas[2] = (1<<(20 - 10));
+  ctx.Nas[3] = (1<<(20 - 10));
   // Auto-calculate Nb/Nb_host and let library manage input block buffers
   ctx.Nb = 0;
   ctx.Nb_host = 0;
@@ -49,6 +51,7 @@ int main(int argc, char * argv[])
   ctx.Npolout[0] = 1;
   ctx.Npolout[1] = 1;
   ctx.Npolout[2] = 4;
+  ctx.Npolout[3] = -4;
 
   ctx.gpu_index = 0;
 

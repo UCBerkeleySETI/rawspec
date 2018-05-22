@@ -29,10 +29,13 @@ struct rawspec_context_s {
   unsigned int Ntpb; // Number of time samples per block
 
   // Npolout is the number of output polarization values per fine channel.
-  // This valid values for this field are 1 (total power only) and 4 (full
-  // cross-pol powers).  A value of 4 is only valid if Np is 2.
+  // This valid values for this field are:
+  // +1 == total power only
+  // +4 == full stokes mode (I, Q, U, V)
+  // -4 == full pol mode (XX, YY, re(XY), im(XY))
+  // A value of +4 or -4 is only valid if Np is 2.
   // Every output product gets its own value.
-  unsigned int Npolout[MAX_OUTPUTS];
+  int Npolout[MAX_OUTPUTS];
 
   // Nts is an array of Nt values, one per output product.  The Nt value is the
   // number of time samples per FFT for a given output product.  All Nt values

@@ -21,27 +21,41 @@ typedef struct {
   int output_product;
 } dump_cb_data_t;
 
-// In full-pol mode (Npolout == 4), the CuFFT store callbacks are different
-// depending on whether it is for pol0 or pol1:
+// In full-Stokes mode (Npolout == 4) or full-pol mode (Npolout == -4), the
+// CuFFT store callbacks are different depending on whether it is for pol0 or
+// pol1:
 //
-// The store_callback_pol0 function stores the voltage data into the first half
-// of the 2x-sized FFT output buffer and accummulates the pol0 power into the
-// first quarter of the 4x-sized power buffer.
+// For full-Stokes mode, the store_callback_pol0_iquv function stores the
+// voltage data into the first half of the 2x-sized FFT output buffer and
+// accummulates (i.e. adds) the pol0 power into the first two quarters (I and
+// Q) of the 4x-sized power buffer.
 //
-// The store_callback_pol1 function accumulates the pol1 power into the second
-// quarter of the 4x-sized power buffer, reads the corresponding pol0 voltage
-// from the first half of the 2x-sized FFT output buffer, accumulates the
-// complex pol0-pol1 power in the third (real) and fourth (imaginary) quarters
-// of the 4x-sized power buffer.
+// For full-Stokes mode, the store_callback_pol1_iquv function accumulates
+// (i.e. adds) the pol1 power into the first quarter of the 4x-sized power
+// buffer (I), negatively accumulates (i.e. subtracts) the pol1 power into the
+// second quarter of the 4x-sized power buffer (Q), reads the corresponding
+// pol0 voltage from the first half of the 2x-sized FFT output buffer, and
+// accumulates the complex pol0-pol1 power in the third (U) and fourth (V)
+// quarters of the 4x-sized power buffer.
+//
+// For full-pol mode, the store_callback_pol0 function stores the voltage data
+// into the first half of the 2x-sized FFT output buffer and accummulates the
+// pol0 power into the first quarter of the 4x-sized power buffer.
+//
+// For full-pol mode, the store_callback_pol1 function accumulates the pol1
+// power into the second quarter of the 4x-sized power buffer, reads the
+// corresponding pol0 voltage from the first half of the 2x-sized FFT output
+// buffer, accumulates the complex pol0-pol1 power in the third (real) and
+// fourth (imaginary) quarters of the 4x-sized power buffer.
 //
 // We use a "store_cb_data_t" structure to pass device pointers to the
 // various buffers involved.
 typedef struct {
   cufftComplex * fft_out_pol0;
-  float * pwr_buf_p00;
-  float * pwr_buf_p11;
-  float * pwr_buf_p01_re;
-  float * pwr_buf_p01_im;
+  float * pwr_buf_p00_i;
+  float * pwr_buf_p11_q;
+  float * pwr_buf_p01_re_u;
+  float * pwr_buf_p01_im_v;
 } store_cb_data_t;
 
 // GPU context structure
@@ -112,9 +126,49 @@ __device__ void store_callback(void *p_v_out,
   ((float *)p_v_user)[offset] += pwr;
 }
 
-// The store_callback_pol0 function stores the voltage data into the first half
-// of the 2x-sized FFT output buffer and accummulates the pol0 power into the
-// first quarter of the 4x-sized power buffer.
+// For full-Stokes mode, the store_callback_pol0_iquv function stores the
+// voltage data into the first half of the 2x-sized FFT output buffer and
+// accummulates (i.e. adds) the pol0 power into the first two quarters (I and
+// Q) of the 4x-sized power buffer.
+__device__ void store_callback_pol0_iquv(void *p_v_out,
+                                    size_t offset,
+                                    cufftComplex p0,
+                                    void *p_v_user,
+                                    void *p_v_shared)
+{
+  store_cb_data_t * d_scb_data = (store_cb_data_t *)p_v_user;
+  float pwr = p0.x * p0.x + p0.y * p0.y;
+  d_scb_data->pwr_buf_p00_i[offset] += pwr;
+  d_scb_data->pwr_buf_p11_q[offset] += pwr;
+  d_scb_data->fft_out_pol0[offset] = p0;
+}
+
+// For full-Stokes mode, the store_callback_pol1_iquv function accumulates
+// (i.e. adds) the pol1 power into the first quarter of the 4x-sized power
+// buffer (I), negatively accumulates (i.e. subtracts) the pol1 power into the
+// second quarter of the 4x-sized power buffer (Q), reads the corresponding
+// pol0 voltage from the first half of the 2x-sized FFT output buffer, and
+// accumulates the complex pol0-pol1 power in the third (U) and fourth (V)
+// quarters of the 4x-sized power buffer.
+__device__ void store_callback_pol1_iquv(void *p_v_out,
+                                    size_t offset,
+                                    cufftComplex p1,
+                                    void *p_v_user,
+                                    void *p_v_shared)
+{
+  store_cb_data_t * d_scb_data = (store_cb_data_t *)p_v_user;
+  float pwr = p1.x * p1.x + p1.y * p1.y;
+  d_scb_data->pwr_buf_p00_i[offset] += pwr;
+  d_scb_data->pwr_buf_p11_q[offset] -= pwr;
+  cufftComplex p0 = d_scb_data->fft_out_pol0[offset];
+  // TODO Verify sign and factor-of-two scaling for U and V
+  d_scb_data->pwr_buf_p01_re_u[offset] += p0.x * p1.x + p0.y * p1.y;
+  d_scb_data->pwr_buf_p01_im_v[offset] += p0.y * p1.x - p0.x * p1.y;
+}
+
+// For full-pol mode, the store_callback_pol0 function stores the voltage data
+// into the first half of the 2x-sized FFT output buffer and accummulates the
+// pol0 power into the first quarter of the 4x-sized power buffer.
 __device__ void store_callback_pol0(void *p_v_out,
                                     size_t offset,
                                     cufftComplex p0,
@@ -123,15 +177,15 @@ __device__ void store_callback_pol0(void *p_v_out,
 {
   store_cb_data_t * d_scb_data = (store_cb_data_t *)p_v_user;
   float pwr = p0.x * p0.x + p0.y * p0.y;
-  d_scb_data->pwr_buf_p00[offset] += pwr;
+  d_scb_data->pwr_buf_p00_i[offset] += pwr;
   d_scb_data->fft_out_pol0[offset] = p0;
 }
 
-// The store_callback_pol1 function accumulates the pol1 power into the second
-// quarter of the 4x-sized power buffer, reads the corresponding pol0 voltage
-// from the first half of the 2x-sized FFT output buffer, accumulates the
-// complex pol0-pol1 power in the third (real) and fourth (imaginary) quarters
-// of the 4x-sized power buffer.
+// For full-pol mode, the store_callback_pol1 function accumulates the pol1
+// power into the second quarter of the 4x-sized power buffer, reads the
+// corresponding pol0 voltage from the first half of the 2x-sized FFT output
+// buffer, accumulates the complex pol0-pol1 power in the third (real) and
+// fourth (imaginary) quarters of the 4x-sized power buffer.
 __device__ void store_callback_pol1(void *p_v_out,
                                     size_t offset,
                                     cufftComplex p1,
@@ -140,16 +194,18 @@ __device__ void store_callback_pol1(void *p_v_out,
 {
   store_cb_data_t * d_scb_data = (store_cb_data_t *)p_v_user;
   float pwr = p1.x * p1.x + p1.y * p1.y;
-  d_scb_data->pwr_buf_p11[offset] += pwr;
+  d_scb_data->pwr_buf_p11_q[offset] += pwr;
   cufftComplex p0 = d_scb_data->fft_out_pol0[offset];
-  d_scb_data->pwr_buf_p01_re[offset] += p0.x * p1.x + p0.y * p1.y;
-  d_scb_data->pwr_buf_p01_im[offset] += p0.y * p1.x - p0.x * p1.y;
+  d_scb_data->pwr_buf_p01_re_u[offset] += p0.x * p1.x + p0.y * p1.y;
+  d_scb_data->pwr_buf_p01_im_v[offset] += p0.y * p1.x - p0.x * p1.y;
 }
 
 __device__ cufftCallbackLoadC d_cufft_load_callback = load_callback;
 __device__ cufftCallbackStoreC d_cufft_store_callback = store_callback;
 __device__ cufftCallbackStoreC d_cufft_store_callback_pol0 = store_callback_pol0;
 __device__ cufftCallbackStoreC d_cufft_store_callback_pol1 = store_callback_pol1;
+__device__ cufftCallbackStoreC d_cufft_store_callback_pol0_iquv = store_callback_pol0_iquv;
+__device__ cufftCallbackStoreC d_cufft_store_callback_pol1_iquv = store_callback_pol1_iquv;
 
 #define MAX_THREADS (1024)
 
@@ -236,6 +292,7 @@ int rawspec_initialize(rawspec_context * ctx)
   cufftCallbackLoadC h_cufft_load_callback;
   cufftCallbackStoreC h_cufft_store_callback;
   cufftCallbackStoreC h_cufft_store_callback_pols[2];
+  cufftCallbackStoreC h_cufft_store_callback_iquv[2];
 
   // Validate No
   if(ctx->No == 0 || ctx->No > MAX_OUTPUTS) {
@@ -255,7 +312,7 @@ int rawspec_initialize(rawspec_context * ctx)
 
   // Validate/set Npolout values
   for(i=0; i<ctx->No; i++) {
-    if(ctx->Npolout[i] != 4 || ctx->Np != 2) {
+    if(abs(ctx->Npolout[i]) != 4 || ctx->Np != 2) {
       ctx->Npolout[i] = 1;
     }
   }
@@ -476,7 +533,7 @@ int rawspec_initialize(rawspec_context * ctx)
 
     // Host buffer needs to accommodate the number of integrations that will be
     // dumped at one time (Nd).
-    ctx->h_pwrbuf_size[i] = ctx->Npolout[i] *
+    ctx->h_pwrbuf_size[i] = abs(ctx->Npolout[i]) *
                             ctx->Nds[i]*ctx->Nts[i]*ctx->Nc*sizeof(float);
     cuda_rc = cudaHostAlloc(&ctx->h_pwrbuf[i], ctx->h_pwrbuf_size[i],
                        cudaHostAllocDefault);
@@ -524,7 +581,7 @@ int rawspec_initialize(rawspec_context * ctx)
   buf_size = ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(cufftComplex);
   // If any output product is full-pol then we need to double output buffer
   for(i=0; i < ctx->No; i++) {
-    if(ctx->Npolout[i] == 4) {
+    if(abs(ctx->Npolout[i]) == 4) {
       buf_size *= 2;
       break;
     }
@@ -544,11 +601,11 @@ int rawspec_initialize(rawspec_context * ctx)
     // Power output buffer
 #ifdef VERBOSE_ALLOC
     printf("Power output buffer size == %u * %lu == %lu\n",
-        ctx->Npolout[i],  ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float),
-        ctx->Npolout[i] * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
+        abs(ctx->Npolout[i]),  ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float),
+        abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
 #endif
     cuda_rc = cudaMalloc(&gpu_ctx->d_pwr_out[i],
-        ctx->Npolout[i] * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
+        abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
     if(cuda_rc != cudaSuccess) {
       PRINT_ERRMSG(cuda_rc);
       rawspec_cleanup(ctx);
@@ -556,7 +613,7 @@ int rawspec_initialize(rawspec_context * ctx)
     }
     // Clear power output buffer
     cuda_rc = cudaMemset(gpu_ctx->d_pwr_out[i], 0,
-        ctx->Npolout[i] * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
+        abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
     if(cuda_rc != cudaSuccess) {
       PRINT_ERRMSG(cuda_rc);
       rawspec_cleanup(ctx);
@@ -565,16 +622,16 @@ int rawspec_initialize(rawspec_context * ctx)
     // Save pointer to FFT output buffer in store_cb_data
     h_scb_data.fft_out_pol0 = gpu_ctx->d_fft_out;
     // Save pointers into power ouput buffer
-    h_scb_data.pwr_buf_p00 = gpu_ctx->d_pwr_out[i];
-    // These next fields are only used if Npolout == 4,
+    h_scb_data.pwr_buf_p00_i = gpu_ctx->d_pwr_out[i];
+    // These next fields are only used if abs(Npolout) == 4,
     // so we can initialize them that way even if Npolout == 1
     // (because they will never be used). It might be slightly
-    // safer to init them to the same as pwr_buf_p00 if Npolout == 1.
-    h_scb_data.pwr_buf_p11 =
+    // safer to init them to the same as pwr_buf_p00_i if Npolout == 1.
+    h_scb_data.pwr_buf_p11_q =
         gpu_ctx->d_pwr_out[i] + 1*ctx->Nb*ctx->Ntpb*ctx->Nc;
-    h_scb_data.pwr_buf_p01_re =
+    h_scb_data.pwr_buf_p01_re_u =
         gpu_ctx->d_pwr_out[i] + 2*ctx->Nb*ctx->Ntpb*ctx->Nc;
-    h_scb_data.pwr_buf_p01_im =
+    h_scb_data.pwr_buf_p01_im_v =
         gpu_ctx->d_pwr_out[i] + 3*ctx->Nb*ctx->Ntpb*ctx->Nc;
 
     // Allocate device memory for store_cb_data_t array
@@ -628,6 +685,24 @@ int rawspec_initialize(rawspec_context * ctx)
   cuda_rc = cudaMemcpyFromSymbol(&h_cufft_store_callback_pols[1],
                                  d_cufft_store_callback_pol1,
                                  sizeof(h_cufft_store_callback_pols[1]));
+  if(cuda_rc != cudaSuccess) {
+    PRINT_ERRMSG(cuda_rc);
+    rawspec_cleanup(ctx);
+    return 1;
+  }
+
+  cuda_rc = cudaMemcpyFromSymbol(&h_cufft_store_callback_iquv[0],
+                                 d_cufft_store_callback_pol0_iquv,
+                                 sizeof(h_cufft_store_callback_iquv[0]));
+  if(cuda_rc != cudaSuccess) {
+    PRINT_ERRMSG(cuda_rc);
+    rawspec_cleanup(ctx);
+    return 1;
+  }
+
+  cuda_rc = cudaMemcpyFromSymbol(&h_cufft_store_callback_iquv[1],
+                                 d_cufft_store_callback_pol1_iquv,
+                                 sizeof(h_cufft_store_callback_iquv[1]));
   if(cuda_rc != cudaSuccess) {
     PRINT_ERRMSG(cuda_rc);
     rawspec_cleanup(ctx);
@@ -707,11 +782,20 @@ int rawspec_initialize(rawspec_context * ctx)
                                       (void **)&h_cufft_store_callback,
                                       CUFFT_CB_ST_COMPLEX,
                                       (void **)&gpu_ctx->d_pwr_out[i]);
-      } else {
+      } else if(ctx->Npolout[i] == 4) {
+        cufft_rc = cufftXtSetCallback(gpu_ctx->plan[i][p],
+                                      (void **)&h_cufft_store_callback_iquv[p],
+                                      CUFFT_CB_ST_COMPLEX,
+                                      (void **)&gpu_ctx->d_scb_data[i]);
+      } else if(ctx->Npolout[i] == -4) {
         cufft_rc = cufftXtSetCallback(gpu_ctx->plan[i][p],
                                       (void **)&h_cufft_store_callback_pols[p],
                                       CUFFT_CB_ST_COMPLEX,
                                       (void **)&gpu_ctx->d_scb_data[i]);
+      } else {
+        fprintf(stderr, "invalid Npolout[%d]: %d\n", i, ctx->Npolout[i]);
+        fflush(stderr);
+        return 1;
       }
       if(cufft_rc != CUFFT_SUCCESS) {
         PRINT_ERRMSG(cufft_rc);
@@ -909,7 +993,8 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
 
   // For each output product
   for(i=0; i < ctx->No; i++) {
-    // Length of an FFT output buffer when Npotout==4, must be 0 when Npolout==1
+    // Length of an FFT output buffer when abs(Npotout)==4, must be 0 when
+    // Npolout==1
     fft_outbuf_length = ctx->Npolout[i] == 1 ? 0 : ctx->Nb*ctx->Ntpb*ctx->Nc;
 
     // For each input polarization
@@ -935,7 +1020,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
       // number of spectra per input buffer, then we need to accumulate the
       // sub-integrations together.
       if(ctx->Nds[i] < gpu_ctx->Nss[i]) {
-        for(p=0; p < ctx->Npolout[i]; p++) {
+        for(p=0; p < abs(ctx->Npolout[i]); p++) {
           accumulate<<<gpu_ctx->grid[i],
                        gpu_ctx->nthreads[i],
                        0, gpu_ctx->compute_stream>>>
@@ -959,7 +1044,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
         return 1;
       }
 
-      for(p=0; p < ctx->Npolout[i]; p++) {
+      for(p=0; p < abs(ctx->Npolout[i]); p++) {
         // Copy integrated power spectra (or spectrum) to host.  This is done as
         // two 2D copies to get channel 0 in the center of the spectrum.  Special
         // care is taken in the unlikely event that Nt is odd.
@@ -1007,7 +1092,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
 
           // Increment src and dst pointers
           src += ctx->Nts[i] * ctx->Nas[i];
-          dst += ctx->Npolout[i] * ctx->Nts[i] * ctx->Nc;
+          dst += abs(ctx->Npolout[i]) * ctx->Nts[i] * ctx->Nc;
         }
       }
 
@@ -1023,7 +1108,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
 
       // Add power buffer clearing cudaMemset call to stream
       cuda_rc = cudaMemsetAsync(gpu_ctx->d_pwr_out[i], 0,
-                                ctx->Npolout[i]*ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float),
+                                abs(ctx->Npolout[i])*ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float),
                                 gpu_ctx->compute_stream);
 
       if(cuda_rc != cudaSuccess) {
@@ -1058,7 +1143,7 @@ int rawspec_reset_integration(rawspec_context * ctx)
   for(i=0; i < ctx->No; i++) {
     // Clear power output buffer
     cuda_rc = cudaMemset(gpu_ctx->d_pwr_out[i], 0,
-        ctx->Npolout[i]*ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
+        abs(ctx->Npolout[i])*ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
     if(cuda_rc != cudaSuccess) {
       PRINT_ERRMSG(cuda_rc);
       return 0;
