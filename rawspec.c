@@ -223,7 +223,7 @@ char tmp[16];
         break;
 
       case 'g': // GPU device to use
-        ctx.gpu_index = strtoul(optarg, NULL, 0);
+        ctx.gpu_index = strtol(optarg, NULL, 0);
         printf("using requested GPU: %d\n", ctx.gpu_index);
         break;
 
