@@ -93,7 +93,7 @@ void usage(const char *argv0) {
     "  -n, --nchan=N          Number of coarse channels to process [all]\n"
     "  -o, --outidx=N         First index number for output files [0]\n"
     "  -p  --pols={1|4}[,...] Number of output polarizations [1]\n"
-    "                         1=total power, 4=cross pols\n"
+    "                         1=total power, 4=cross pols, -4=full stokes\n"
     "  -r, --rate=GBPS        Desired net data rate in Gbps [6.0]\n"
     "  -s, --schan=C          First coarse channel to process [0]\n"
     "  -t, --ints=N1[,N2...]  Spectra to integrate\n"
@@ -349,9 +349,9 @@ char tmp[16];
 
   // Validate polout values
   for(i=0; i<ctx.No; i++) {
-    if(ctx.Npolout[i]!=1 && ctx.Npolout[i]!=4) {
+    if(ctx.Npolout[i]!=1 && abs(ctx.Npolout[i])!=4) {
       fprintf(stderr,
-          "error: number of output pols must be 1 or 4\n");
+          "error: number of output pols must be 1 or +/- 4\n");
       return 1;
     }
 
@@ -379,7 +379,7 @@ char tmp[16];
     cb_data[i].fb_hdr.nbeams =  1;
     cb_data[i].fb_hdr.ibeam  = -1; // Unknown or single pixel
     cb_data[i].fb_hdr.nbits  = 32;
-    cb_data[i].fb_hdr.nifs   = ctx.Npolout[i];
+    cb_data[i].fb_hdr.nifs   = abs(ctx.Npolout[i]);
     cb_data[i].rate          = rate;
   }
 
