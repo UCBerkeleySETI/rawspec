@@ -21,7 +21,7 @@ typedef struct {
   int output_product;
 } dump_cb_data_t;
 
-// In full-Stokes mode (Npolout == 4) or full-pol mode (Npolout == -4), the
+// In full-Stokes mode (Npolout == -4) or full-pol mode (Npolout == 4), the
 // CuFFT store callbacks are different depending on whether it is for pol0 or
 // pol1:
 //
@@ -784,12 +784,12 @@ int rawspec_initialize(rawspec_context * ctx)
                                       (void **)&gpu_ctx->d_pwr_out[i]);
       } else if(ctx->Npolout[i] == 4) {
         cufft_rc = cufftXtSetCallback(gpu_ctx->plan[i][p],
-                                      (void **)&h_cufft_store_callback_iquv[p],
+                                      (void **)&h_cufft_store_callback_pols[p],
                                       CUFFT_CB_ST_COMPLEX,
                                       (void **)&gpu_ctx->d_scb_data[i]);
       } else if(ctx->Npolout[i] == -4) {
         cufft_rc = cufftXtSetCallback(gpu_ctx->plan[i][p],
-                                      (void **)&h_cufft_store_callback_pols[p],
+                                      (void **)&h_cufft_store_callback_iquv[p],
                                       CUFFT_CB_ST_COMPLEX,
                                       (void **)&gpu_ctx->d_scb_data[i]);
       } else {
