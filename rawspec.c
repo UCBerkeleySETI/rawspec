@@ -173,6 +173,7 @@ char tmp[16];
   unsigned int schan = 0;
   unsigned int nchan = 0;
   unsigned int outidx = 0;
+  int input_conjugated = -1;
 
   // For net data rate rate calculations
   double rate = 6.0;
@@ -499,18 +500,23 @@ char tmp[16];
           Nc = nchan;
         }
 
-        // If block dimensions have changed
-        if(Nc != ctx.Nc || Np != ctx.Np || Ntpb != ctx.Ntpb) {
+        // Determine if input is conjugated
+        input_conjugated = (raw_hdr.obsbw < 0) ? 1 : 0;
+
+        // If block dimensions or input conjugation have changed
+        if(Nc != ctx.Nc || Np != ctx.Np || Ntpb != ctx.Ntpb
+        || input_conjugated != ctx.input_conjugated) {
           // Cleanup previous block, if it has been initialized
           if(ctx.Ntpb != 0) {
             rawspec_cleanup(&ctx);
           }
-          // Remember new dimensions
+          // Remember new dimensions and input conjugation
           ctx.Nc   = Nc;
           ctx.Np   = Np;
           ctx.Ntpb = Ntpb;
+          ctx.input_conjugated = input_conjugated;
 
-          // Initialize for new dimensions
+          // Initialize for new dimensions and/or conjugation
           ctx.Nb = 0;           // auto-calculate
           ctx.Nb_host = 0;      // auto-calculate
           ctx.h_blkbufs = NULL; // auto-allocate

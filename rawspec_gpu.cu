@@ -166,6 +166,23 @@ __device__ void store_callback_pol1_iquv(void *p_v_out,
   d_scb_data->pwr_buf_p01_im_v[offset] += p0.y * p1.x - p0.x * p1.y;
 }
 
+// Conjugated form of store_callback_pol1_iquv().
+__device__ void store_callback_pol1_iquv_conj(void *p_v_out,
+                                    size_t offset,
+                                    cufftComplex p1,
+                                    void *p_v_user,
+                                    void *p_v_shared)
+{
+  store_cb_data_t * d_scb_data = (store_cb_data_t *)p_v_user;
+  float pwr = p1.x * p1.x + p1.y * p1.y;
+  d_scb_data->pwr_buf_p00_i[offset] += pwr;
+  d_scb_data->pwr_buf_p11_q[offset] -= pwr;
+  cufftComplex p0 = d_scb_data->fft_out_pol0[offset];
+  // TODO Verify sign and factor-of-two scaling for U and V
+  d_scb_data->pwr_buf_p01_re_u[offset] += p0.x * p1.x + p0.y * p1.y;
+  d_scb_data->pwr_buf_p01_im_v[offset] -= p0.y * p1.x - p0.x * p1.y;
+}
+
 // For full-pol mode, the store_callback_pol0 function stores the voltage data
 // into the first half of the 2x-sized FFT output buffer and accummulates the
 // pol0 power into the first quarter of the 4x-sized power buffer.
@@ -200,12 +217,29 @@ __device__ void store_callback_pol1(void *p_v_out,
   d_scb_data->pwr_buf_p01_im_v[offset] += p0.y * p1.x - p0.x * p1.y;
 }
 
+// conjugated form of store_callback_pol1().
+__device__ void store_callback_pol1_conj(void *p_v_out,
+                                    size_t offset,
+                                    cufftComplex p1,
+                                    void *p_v_user,
+                                    void *p_v_shared)
+{
+  store_cb_data_t * d_scb_data = (store_cb_data_t *)p_v_user;
+  float pwr = p1.x * p1.x + p1.y * p1.y;
+  d_scb_data->pwr_buf_p11_q[offset] += pwr;
+  cufftComplex p0 = d_scb_data->fft_out_pol0[offset];
+  d_scb_data->pwr_buf_p01_re_u[offset] += p0.x * p1.x + p0.y * p1.y;
+  d_scb_data->pwr_buf_p01_im_v[offset] -= p0.y * p1.x - p0.x * p1.y;
+}
+
 __device__ cufftCallbackLoadC d_cufft_load_callback = load_callback;
 __device__ cufftCallbackStoreC d_cufft_store_callback = store_callback;
 __device__ cufftCallbackStoreC d_cufft_store_callback_pol0 = store_callback_pol0;
 __device__ cufftCallbackStoreC d_cufft_store_callback_pol1 = store_callback_pol1;
+__device__ cufftCallbackStoreC d_cufft_store_callback_pol1_conj = store_callback_pol1_conj;
 __device__ cufftCallbackStoreC d_cufft_store_callback_pol0_iquv = store_callback_pol0_iquv;
 __device__ cufftCallbackStoreC d_cufft_store_callback_pol1_iquv = store_callback_pol1_iquv;
+__device__ cufftCallbackStoreC d_cufft_store_callback_pol1_iquv_conj = store_callback_pol1_iquv_conj;
 
 #define MAX_THREADS (1024)
 
@@ -683,7 +717,8 @@ int rawspec_initialize(rawspec_context * ctx)
   }
 
   cuda_rc = cudaMemcpyFromSymbol(&h_cufft_store_callback_pols[1],
-                                 d_cufft_store_callback_pol1,
+                                 ctx->input_conjugated ? d_cufft_store_callback_pol1_conj
+                                                       : d_cufft_store_callback_pol1,
                                  sizeof(h_cufft_store_callback_pols[1]));
   if(cuda_rc != cudaSuccess) {
     PRINT_ERRMSG(cuda_rc);
@@ -701,7 +736,8 @@ int rawspec_initialize(rawspec_context * ctx)
   }
 
   cuda_rc = cudaMemcpyFromSymbol(&h_cufft_store_callback_iquv[1],
-                                 d_cufft_store_callback_pol1_iquv,
+                                 ctx->input_conjugated ? d_cufft_store_callback_pol1_iquv_conj
+                                                       : d_cufft_store_callback_pol1_iquv,
                                  sizeof(h_cufft_store_callback_iquv[1]));
   if(cuda_rc != cudaSuccess) {
     PRINT_ERRMSG(cuda_rc);

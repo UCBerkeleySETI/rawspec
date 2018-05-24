@@ -83,6 +83,15 @@ struct rawspec_context_s {
   // Which GPU to use.  Set to 0 for single GPU system.
   int gpu_index;
 
+  // Flag indicating that the input data are conjugated (e.g. due to frequency
+  // reversal/flip in the IF system).  This is used on full-pol and full-stokes
+  // modes to ensure that the cross-pol product is conjugated correctly.  Set
+  // this field to 0 if the frequencies are in "normal" (sky) order.  Set this
+  // field to 1 if the frequencies are in "flipped" (reverse) order.  This
+  // field is ignored when Npolout==1.  Changes to this field take effect on
+  // the next call to rawspec_initialize().
+  int input_conjugated;
+
   // Fields above here should be specified by client.  Fields below here are
   // managed by library (but can be used by the caller as needed).
 

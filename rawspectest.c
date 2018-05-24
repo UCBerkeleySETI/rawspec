@@ -54,6 +54,7 @@ int main(int argc, char * argv[])
   ctx.Npolout[3] = -4;
 
   ctx.gpu_index = 0;
+  ctx.input_conjugated = 1;
 
   // Initialize
   if(rawspec_initialize(&ctx)) {
