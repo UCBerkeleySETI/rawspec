@@ -167,6 +167,7 @@ void rawspec_raw_parse_header(const char * buf, rawspec_raw_hdr_t * raw_hdr)
   raw_hdr->directio = rawspec_raw_get_s32(buf, "DIRECTIO", 0);
   raw_hdr->pktidx   = rawspec_raw_get_u64(buf, "PKTIDX",  -1);
   raw_hdr->beam_id  = rawspec_raw_get_s32(buf, "BEAM_ID", -1);
+  raw_hdr->nbeam    = rawspec_raw_get_s32(buf, "NBEAM",   -1);
 
   rawspec_raw_get_str(buf, "RA_STR", "0.0", tmp, 80);
   raw_hdr->ra = rawspec_raw_hmsstr_to_h(tmp);
