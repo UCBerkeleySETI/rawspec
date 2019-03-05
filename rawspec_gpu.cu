@@ -90,6 +90,8 @@ typedef struct {
   unsigned int inbuf_count;
   // Array of dump_cb_data_t structures for dump callback
   dump_cb_data_t dump_cb_data[MAX_OUTPUTS];
+  // CUDA Texture Object used to convert from integer to floating point
+  cudaTextureObject_t texture_obj;
   // Flag indicating that the caller is managing the input block buffers
   // Non-zero when caller is managing (i.e. allocating and freeing) the
   // buffers; zero when we are.
@@ -101,15 +103,18 @@ texture<char, 2, cudaReadModeNormalizedFloat> char_tex;
 
 // The load_callback gets the input value through the texture memory to achieve
 // a "for free" mapping of 8-bit integer values into 32-bit float values.
-__device__ cufftComplex load_callback(void *p_v_in,
+__device__ cufftComplex load_callback(void *p_gpu_ctx,
                                       size_t offset,
                                       void *p_v_user,
                                       void *p_v_shared)
 {
   cufftComplex c;
-  offset += (cufftComplex *)p_v_in - (cufftComplex *)p_v_user;
-  c.x = tex2D(char_tex, ((2*offset  ) & 0x7fff), ((  offset  ) >> 14));
-  c.y = tex2D(char_tex, ((2*offset+1) & 0x7fff), ((2*offset+1) >> 15));
+  cufftComplex * p_v_in = (cufftComplex *)((rawspec_gpu_context *)p_gpu_ctx)->d_fft_in;
+  offset += p_v_in - (cufftComplex *)p_v_user;
+  //c.x = tex2D(char_tex, ((2*offset  ) & 0x7fff), ((  offset  ) >> 14));
+  //c.y = tex2D(char_tex, ((2*offset+1) & 0x7fff), ((2*offset+1) >> 15));
+  c.x = tex2D<float>(((rawspec_gpu_context *)p_gpu_ctx)->texture_obj, ((2*offset  ) & 0x7fff), ((  offset  ) >> 14));
+  c.y = tex2D<float>(((rawspec_gpu_context *)p_gpu_ctx)->texture_obj, ((2*offset+1) & 0x7fff), ((2*offset+1) >> 15));
   return c;
 }
 
@@ -321,6 +326,9 @@ int rawspec_initialize(rawspec_context * ctx)
   store_cb_data_t h_scb_data;
   cudaError_t cuda_rc;
   cufftResult cufft_rc;
+  cudaResourceDesc res_desc;
+  cudaTextureDesc tex_desc;
+
 
   // Host copies of cufft callback pointers
   cufftCallbackLoadC h_cufft_load_callback;
@@ -601,10 +609,37 @@ int rawspec_initialize(rawspec_context * ctx)
     return 1;
   }
 
-  // Bind texture to device input buffer
-  // Width is 32KB, height is buf_size/32KB, pitch is 32KB
+  // Create texture object for device input buffer
+  // res_desc describes input resource
+  // Width is 32K elements, height is buf_size/32K elements, pitch is 32K elements
+  memset(&res_desc, 0, sizeof(res_desc));
+  res_desc.resType = cudaResourceTypePitch2D;
+  res_desc.res.pitch2D.devPtr = gpu_ctx->d_fft_in;
+  res_desc.res.pitch2D.desc.f = cudaChannelFormatKindSigned;
+  res_desc.res.pitch2D.desc.x = 8; // bits per sample???
+  res_desc.res.pitch2D.width = 1<<15;         // elements
+  res_desc.res.pitch2D.height = buf_size>>15; // elements
+  res_desc.res.pitch2D.pitchInBytes = 1<<15;  // bytes!
+  // tex_desc describes texture mapping
+  memset(&tex_desc, 0, sizeof(tex_desc));
+#if 0 // These settings are not used in online examples involved cudaReadModeNormalizedFloat
+  // Not sure whether address_mode matters for cudaReadModeNormalizedFloat
+  tex_desc.address_mode[0] = cudaAddressModeClamp;
+  tex_desc.address_mode[1] = cudaAddressModeClamp;
+  tex_desc.address_mode[2] = cudaAddressModeClamp;
+  // Not sure whether filter_mode matters for cudaReadModeNormalizedFloat
+  tex_desc.filter_mode = cudaFilterModePoint;
+#endif // 0
+  tex_desc.readMode = cudaReadModeNormalizedFloat;
+
+# if 0
   cuda_rc = cudaBindTexture2D(NULL, char_tex, gpu_ctx->d_fft_in,
                               1<<15, buf_size>>15, 1<<15);
+#else
+  cuda_rc = cudaCreateTextureObject(&gpu_ctx->texture_obj,
+                                    &res_desc, &tex_desc, NULL);
+#endif
+
   if(cuda_rc != cudaSuccess) {
     PRINT_ERRMSG(cuda_rc);
     rawspec_cleanup(ctx);
@@ -806,7 +841,7 @@ int rawspec_initialize(rawspec_context * ctx)
       cufft_rc = cufftXtSetCallback(gpu_ctx->plan[i][p],
                                     (void **)&h_cufft_load_callback,
                                     CUFFT_CB_LD_COMPLEX,
-                                    (void **)&gpu_ctx->d_fft_in);
+                                    (void **)&gpu_ctx);
       if(cufft_rc != CUFFT_SUCCESS) {
         PRINT_ERRMSG(cufft_rc);
         rawspec_cleanup(ctx);
@@ -1040,6 +1075,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
 
       // Add FFT to stream
       cufft_rc = cufftExecC2C(plan,
+                              // TODO Should this be "- p" instead of "+ p" ???!!!
                               ((cufftComplex *)gpu_ctx->d_fft_in) + p,
                               gpu_ctx->d_fft_out + p * fft_outbuf_length,
                               fft_dir <= 0 ? CUFFT_INVERSE : CUFFT_FORWARD);
