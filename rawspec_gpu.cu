@@ -968,6 +968,9 @@ void rawspec_cleanup(rawspec_context * ctx)
       }
     }
 
+    // Destroy texture object before freeing referenced memory
+    cudaDestroyTextureObject(gpu_ctx->tex_obj);
+
     if(gpu_ctx->d_fft_in) {
       cudaFree(gpu_ctx->d_fft_in);
     }
