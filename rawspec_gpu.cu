@@ -91,30 +91,32 @@ typedef struct {
   // Array of dump_cb_data_t structures for dump callback
   dump_cb_data_t dump_cb_data[MAX_OUTPUTS];
   // CUDA Texture Object used to convert from integer to floating point
-  cudaTextureObject_t texture_obj;
+  cudaTextureObject_t tex_obj;
   // Flag indicating that the caller is managing the input block buffers
   // Non-zero when caller is managing (i.e. allocating and freeing) the
   // buffers; zero when we are.
   int caller_managed;
 } rawspec_gpu_context;
 
-// Texture declarations
-texture<char, 2, cudaReadModeNormalizedFloat> char_tex;
+// Device-side texture object declaration
+__device__ cudaTextureObject_t d_tex_obj;
 
 // The load_callback gets the input value through the texture memory to achieve
 // a "for free" mapping of 8-bit integer values into 32-bit float values.
-__device__ cufftComplex load_callback(void *p_gpu_ctx,
+__device__ cufftComplex load_callback(void *p_v_in,
                                       size_t offset,
                                       void *p_v_user,
                                       void *p_v_shared)
 {
   cufftComplex c;
-  cufftComplex * p_v_in = (cufftComplex *)((rawspec_gpu_context *)p_gpu_ctx)->d_fft_in;
-  offset += p_v_in - (cufftComplex *)p_v_user;
-  //c.x = tex2D(char_tex, ((2*offset  ) & 0x7fff), ((  offset  ) >> 14));
-  //c.y = tex2D(char_tex, ((2*offset+1) & 0x7fff), ((2*offset+1) >> 15));
-  c.x = tex2D<float>(((rawspec_gpu_context *)p_gpu_ctx)->texture_obj, ((2*offset  ) & 0x7fff), ((  offset  ) >> 14));
-  c.y = tex2D<float>(((rawspec_gpu_context *)p_gpu_ctx)->texture_obj, ((2*offset+1) & 0x7fff), ((2*offset+1) >> 15));
+  // p_v_in is input buffer (cast to cufftComplex*) plus polarization offset.
+  // p_v_user is input buffer.  offset is complex element offset from start of
+  // input buffer, but does not include any polarization offset so we compute
+  // the polarization offset by subtracting p_v_user from p_v_in and add it to
+  // offset.
+  offset += (cufftComplex *)p_v_in - (cufftComplex *)p_v_user;
+  c.x = tex2D<float>(d_tex_obj, ((2*offset  ) & 0x7fff), ((  offset  ) >> 14));
+  c.y = tex2D<float>(d_tex_obj, ((2*offset+1) & 0x7fff), ((2*offset+1) >> 15));
   return c;
 }
 
@@ -632,13 +634,19 @@ int rawspec_initialize(rawspec_context * ctx)
 #endif // 0
   tex_desc.readMode = cudaReadModeNormalizedFloat;
 
-# if 0
-  cuda_rc = cudaBindTexture2D(NULL, char_tex, gpu_ctx->d_fft_in,
-                              1<<15, buf_size>>15, 1<<15);
-#else
-  cuda_rc = cudaCreateTextureObject(&gpu_ctx->texture_obj,
+  cuda_rc = cudaCreateTextureObject(&gpu_ctx->tex_obj,
                                     &res_desc, &tex_desc, NULL);
-#endif
+
+  if(cuda_rc != cudaSuccess) {
+    PRINT_ERRMSG(cuda_rc);
+    rawspec_cleanup(ctx);
+    return 1;
+  }
+
+  // Copy texture object to device
+  cuda_rc = cudaMemcpyToSymbol(d_tex_obj,
+                               &gpu_ctx->tex_obj,
+                               sizeof(cudaTextureObject_t));
 
   if(cuda_rc != cudaSuccess) {
     PRINT_ERRMSG(cuda_rc);
@@ -841,7 +849,7 @@ int rawspec_initialize(rawspec_context * ctx)
       cufft_rc = cufftXtSetCallback(gpu_ctx->plan[i][p],
                                     (void **)&h_cufft_load_callback,
                                     CUFFT_CB_LD_COMPLEX,
-                                    (void **)&gpu_ctx);
+                                    (void **)&gpu_ctx->d_fft_in);
       if(cufft_rc != CUFFT_SUCCESS) {
         PRINT_ERRMSG(cufft_rc);
         rawspec_cleanup(ctx);
@@ -1075,7 +1083,6 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
 
       // Add FFT to stream
       cufft_rc = cufftExecC2C(plan,
-                              // TODO Should this be "- p" instead of "+ p" ???!!!
                               ((cufftComplex *)gpu_ctx->d_fft_in) + p,
                               gpu_ctx->d_fft_out + p * fft_outbuf_length,
                               fft_dir <= 0 ? CUFFT_INVERSE : CUFFT_FORWARD);
