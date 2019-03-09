@@ -184,9 +184,7 @@ char tmp[16];
 
   // Init rawspec context
   memset(&ctx, 0, sizeof(ctx));
-  for(i=0; i<MAX_OUTPUTS; i++) {
-    ctx.Npolout[i] = 1;
-  }
+  ctx.Npolout[0] = 1; // others will be set later
 
   // Parse command line.
   argv0 = argv[0];
@@ -350,7 +348,10 @@ char tmp[16];
 
   // Validate polout values
   for(i=0; i<ctx.No; i++) {
-    if(ctx.Npolout[i]!=1 && abs(ctx.Npolout[i])!=4) {
+    if(ctx.Npolout[i] == 0 && i > 0) {
+      // Copy value from previous output product
+      ctx.Npolout[i] = ctx.Npolout[i-1];
+    } else if(ctx.Npolout[i]!=1 && abs(ctx.Npolout[i])!=4) {
       fprintf(stderr,
           "error: number of output pols must be 1 or +/- 4\n");
       return 1;
