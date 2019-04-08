@@ -90,14 +90,16 @@ typedef struct {
   unsigned int inbuf_count;
   // Array of dump_cb_data_t structures for dump callback
   dump_cb_data_t dump_cb_data[MAX_OUTPUTS];
+  // CUDA Texture Object used to convert from integer to floating point
+  cudaTextureObject_t tex_obj;
   // Flag indicating that the caller is managing the input block buffers
   // Non-zero when caller is managing (i.e. allocating and freeing) the
   // buffers; zero when we are.
   int caller_managed;
 } rawspec_gpu_context;
 
-// Texture declarations
-texture<char, 2, cudaReadModeNormalizedFloat> char_tex;
+// Device-side texture object declaration
+__device__ cudaTextureObject_t d_tex_obj;
 
 // The load_callback gets the input value through the texture memory to achieve
 // a "for free" mapping of 8-bit integer values into 32-bit float values.
@@ -107,9 +109,14 @@ __device__ cufftComplex load_callback(void *p_v_in,
                                       void *p_v_shared)
 {
   cufftComplex c;
+  // p_v_in is input buffer (cast to cufftComplex*) plus polarization offset.
+  // p_v_user is input buffer.  offset is complex element offset from start of
+  // input buffer, but does not include any polarization offset so we compute
+  // the polarization offset by subtracting p_v_user from p_v_in and add it to
+  // offset.
   offset += (cufftComplex *)p_v_in - (cufftComplex *)p_v_user;
-  c.x = tex2D(char_tex, ((2*offset  ) & 0x7fff), ((  offset  ) >> 14));
-  c.y = tex2D(char_tex, ((2*offset+1) & 0x7fff), ((2*offset+1) >> 15));
+  c.x = tex2D<float>(d_tex_obj, ((2*offset  ) & 0x7fff), ((  offset  ) >> 14));
+  c.y = tex2D<float>(d_tex_obj, ((2*offset+1) & 0x7fff), ((2*offset+1) >> 15));
   return c;
 }
 
@@ -321,6 +328,9 @@ int rawspec_initialize(rawspec_context * ctx)
   store_cb_data_t h_scb_data;
   cudaError_t cuda_rc;
   cufftResult cufft_rc;
+  cudaResourceDesc res_desc;
+  cudaTextureDesc tex_desc;
+
 
   // Host copies of cufft callback pointers
   cufftCallbackLoadC h_cufft_load_callback;
@@ -601,10 +611,43 @@ int rawspec_initialize(rawspec_context * ctx)
     return 1;
   }
 
-  // Bind texture to device input buffer
-  // Width is 32KB, height is buf_size/32KB, pitch is 32KB
-  cuda_rc = cudaBindTexture2D(NULL, char_tex, gpu_ctx->d_fft_in,
-                              1<<15, buf_size>>15, 1<<15);
+  // Create texture object for device input buffer
+  // res_desc describes input resource
+  // Width is 32K elements, height is buf_size/32K elements, pitch is 32K elements
+  memset(&res_desc, 0, sizeof(res_desc));
+  res_desc.resType = cudaResourceTypePitch2D;
+  res_desc.res.pitch2D.devPtr = gpu_ctx->d_fft_in;
+  res_desc.res.pitch2D.desc.f = cudaChannelFormatKindSigned;
+  res_desc.res.pitch2D.desc.x = 8; // bits per sample???
+  res_desc.res.pitch2D.width = 1<<15;         // elements
+  res_desc.res.pitch2D.height = buf_size>>15; // elements
+  res_desc.res.pitch2D.pitchInBytes = 1<<15;  // bytes!
+  // tex_desc describes texture mapping
+  memset(&tex_desc, 0, sizeof(tex_desc));
+#if 0 // These settings are not used in online examples involved cudaReadModeNormalizedFloat
+  // Not sure whether address_mode matters for cudaReadModeNormalizedFloat
+  tex_desc.address_mode[0] = cudaAddressModeClamp;
+  tex_desc.address_mode[1] = cudaAddressModeClamp;
+  tex_desc.address_mode[2] = cudaAddressModeClamp;
+  // Not sure whether filter_mode matters for cudaReadModeNormalizedFloat
+  tex_desc.filter_mode = cudaFilterModePoint;
+#endif // 0
+  tex_desc.readMode = cudaReadModeNormalizedFloat;
+
+  cuda_rc = cudaCreateTextureObject(&gpu_ctx->tex_obj,
+                                    &res_desc, &tex_desc, NULL);
+
+  if(cuda_rc != cudaSuccess) {
+    PRINT_ERRMSG(cuda_rc);
+    rawspec_cleanup(ctx);
+    return 1;
+  }
+
+  // Copy texture object to device
+  cuda_rc = cudaMemcpyToSymbol(d_tex_obj,
+                               &gpu_ctx->tex_obj,
+                               sizeof(cudaTextureObject_t));
+
   if(cuda_rc != cudaSuccess) {
     PRINT_ERRMSG(cuda_rc);
     rawspec_cleanup(ctx);
@@ -924,6 +967,9 @@ void rawspec_cleanup(rawspec_context * ctx)
         ctx->h_blkbufs = NULL;
       }
     }
+
+    // Destroy texture object before freeing referenced memory
+    cudaDestroyTextureObject(gpu_ctx->tex_obj);
 
     if(gpu_ctx->d_fft_in) {
       cudaFree(gpu_ctx->d_fft_in);
