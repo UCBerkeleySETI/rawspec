@@ -61,7 +61,7 @@ typedef struct {
 // GPU context structure
 typedef struct {
   // Device pointer to FFT input buffer
-  char2 * d_fft_in;
+  char * d_fft_in;
   // Device pointer to FFT output buffer
   cufftComplex * d_fft_out;
   // Array of device pointers to power buffers
@@ -368,6 +368,19 @@ int rawspec_initialize(rawspec_context * ctx)
     return 1;
   }
 
+  // Validate Nbps. Zero silently defaults to 8 for backwards compatibility
+  // with pre-Nbps versions.  Any other value except 8 or 16 is treated as 8
+  // and a warning is issued to stderr.
+  if(ctx->Nbps == 0) {
+    ctx->Nbps = 8;
+  } else if(ctx->Nbps != 8 && ctx->Nbps != 16) {
+    fprintf(stderr,
+        "number of bits per sample must be 8 or 16 (not %d), using 8 bps\n",
+        ctx->Nbps);
+    fflush(stderr);
+    ctx->Nbps = 8;
+  }
+
   // Determine Ntmax (and validate Nts)
   ctx->Ntmax = 0;
   for(i=0; i<ctx->No; i++) {
@@ -522,8 +535,8 @@ int rawspec_initialize(rawspec_context * ctx)
     for(i=0; i < ctx->Nb_host; i++) {
       // Block buffer can use write combining
       cuda_rc = cudaHostAlloc(&ctx->h_blkbufs[i],
-                         ctx->Ntpb*ctx->Np*ctx->Nc*sizeof(char2),
-                         cudaHostAllocWriteCombined);
+          ctx->Ntpb * ctx->Np * ctx->Nc * 2 /*complex*/ * (ctx->Nbps/8),
+          cudaHostAllocWriteCombined);
       if(cuda_rc != cudaSuccess) {
         PRINT_ERRMSG(cuda_rc);
         rawspec_cleanup(ctx);
@@ -539,8 +552,8 @@ int rawspec_initialize(rawspec_context * ctx)
     // ensure that the blocks meet memory alignment requirements, etc.
     for(i=0; i < ctx->Nb_host; i++) {
       cuda_rc = cudaHostRegister(ctx->h_blkbufs[i],
-                         ctx->Ntpb*ctx->Np*ctx->Nc*sizeof(char2),
-                         cudaHostRegisterDefault);
+          ctx->Ntpb * ctx->Np * ctx->Nc * 2 /*complex*/ * (ctx->Nbps/8),
+          cudaHostRegisterDefault);
       if(cuda_rc != cudaSuccess) {
         PRINT_ERRMSG(cuda_rc);
         rawspec_cleanup(ctx);
@@ -595,7 +608,7 @@ int rawspec_initialize(rawspec_context * ctx)
   // The input buffer is padded to the next multiple of 32KB to facilitate 2D
   // texture lookups by treating the input buffer as a 2D array that is 32KB
   // wide.
-  buf_size = ctx->Nb*ctx->Ntpb*ctx->Np*ctx->Nc*sizeof(char2);
+  buf_size = ctx->Nb*ctx->Ntpb*ctx->Np*ctx->Nc* 2/*complex*/ *(ctx->Nbps/8);
   if((buf_size & 0x7fff) != 0) {
     // Round up to next multiple of 32KB
     buf_size = (buf_size & ~0x7fff) + 0x8000;
@@ -618,10 +631,10 @@ int rawspec_initialize(rawspec_context * ctx)
   res_desc.resType = cudaResourceTypePitch2D;
   res_desc.res.pitch2D.devPtr = gpu_ctx->d_fft_in;
   res_desc.res.pitch2D.desc.f = cudaChannelFormatKindSigned;
-  res_desc.res.pitch2D.desc.x = 8; // bits per sample???
+  res_desc.res.pitch2D.desc.x = ctx->Nbps; // bits per sample
   res_desc.res.pitch2D.width = 1<<15;         // elements
   res_desc.res.pitch2D.height = buf_size>>15; // elements
-  res_desc.res.pitch2D.pitchInBytes = 1<<15;  // bytes!
+  res_desc.res.pitch2D.pitchInBytes = (1<<15) * (ctx->Nbps/8);  // bytes!
   // tex_desc describes texture mapping
   memset(&tex_desc, 0, sizeof(tex_desc));
 #if 0 // These settings are not used in online examples involved cudaReadModeNormalizedFloat
@@ -820,6 +833,7 @@ int rawspec_initialize(rawspec_context * ctx)
       printf("cufftMakePlanMany for output product %d...", i);
 #endif
       // Make the plan
+      // TODO Are sizes here in units of elements or bytes?  Assume elements for now...
       cufft_rc = cufftMakePlanMany(
                       gpu_ctx->plan[i][p],     // plan handle
                       1,                       // rank
@@ -882,7 +896,7 @@ int rawspec_initialize(rawspec_context * ctx)
         return 1;
       }
 
-      // Associate stream and associate with plan
+      // Associate compute stream with plan
       cufft_rc = cufftSetStream(gpu_ctx->plan[i][p], gpu_ctx->compute_stream);
       if(cufft_rc != CUFFT_SUCCESS) {
         PRINT_ERRMSG(cufft_rc);
@@ -1015,13 +1029,13 @@ int rawspec_copy_blocks_to_gpu(rawspec_context * ctx,
   rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
 
   // TODO Store in GPU context?
-  size_t width = ctx->Ntpb * ctx->Np * sizeof(char2);
+  size_t width = ctx->Ntpb * ctx->Np * 2 /*complex*/ * (ctx->Nbps/8);
 
   for(b=0; b < num_blocks; b++) {
     sblk = (src_idx + b) % ctx->Nb_host;
     dblk = (dst_idx + b) % ctx->Nb;
 
-    rc = cudaMemcpy2D(gpu_ctx->d_fft_in + dblk * width / sizeof(char2),
+    rc = cudaMemcpy2D(gpu_ctx->d_fft_in + dblk * width,
                       ctx->Nb * width,      // dpitch
                       ctx->h_blkbufs[sblk], // *src
                       width,                // spitch
@@ -1086,7 +1100,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
 
       // Add FFT to stream
       cufft_rc = cufftExecC2C(plan,
-                              ((cufftComplex *)gpu_ctx->d_fft_in) + p,
+                              ((cufftComplex *)gpu_ctx->d_fft_in) + p * (ctx->Nbps/8),
                               gpu_ctx->d_fft_out + p * fft_outbuf_length,
                               fft_dir <= 0 ? CUFFT_INVERSE : CUFFT_FORWARD);
 

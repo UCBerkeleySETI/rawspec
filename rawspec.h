@@ -9,7 +9,14 @@
 
 #define MAX_OUTPUTS (4)
 
-#define RAWSPEC_BLOCSIZE(pctx) ((pctx)->Nc * (pctx)->Ntpb * (pctx)->Np * 2)
+#define RAWSPEC_BLOCSIZE(pctx) \
+(                              \
+  (pctx)->Nc          *        \
+  (pctx)->Ntpb        *        \
+  (pctx)->Np          *        \
+  2 /* complex */     *        \
+  ((pctx)->Nbps / 8)           \
+)
 
 #define RAWSPEC_CALLBACK_PRE_DUMP  (0)
 #define RAWSPEC_CALLBACK_POST_DUMP (1)
@@ -27,6 +34,10 @@ struct rawspec_context_s {
   unsigned int Np; // Number of polarizations (in input data)
   unsigned int Nc; // Number of coarse channels
   unsigned int Ntpb; // Number of time samples per block
+
+  // Nbps is the number of bits per sample (per component).  The only supported
+  // values are 8 or 16.  Illegal values will be treated as 8.
+  unsigned int Nbps; // Number of bits per sample (per component)
 
   // Npolout is the number of output polarization values per fine channel.
   // This valid values for this field are:
@@ -76,8 +87,8 @@ struct rawspec_context_s {
   // have the library allocate the host input block buffers.  For client
   // managed buffers, the user must allocate an array of Nb_host pointers,
   // initialize them to point to the caller allocated blocks, and set the Nb
-  // field of this structure.  The size of each host input block buffer is Nc *
-  // Ntpb * Np * 2 (in bytes).
+  // field of this structure.  The size, in bytes, of each host input block
+  // buffer is Nc * Ntpb * Np * 2 * Nbps / 8.
   char ** h_blkbufs;
 
   // Which GPU to use.  Set to 0 for single GPU system.

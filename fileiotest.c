@@ -140,6 +140,7 @@ int main(int argc, char *argv[])
   ctx.No = 3;
   ctx.Np = 2;
   ctx.Nc = 88;
+  ctx.Nbps = 8; // Assume 8 bits per sample for now (eventually get from NBITS)
   ctx.Ntpb = blocsize / (2 * ctx.Np * ctx.Nc);
   ctx.Nts[0] = (1<<20);
   ctx.Nts[1] = (1<<3);

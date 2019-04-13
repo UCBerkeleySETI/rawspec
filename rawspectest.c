@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <stdint.h>
 #include <string.h>
@@ -19,7 +20,7 @@ int main(int argc, char * argv[])
 {
   int i;
   int j;
-  rawspec_context ctx;
+  rawspec_context ctx = {0};
 
   // Timing variables
   struct timespec ts_start, ts_stop;
@@ -31,7 +32,15 @@ int main(int argc, char * argv[])
   ctx.No = 4;
   ctx.Np = 2;
   ctx.Nc = 88;
-  ctx.Ntpb = blocsize / (2 * ctx.Np * ctx.Nc);
+  ctx.Nbps = 8;
+  if(argc > 1) {
+    ctx.Nbps = strtoul(argv[1], NULL, 0);
+    if(ctx.Nbps == 0) {
+      ctx.Nbps = 8;
+    }
+  }
+  printf("using %u bits per sample\n", ctx.Nbps);
+  ctx.Ntpb = blocsize / (2 * ctx.Np * ctx.Nc * (ctx.Nbps/8));
   ctx.Nts[0] = (1<<20);
   ctx.Nts[1] = (1<<3);
   ctx.Nts[2] = (1<<10);
@@ -69,9 +78,11 @@ int main(int argc, char * argv[])
     memset(ctx.h_blkbufs[i], 0, blocsize);
   }
   // Set sample 8 of pol 0 to (1+0j), in block Nb_host-1
-  ctx.h_blkbufs[ctx.Nb_host-1][8*2*2] = 127;
+  // Note that for 16-bit samples, this will really be (127/32767 + 0j)
+  ctx.h_blkbufs[ctx.Nb_host-1][(8*ctx.Np*2/*complex*/)*(ctx.Nbps/8)] = 127;
   // Set sample 9 of pol 1 to (0+1j), in block Nb_host-1
-  ctx.h_blkbufs[ctx.Nb_host-1][9*2*2+3] = 127;
+  // Note that for 16-bit samples, this will really be (0 + 127j/32767)
+  ctx.h_blkbufs[ctx.Nb_host-1][(9*ctx.Np*2/*complex*/+3)*(ctx.Nbps/8)] = 127;
 
   // Salt the output buffers (to detect whether they are not fully written)
   for(i=0; i<ctx.No; i++) {
