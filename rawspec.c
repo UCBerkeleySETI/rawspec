@@ -151,6 +151,7 @@ char tmp[16];
   unsigned int Nc;   // Number of coarse channels
   unsigned int Np;   // Number of polarizations
   unsigned int Ntpb; // Number of time samples per block
+  unsigned int Nbps; // Number of bits per sample
   int64_t pktidx0;
   int64_t pktidx;
   int64_t dpktidx;
@@ -462,7 +463,8 @@ char tmp[16];
         // Calculate Ntpb and validate block dimensions
         Nc = raw_hdr.obsnchan;
         Np = raw_hdr.npol;
-        Ntpb = raw_hdr.blocsize / (2 * Np * Nc);
+        Nbps = raw_hdr.nbits;
+        Ntpb = raw_hdr.blocsize / (2 * Np * Nc * (Nbps/8));
 
         // First pktidx of first file
         pktidx0 = raw_hdr.pktidx;
@@ -471,9 +473,9 @@ char tmp[16];
         // Expected difference be between raw_hdr.pktidx and previous pktidx
         dpktidx = 0;
 
-        if(2 * Np * Nc * Ntpb != raw_hdr.blocsize) {
-          printf("bad block geometry: 2*%d*%d*%u != %lu\n",
-              Np, Nc, Ntpb, raw_hdr.blocsize);
+        if(2 * Np * Nc * (Nbps/8) * Ntpb != raw_hdr.blocsize) {
+          printf("bad block geometry: 2*%u*%u*%u*%u != %lu\n",
+              Np, Nc, (Nbps/8), Ntpb, raw_hdr.blocsize);
           close(fdin);
           break; // Goto next stem
         }
@@ -481,6 +483,7 @@ char tmp[16];
 #ifdef VERBOSE
         printf("BLOCSIZE = %lu\n", raw_hdr.blocsize);
         printf("OBSNCHAN = %d\n",  raw_hdr.obsnchan);
+        printf("NBITS    = %d\n",  raw_hdr.nbits);
         printf("NPOL     = %d\n",  raw_hdr.npol);
         printf("OBSFREQ  = %g\n",  raw_hdr.obsfreq);
         printf("OBSBW    = %g\n",  raw_hdr.obsbw);
@@ -505,7 +508,7 @@ char tmp[16];
         input_conjugated = (raw_hdr.obsbw < 0) ? 1 : 0;
 
         // If block dimensions or input conjugation have changed
-        if(Nc != ctx.Nc || Np != ctx.Np || Ntpb != ctx.Ntpb
+        if(Nc != ctx.Nc || Np != ctx.Np || Nbps != ctx.Nbps || Ntpb != ctx.Ntpb
         || input_conjugated != ctx.input_conjugated) {
           // Cleanup previous block, if it has been initialized
           if(ctx.Ntpb != 0) {
@@ -515,6 +518,7 @@ char tmp[16];
           ctx.Nc   = Nc;
           ctx.Np   = Np;
           ctx.Ntpb = Ntpb;
+          ctx.Nbps = Nbps;
           ctx.input_conjugated = input_conjugated;
 
           // Initialize for new dimensions and/or conjugation
@@ -528,6 +532,7 @@ char tmp[16];
             ctx.Nc   = 0;
             ctx.Np   = 0;
             ctx.Ntpb = 0;
+            ctx.Nbps = 0;
             break;
           } else {
             //printf("initialization succeeded for new block dimensions\n");
@@ -675,21 +680,21 @@ char tmp[16];
         } // irregular pktidx step
 
         // Seek past first schan channel
-        lseek(fdin, 2 * ctx.Np * schan * ctx.Ntpb, SEEK_CUR);
+        lseek(fdin, 2 * ctx.Np * schan * (ctx.Nbps/8) * ctx.Ntpb, SEEK_CUR);
 
         // Read ctx.Nc coarse channels from this block
         bytes_read = read_fully(fdin,
                                 ctx.h_blkbufs[bi % ctx.Nb_host],
-                                2 * ctx.Np * ctx.Nc * ctx.Ntpb);
+                                2 * ctx.Np * ctx.Nc * (ctx.Nbps/8) * ctx.Ntpb);
 
         // Seek past channels after schan+nchan
-        lseek(fdin, 2 * ctx.Np * (raw_hdr.obsnchan-(schan+Nc)) * ctx.Ntpb, SEEK_CUR);
+        lseek(fdin, 2 * ctx.Np * (raw_hdr.obsnchan-(schan+Nc)) * (ctx.Nbps/8) * ctx.Ntpb, SEEK_CUR);
 
         if(bytes_read == -1) {
           perror("read");
           next_stem = 1;
           break; // Goto next file
-        } else if(bytes_read < 2 * ctx.Np * ctx.Nc * ctx.Ntpb) {
+        } else if(bytes_read < 2 * ctx.Np * ctx.Nc * (ctx.Nbps/8) * ctx.Ntpb) {
           fprintf(stderr, "incomplete block at EOF\n");
           next_stem = 1;
           break; // Goto next file

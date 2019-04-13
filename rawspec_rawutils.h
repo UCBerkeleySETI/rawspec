@@ -9,6 +9,7 @@ typedef struct {
   size_t blocsize;
   unsigned int npol;
   unsigned int obsnchan;
+  unsigned int nbits;
   int64_t pktidx; // TODO make uint64_t?
   double obsfreq;
   double obsbw;

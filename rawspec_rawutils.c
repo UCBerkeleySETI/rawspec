@@ -161,6 +161,7 @@ void rawspec_raw_parse_header(const char * buf, rawspec_raw_hdr_t * raw_hdr)
   raw_hdr->blocsize = rawspec_raw_get_s32(buf, "BLOCSIZE", 0);
   raw_hdr->npol     = rawspec_raw_get_s32(buf, "NPOL",     0);
   raw_hdr->obsnchan = rawspec_raw_get_s32(buf, "OBSNCHAN", 0);
+  raw_hdr->nbits    = rawspec_raw_get_u32(buf, "NBITS",    8);
   raw_hdr->obsfreq  = rawspec_raw_get_dbl(buf, "OBSFREQ",  0.0);
   raw_hdr->obsbw    = rawspec_raw_get_dbl(buf, "OBSBW",    0.0);
   raw_hdr->tbin     = rawspec_raw_get_dbl(buf, "TBIN",     0.0);
