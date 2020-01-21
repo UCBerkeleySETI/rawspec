@@ -145,7 +145,7 @@ int j, k;
 char tmp[16];
   void * pv;
   int fdin;
-  int fdhdrs;
+  int fdhdrs = -1;
   int next_stem;
   int save_headers = 0;
   unsigned int Nc;   // Number of coarse channels
@@ -596,8 +596,9 @@ char tmp[16];
         if(save_headers) {
           // Open headers output file
           fdhdrs = open_headers_file(dest, argv[si]);
-          // Copy first header to headers file
-          sendfile(fdhdrs, fdin, &raw_hdr.hdr_pos, raw_hdr.hdr_size);
+          if(fdhdrs == -1) {
+            fprintf(stderr, "unable to save headers\n");
+          }
         }
 
         if(output_mode == RAWSPEC_NET) {
@@ -624,6 +625,12 @@ char tmp[16];
 
       // For all blocks in file
       for(;;) {
+        // Save headers if requested (and headers output file was opened ok)
+        if(save_headers && fdhdrs != -1) {
+          // Copy header to headers file
+          sendfile(fdhdrs, fdin, &raw_hdr.hdr_pos, raw_hdr.hdr_size);
+        }
+
         // Lazy init dpktidx as soon as possible
         if(dpktidx == 0 && raw_hdr.pktidx > pktidx) {
           dpktidx = raw_hdr.pktidx - pktidx;
@@ -734,10 +741,6 @@ char tmp[16];
                     fname, strerror(errno));
           }
           break;
-        }
-        if(save_headers) {
-          // Copy header to headers file
-          sendfile(fdhdrs, fdin, &raw_hdr.hdr_pos, raw_hdr.hdr_size);
         }
 
         bi++;
