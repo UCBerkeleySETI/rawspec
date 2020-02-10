@@ -146,7 +146,7 @@ char tmp[16];
   void * pv;
   int fdin;
   int fdhdrs = -1;
-  int next_stem;
+  int next_stem = 0;
   int save_headers = 0;
   unsigned int Nc;   // Number of coarse channels
   unsigned int Np;   // Number of polarizations
@@ -460,6 +460,14 @@ char tmp[16];
 
       // If first file for stem, check sizing
       if(fi == 0) {
+        // Verify that obsnchan is divisible by nants
+        if(raw_hdr.obsnchan % raw_hdr.nants != 0) {
+          printf("bad obsnchan/nants: %u %% %u != 0\n",
+              raw_hdr.obsnchan, raw_hdr.nants);
+          close(fdin);
+          break; // Goto next stem
+        }
+
         // Calculate Ntpb and validate block dimensions
         Nc = raw_hdr.obsnchan;
         Np = raw_hdr.npol;
@@ -483,6 +491,7 @@ char tmp[16];
 #ifdef VERBOSE
         printf("BLOCSIZE = %lu\n", raw_hdr.blocsize);
         printf("OBSNCHAN = %d\n",  raw_hdr.obsnchan);
+        printf("NANTS    = %d\n",  raw_hdr.nants);
         printf("NBITS    = %d\n",  raw_hdr.nbits);
         printf("NPOL     = %d\n",  raw_hdr.npol);
         printf("OBSFREQ  = %g\n",  raw_hdr.obsfreq);
@@ -569,13 +578,20 @@ char tmp[16];
           cb_data[i].fb_hdr.source_name[80] = '\0';
           strncpy(cb_data[i].fb_hdr.rawdatafile, bfname, 80);
           cb_data[i].fb_hdr.rawdatafile[80] = '\0';
+
           // Output product dependent
-          cb_data[i].fb_hdr.foff = raw_hdr.obsbw/raw_hdr.obsnchan/ctx.Nts[i];
+          // raw_hdr.obsnchan is total for all nants
+          cb_data[i].fb_hdr.foff =
+            raw_hdr.obsbw/(raw_hdr.obsnchan/raw_hdr.nants)/ctx.Nts[i];
           // This computes correct fch1 for odd or even number of fine channels
+          // raw_hdr.obsbw is always for single antenna
+          // raw_hdr.obsnchan is total for all nants
           cb_data[i].fb_hdr.fch1 = raw_hdr.obsfreq
-            - raw_hdr.obsbw*(raw_hdr.obsnchan-1)/(2*raw_hdr.obsnchan)
+            - raw_hdr.obsbw*((raw_hdr.obsnchan/raw_hdr.nants)-1)
+                /(2*raw_hdr.obsnchan/raw_hdr.nants)
             - (ctx.Nts[i]/2) * cb_data[i].fb_hdr.foff
-            + schan * raw_hdr.obsbw / raw_hdr.obsnchan; // Adjust for schan
+            + (schan % (raw_hdr.obsnchan/raw_hdr.nants)) * // Adjust for schan
+                raw_hdr.obsbw / (raw_hdr.obsnchan/raw_hdr.nants);
           cb_data[i].fb_hdr.nchans = ctx.Nc * ctx.Nts[i];
           cb_data[i].fb_hdr.tsamp = raw_hdr.tbin * ctx.Nts[i] * ctx.Nas[i];
 
