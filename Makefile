@@ -4,7 +4,8 @@ INCDIR = $(PREFIX)/include
 LIBDIR = $(PREFIX)/lib
 DATADIR = $(PREFIX)/share
 
-CUDA_PATH ?= /usr/local/cuda-8.0
+CUDA_DIR ?= /usr/local/cuda-8.0
+CUDA_PATH ?= $(CUDA_DIR)
 
 CC=gcc
 HOST_COMPILER ?= $(CC)
