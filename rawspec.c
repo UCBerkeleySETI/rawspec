@@ -749,6 +749,9 @@ char tmp[16];
         // Remember pktidx
         pktidx = raw_hdr.pktidx;
 
+        // Increment block index to next block (which may be in the next file)
+        bi++;
+
         // Read obs params of next block
         pos = rawspec_raw_read_header(fdin, &raw_hdr);
         if(pos <= 0) {
@@ -758,8 +761,6 @@ char tmp[16];
           }
           break;
         }
-
-        bi++;
       } // For each block
 
       // Done with input file
