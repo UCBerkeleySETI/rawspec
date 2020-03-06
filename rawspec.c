@@ -489,14 +489,14 @@ char tmp[16];
         }
 
 #ifdef VERBOSE
-        printf("BLOCSIZE = %lu\n", raw_hdr.blocsize);
-        printf("OBSNCHAN = %d\n",  raw_hdr.obsnchan);
-        printf("NANTS    = %d\n",  raw_hdr.nants);
-        printf("NBITS    = %d\n",  raw_hdr.nbits);
-        printf("NPOL     = %d\n",  raw_hdr.npol);
-        printf("OBSFREQ  = %g\n",  raw_hdr.obsfreq);
-        printf("OBSBW    = %g\n",  raw_hdr.obsbw);
-        printf("TBIN     = %g\n",  raw_hdr.tbin);
+        fprintf(stderr, "BLOCSIZE = %lu\n", raw_hdr.blocsize);
+        fprintf(stderr, "OBSNCHAN = %d\n",  raw_hdr.obsnchan);
+        fprintf(stderr, "NANTS    = %d\n",  raw_hdr.nants);
+        fprintf(stderr, "NBITS    = %d\n",  raw_hdr.nbits);
+        fprintf(stderr, "NPOL     = %d\n",  raw_hdr.npol);
+        fprintf(stderr, "OBSFREQ  = %g\n",  raw_hdr.obsfreq);
+        fprintf(stderr, "OBSBW    = %g\n",  raw_hdr.obsbw);
+        fprintf(stderr, "TBIN     = %g\n",  raw_hdr.tbin);
 #endif // VERBOSE
 
         // If processing a subset of coarse channels
@@ -679,14 +679,14 @@ char tmp[16];
             memset(ctx.h_blkbufs[bi%ctx.Nb_host], 0, raw_hdr.blocsize);
 
 #ifdef VERBOSE
-            printf("%3d %016lx:", bi, pktidx);
-            printf(" -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --\n");
+            fprintf(stderr, "%3d %016lx:", bi, pktidx);
+            fprintf(stderr, " -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --\n");
 #endif // VERBOSE
 
             // If this is the last block of an input buffer, start processing
             if(bi % ctx.Nb == ctx.Nb - 1) {
 #ifdef VERBOSE
-              fprintf(stderr, "block %3b buf 0: ", bi);
+              fprintf(stderr, "block %3d buf 0: ", bi);
               for(j=0; j<16; j++) {
                 fprintf(stderr, " %02x", ctx.h_blkbufs[0][j] & 0xff);
               }
@@ -725,11 +725,11 @@ char tmp[16];
         total_bytes_read += bytes_read;
 
 #ifdef VERBOSE
-        printf("%3d %016lx:", bi, raw_hdr.pktidx);
+        fprintf(stderr, "%3d %016lx:", bi, raw_hdr.pktidx);
         for(j=0; j<16; j++) {
-          printf(" %02x", ctx.h_blkbufs[bi%ctx.Nb_host][j] & 0xff);
+          fprintf(stderr, " %02x", ctx.h_blkbufs[bi%ctx.Nb_host][j] & 0xff);
         }
-        printf("\n");
+        fprintf(stderr, "\n");
 #endif // VERBOSE
 
         // If this is the last block of an input buffer, start processing
