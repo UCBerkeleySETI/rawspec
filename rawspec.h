@@ -160,6 +160,14 @@ void rawspec_cleanup(rawspec_context * ctx);
 int rawspec_copy_blocks_to_gpu(rawspec_context * ctx,
     off_t src_idx, off_t dst_idx, size_t num_blocks);
 
+// Sets `num_blocks` blocks to zero in GPU input buffer, starting with block at
+// `dst_idx`.  If `dst_idx + num_blocks > cts->Nb`, the zeroed blocks will wrap
+// to the beginning of the input buffer, but no processing will occur.  Callers
+// should avoid this case as it will likely not give the desired results.
+// Returns 0 on success, non-zero on error.
+int rawspec_zero_blocks_to_gpu(rawspec_context * ctx,
+    off_t dst_idx, size_t num_blocks);
+
 // Launches FFTs of data in input buffer.  Whenever an output product
 // integration is complete, the power spectrum is copied to the host power
 // output buffer and the user provided callback, if any, is called.  This

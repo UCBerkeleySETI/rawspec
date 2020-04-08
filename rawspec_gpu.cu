@@ -1052,6 +1052,40 @@ int rawspec_copy_blocks_to_gpu(rawspec_context * ctx,
   return 0;
 }
 
+// Sets `num_blocks` blocks to zero in GPU input buffer, starting with block at
+// `dst_idx`.  If `dst_idx + num_blocks > cts->Nb`, the zeroed blocks will wrap
+// to the beginning of the input buffer, but no processing will occur.  Callers
+// should avoid this case as it will likely not give the desired results.
+// Returns 0 on success, non-zero on error.
+int rawspec_zero_blocks_to_gpu(rawspec_context * ctx,
+    off_t dst_idx, size_t num_blocks)
+{
+  int b;
+  off_t dblk;
+  cudaError_t rc;
+  rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
+
+  // TODO Store in GPU context?
+  size_t width = ctx->Ntpb * ctx->Np * 2 /*complex*/ * (ctx->Nbps/8);
+
+  for(b=0; b < num_blocks; b++) {
+    dblk = (dst_idx + b) % ctx->Nb;
+
+    rc = cudaMemset2D(gpu_ctx->d_fft_in + dblk * width,
+                      ctx->Nb * width,      // pitch
+                      0,                    // value
+                      width,                // width
+                      ctx->Nc);             // height
+
+    if(rc != cudaSuccess) {
+      PRINT_ERRMSG(rc);
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
 // Launches FFTs of data in input buffer.  Whenever an output product
 // integration is complete, the power spectrum is copied to the host power
 // output buffer and the user provided callback, if any, is called.  This
