@@ -555,7 +555,7 @@ int fb_telescope_id(const char *telescope_name)
     id=8;
   else if (strcasecmp(telescope_name,"140FT")==0)
     id=9;
-  else if (strcasecmp(telescope_name,"ATS")==0)
+  else if (strcasecmp(telescope_name,"ATA")==0)
     id=10;
   else if (strcasecmp(telescope_name,"LEUSCHNER")==0)
     id=11;
