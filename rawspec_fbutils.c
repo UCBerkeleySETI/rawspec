@@ -559,6 +559,8 @@ int fb_telescope_id(const char *telescope_name)
     id=10;
   else if (strcasecmp(telescope_name,"LEUSCHNER")==0)
     id=11;
+  else if (strcasecmp(telescope_name,"MEERKAT")==0)
+    id=64;
 
 	return id;
 }
