@@ -11,11 +11,11 @@
 
 #define RAWSPEC_BLOCSIZE(pctx) \
 (                              \
-  (pctx)->Nc          *        \
+  ((pctx)->Nc         *        \
   (pctx)->Ntpb        *        \
   (pctx)->Np          *        \
   2 /* complex */     *        \
-  ((pctx)->Nbps / 8)           \
+  (pctx)->Nbps) / 8            \
 )
 
 #define RAWSPEC_CALLBACK_PRE_DUMP  (0)

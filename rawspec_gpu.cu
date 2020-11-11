@@ -64,7 +64,7 @@ typedef struct {
   char * d_fft_in;
   // Device pointer to FFT output buffer
   cufftComplex * d_fft_out;
-  // Array of device pointers to power buffers
+  // Array of device pointers to power buffers of which there are MAX_OUTPUT 
   float * d_pwr_out[MAX_OUTPUTS];
   // Array of handles to FFT plans.
   // Each output product gets a pair of plans (one for each pol).
@@ -117,6 +117,29 @@ __device__ cufftComplex load_callback(void *p_v_in,
   offset += (cufftComplex *)p_v_in - (cufftComplex *)p_v_user;
   c.x = tex2D<float>(d_tex_obj, ((2*offset  ) & 0x7fff), ((  offset  ) >> 14));
   c.y = tex2D<float>(d_tex_obj, ((2*offset+1) & 0x7fff), ((2*offset+1) >> 15));
+  return c;
+}
+
+// The load_callback gets the input value through the texture memory to achieve
+// a "for free" mapping of 8-bit integer values into 32-bit float values.
+__device__ cufftComplex load_4bit_callback(void *p_v_in,
+                                      size_t offset,
+                                      void *p_v_user,
+                                      void *p_v_shared)
+{
+  cufftComplex c;
+  // p_v_in is input buffer (cast to cufftComplex*) plus polarization offset.
+  // p_v_user is input buffer.  offset is complex element offset from start of
+  // input buffer, but does not include any polarization offset so we compute
+  // the polarization offset by subtracting p_v_user from p_v_in and add it to
+  // offset.
+  offset += (cufftComplex *)p_v_in - (cufftComplex *)p_v_user;
+  // Assumes cudaReadModeElementType for texture read mode (https://cuda-programming.blogspot.com/2013/04/texture-references-object-in-cuda.html)
+  unsigned int xyByte = tex2D<unsigned int>(d_tex_obj, ((2*offset  ) & 0x7fff), ((  offset  ) >> 14));
+  c.x = ((float)(xyByte & 0xf0))/15.0f;
+  c.y = ((float)(xyByte & 0x0f ))/15.0f;
+  // c.x = 0.0f;
+  // c.y = 0.0f;
   return c;
 }
 
@@ -240,6 +263,7 @@ __device__ void store_callback_pol1_conj(void *p_v_out,
 }
 
 __device__ cufftCallbackLoadC d_cufft_load_callback = load_callback;
+__device__ cufftCallbackLoadC d_cufft_load_4bit_callback = load_4bit_callback;
 __device__ cufftCallbackStoreC d_cufft_store_callback = store_callback;
 __device__ cufftCallbackStoreC d_cufft_store_callback_pol0 = store_callback_pol0;
 __device__ cufftCallbackStoreC d_cufft_store_callback_pol1 = store_callback_pol1;
@@ -323,6 +347,7 @@ int rawspec_initialize(rawspec_context * ctx)
 {
   int i;
   int p;
+  char nbps_4 = 0; 
   size_t buf_size;
   size_t work_size = 0;
   store_cb_data_t h_scb_data;
@@ -377,6 +402,11 @@ int rawspec_initialize(rawspec_context * ctx)
     fprintf(stderr,
         "number of bits per sample must be 8 or 16 (not %d), using 8 bps\n",
         ctx->Nbps);
+    if(ctx->Nbps == 4){
+      fprintf(stderr,
+        "\t\twill try to handle 4 bits\n");
+      nbps_4 = 1;
+    }
     fflush(stderr);
     ctx->Nbps = 8;
   }
@@ -745,9 +775,18 @@ int rawspec_initialize(rawspec_context * ctx)
   }
 
   // Get host pointers to cufft callbacks
-  cuda_rc = cudaMemcpyFromSymbol(&h_cufft_load_callback,
-                                 d_cufft_load_callback,
-                                 sizeof(h_cufft_load_callback));
+  if (nbps_4 != 1){
+    cuda_rc = cudaMemcpyFromSymbol(&h_cufft_load_callback,
+                                   d_cufft_load_callback,
+                                   sizeof(h_cufft_load_callback));
+  }
+  else{
+    tex_desc.readMode = cudaReadModeElementType; // Manually handle the float casting
+    
+    cuda_rc = cudaMemcpyFromSymbol(&h_cufft_load_callback,
+                                   d_cufft_load_4bit_callback,
+                                   sizeof(h_cufft_load_callback));
+  }
   if(cuda_rc != cudaSuccess) {
     PRINT_ERRMSG(cuda_rc);
     rawspec_cleanup(ctx);
