@@ -122,7 +122,7 @@ __device__ cufftComplex load_callback(void *p_v_in,
 
 // The load_callback gets the input value through the texture memory to achieve
 // a "for free" mapping of 8-bit integer values into 32-bit float values.
-__device__ cufftComplex load_4bit_callback(void *p_v_in,
+__device__ cufftComplex load_8bit_callback(void *p_v_in,
                                       size_t offset,
                                       void *p_v_user,
                                       void *p_v_shared)
@@ -135,9 +135,41 @@ __device__ cufftComplex load_4bit_callback(void *p_v_in,
   // offset.
   offset += (cufftComplex *)p_v_in - (cufftComplex *)p_v_user;
   // Assumes cudaReadModeElementType for texture read mode (https://cuda-programming.blogspot.com/2013/04/texture-references-object-in-cuda.html)
-  unsigned int xyByte = tex2D<unsigned int>(d_tex_obj, ((2*offset  ) & 0x7fff), ((  offset  ) >> 14));
-  c.x = ((float)(xyByte & 0xf0))/15.0f;
-  c.y = ((float)(xyByte & 0x0f ))/15.0f;
+  // c.x = tex2D<float>(d_tex_obj, ((2*offset  ) & 0x7fff), ((  offset  ) >> 14));;
+  // c.y = tex2D<float>(d_tex_obj, ((2*offset+1) & 0x7fff), ((2*offset+1) >> 15));;
+  uint8_t xByte = tex2D<uint8_t>(d_tex_obj, ((2*offset  ) & 0x7fff), ((  offset  ) >> 14));
+  uint8_t yByte = tex2D<uint8_t>(d_tex_obj, ((2*offset+1) & 0x7fff), ((2*offset+1) >> 15));
+  c.x = (1.0*xByte)/127.0f;
+  c.y = (1.0*yByte)/127.0f;
+  return c;
+}
+
+// The load_callback gets the input value through the texture memory to achieve
+// a "for free" mapping of 8-bit integer values into 32-bit float values.
+__device__ cufftComplex load_4bit_callback(void *p_v_in,
+                                      size_t offset,
+                                      void *p_v_user,
+                                      void *p_v_shared)
+{
+  cufftComplex c;
+  // p_v_in is input buffer (cast to cufftComplex*) plus polarization offset.
+  // p_v_user is input buffer.  offset is complex element offset from start of
+  // input buffer, but does not include any polarization offset so we compute
+  // the polarization offset by subtracting p_v_user from p_v_in and add it to
+  // offset.
+  offset += ((cufftComplex *)p_v_in - (cufftComplex *)p_v_user)/2;
+  // Assumes cudaReadModeElementType for texture read mode (https://cuda-programming.blogspot.com/2013/04/texture-references-object-in-cuda.html)
+  unsigned int xByte = tex2D<unsigned int>(d_tex_obj, ((2*offset  ) & 0x7fff), ((  offset  ) >> 14));
+  unsigned char yByte = tex2D<unsigned char>(d_tex_obj, ((offset  ) & 0x7fff), ((  offset  ) >> 14));
+  c.x = ((float)(xByte & 0xf0))/7.0f;
+  c.y = ((float)(yByte & 0xf))/7.0f;
+
+  // int8_t xByte = tex2D<int8_t>(d_tex_obj, ((2*offset  ) & 0x7fff), ((  offset  ) >> 14));
+  // int8_t yByte = tex2D<int8_t>(d_tex_obj, ((2*offset+1) & 0x7fff), ((2*offset+1) >> 15));
+  // int8_t xyByte = ((char *)p_v_in)[offset];
+  // c.x = 1.0;//(1.0*(xyByte&0xf0))/7.0f;
+  // c.y = 1.0;//(1.0*(xyByte&0x0f))/7.0f;
+
   // c.x = 0.0f;
   // c.y = 0.0f;
   return c;
@@ -264,6 +296,7 @@ __device__ void store_callback_pol1_conj(void *p_v_out,
 
 __device__ cufftCallbackLoadC d_cufft_load_callback = load_callback;
 __device__ cufftCallbackLoadC d_cufft_load_4bit_callback = load_4bit_callback;
+__device__ cufftCallbackLoadC d_cufft_load_8bit_callback = load_8bit_callback;
 __device__ cufftCallbackStoreC d_cufft_store_callback = store_callback;
 __device__ cufftCallbackStoreC d_cufft_store_callback_pol0 = store_callback_pol0;
 __device__ cufftCallbackStoreC d_cufft_store_callback_pol1 = store_callback_pol1;
@@ -402,13 +435,16 @@ int rawspec_initialize(rawspec_context * ctx)
     fprintf(stderr,
         "number of bits per sample must be 8 or 16 (not %d), using 8 bps\n",
         ctx->Nbps);
+    ctx->Nbps = (ctx->Nbps == 4 ? 4 : 8);
     if(ctx->Nbps == 4){
       fprintf(stderr,
-        "\t\twill try to handle 4 bits\n");
+        "\t\twill try to handle 4 bits (Np = %d)\n", ctx->Np);  
       nbps_4 = 1;
+      // ctx->Np /= 2;//causes header to be read from incorrect positions, is just plain wrong
+      // fprintf(stderr,
+      //   "\t\tHalved Np to account for stride (Np = %d)\n", ctx->Np);
     }
     fflush(stderr);
-    ctx->Nbps = 8;
   }
 
   // Determine Ntmax (and validate Nts)
@@ -565,7 +601,7 @@ int rawspec_initialize(rawspec_context * ctx)
     for(i=0; i < ctx->Nb_host; i++) {
       // Block buffer can use write combining
       cuda_rc = cudaHostAlloc(&ctx->h_blkbufs[i],
-          ctx->Ntpb * ctx->Np * ctx->Nc * 2 /*complex*/ * (ctx->Nbps/8),
+          (ctx->Ntpb * ctx->Np * ctx->Nc * 2 /*complex*/ * ctx->Nbps)/8,
           cudaHostAllocWriteCombined);
       if(cuda_rc != cudaSuccess) {
         PRINT_ERRMSG(cuda_rc);
@@ -582,7 +618,7 @@ int rawspec_initialize(rawspec_context * ctx)
     // ensure that the blocks meet memory alignment requirements, etc.
     for(i=0; i < ctx->Nb_host; i++) {
       cuda_rc = cudaHostRegister(ctx->h_blkbufs[i],
-          ctx->Ntpb * ctx->Np * ctx->Nc * 2 /*complex*/ * (ctx->Nbps/8),
+          (ctx->Ntpb * ctx->Np * ctx->Nc * 2 /*complex*/ * ctx->Nbps)/8,
           cudaHostRegisterDefault);
       if(cuda_rc != cudaSuccess) {
         PRINT_ERRMSG(cuda_rc);
@@ -638,7 +674,7 @@ int rawspec_initialize(rawspec_context * ctx)
   // The input buffer is padded to the next multiple of 32KB to facilitate 2D
   // texture lookups by treating the input buffer as a 2D array that is 32KB
   // wide.
-  buf_size = ctx->Nb*ctx->Ntpb*ctx->Np*ctx->Nc* 2/*complex*/ *(ctx->Nbps/8);
+  buf_size = (ctx->Nb*ctx->Ntpb*ctx->Np*ctx->Nc* 2/*complex*/ *ctx->Nbps)/8;
   if((buf_size & 0x7fff) != 0) {
     // Round up to next multiple of 32KB
     buf_size = (buf_size & ~0x7fff) + 0x8000;
@@ -661,21 +697,30 @@ int rawspec_initialize(rawspec_context * ctx)
   res_desc.resType = cudaResourceTypePitch2D;
   res_desc.res.pitch2D.devPtr = gpu_ctx->d_fft_in;
   res_desc.res.pitch2D.desc.f = cudaChannelFormatKindSigned;
-  res_desc.res.pitch2D.desc.x = ctx->Nbps; // bits per sample
+  res_desc.res.pitch2D.desc.x = (nbps_4==1 ? 8 : ctx->Nbps); // bits per sample
+  // res_desc.res.pitch2D.desc.x = ctx->Nbps; // bits per sample
   res_desc.res.pitch2D.width = 1<<15;         // elements
   res_desc.res.pitch2D.height = buf_size>>15; // elements
-  res_desc.res.pitch2D.pitchInBytes = (1<<15) * (ctx->Nbps/8);  // bytes!
+  res_desc.res.pitch2D.pitchInBytes = ((1<<15) * (nbps_4==1 ? 4 : ctx->Nbps))/8;  // bytes!
+  // res_desc.res.pitch2D.pitchInBytes = ((1<<15) * ctx->Nbps)/8;  // bytes!
   // tex_desc describes texture mapping
   memset(&tex_desc, 0, sizeof(tex_desc));
 #if 0 // These settings are not used in online examples involved cudaReadModeNormalizedFloat
-  // Not sure whether address_mode matters for cudaReadModeNormalizedFloat
-  tex_desc.address_mode[0] = cudaAddressModeClamp;
-  tex_desc.address_mode[1] = cudaAddressModeClamp;
-  tex_desc.address_mode[2] = cudaAddressModeClamp;
-  // Not sure whether filter_mode matters for cudaReadModeNormalizedFloat
-  tex_desc.filter_mode = cudaFilterModePoint;
+  // Not sure whether addressMode matters for cudaReadModeNormalizedFloat
+  tex_desc.addressMode[0] = cudaAddressModeBorder;//cudaAddressModeClamp;
+  tex_desc.addressMode[1] = cudaAddressModeBorder;//cudaAddressModeClamp;
+  tex_desc.addressMode[2] = cudaAddressModeBorder;//cudaAddressModeClamp;
+  // Not sure whether filterMode matters for cudaReadModeNormalizedFloat
+  tex_desc.filterMode = cudaFilterModePoint;
 #endif // 0
-  tex_desc.readMode = cudaReadModeNormalizedFloat;
+  // if (nbps_4!=1){
+  //   tex_desc.readMode = cudaReadModeNormalizedFloat;
+  // }
+  // else{
+    fprintf(stderr,
+      "\t\tSetting cudaReadModeElementType\n");
+    tex_desc.readMode = cudaReadModeElementType; // Manually handle the float casting
+  // }
 
   cuda_rc = cudaCreateTextureObject(&gpu_ctx->tex_obj,
                                     &res_desc, &tex_desc, NULL);
@@ -776,12 +821,16 @@ int rawspec_initialize(rawspec_context * ctx)
 
   // Get host pointers to cufft callbacks
   if (nbps_4 != 1){
+    fprintf(stderr,
+      "\t\tSetting d_cufft_load_8bit_callback\n");
     cuda_rc = cudaMemcpyFromSymbol(&h_cufft_load_callback,
-                                   d_cufft_load_callback,
+                                  //  d_cufft_load_callback,
+                                   d_cufft_load_8bit_callback,
                                    sizeof(h_cufft_load_callback));
   }
   else{
-    tex_desc.readMode = cudaReadModeElementType; // Manually handle the float casting
+    fprintf(stderr,
+      "\t\tSetting d_cufft_load_4bit_callback\n");
     
     cuda_rc = cudaMemcpyFromSymbol(&h_cufft_load_callback,
                                    d_cufft_load_4bit_callback,
@@ -878,8 +927,10 @@ int rawspec_initialize(rawspec_context * ctx)
                       1,                       // rank
                       (int *)&ctx->Nts[i],     // *n
                       (int *)&ctx->Nts[i],     // *inembed (unused for 1d)
-                      ctx->Np,                 // istride
+                      // ctx->Np,                 // istride
+                      nbps_4==1 ? 1 : ctx->Np,                 // istride
                       ctx->Nts[i]*ctx->Np,     // idist
+                      // ctx->Nts[i]*(nbps_4==1 ? 1 : ctx->Np),     // idist
                       (int *)&ctx->Nts[i],     // *onembed (unused for 1d)
                       1,                       // ostride
                       ctx->Nts[i],             // odist
@@ -1068,7 +1119,7 @@ int rawspec_copy_blocks_to_gpu(rawspec_context * ctx,
   rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
 
   // TODO Store in GPU context?
-  size_t width = ctx->Ntpb * ctx->Np * 2 /*complex*/ * (ctx->Nbps/8);
+  size_t width = (ctx->Ntpb * ctx->Np * 2 /*complex*/ * ctx->Nbps)/8;
 
   for(b=0; b < num_blocks; b++) {
     sblk = (src_idx + b) % ctx->Nb_host;
@@ -1105,7 +1156,7 @@ int rawspec_zero_blocks_to_gpu(rawspec_context * ctx,
   rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
 
   // TODO Store in GPU context?
-  size_t width = ctx->Ntpb * ctx->Np * 2 /*complex*/ * (ctx->Nbps/8);
+  size_t width = (ctx->Ntpb * ctx->Np * 2 /*complex*/ * ctx->Nbps)/8;
 
   for(b=0; b < num_blocks; b++) {
     dblk = (dst_idx + b) % ctx->Nb;
@@ -1173,7 +1224,9 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
 
       // Add FFT to stream
       cufft_rc = cufftExecC2C(plan,
-                              ((cufftComplex *)gpu_ctx->d_fft_in) + p * (ctx->Nbps/8),
+                              ((cufftComplex *)gpu_ctx->d_fft_in) + 
+                                  // ((p * (ctx->Nbps==4 ? 8 : ctx->Nbps))/8),
+                                  ((p * ctx->Nbps)/8),
                               gpu_ctx->d_fft_out + p * fft_outbuf_length,
                               fft_dir <= 0 ? CUFFT_INVERSE : CUFFT_FORWARD);
 
