@@ -59,6 +59,44 @@ ssize_t read_fully(int fd, void * buf, size_t bytes_to_read)
   return total_bytes_read;
 }
 
+// Reads `bytes_to_read` bytes from `fd` into the buffer pointed to a provided
+// scratch `rawbuf`, and expand each complex4bit byte to 2 bytes, filling `buf`.
+// `rawbuf` must be malloc'd `bytes_to_read` and managed by caller.
+// Returns the total bytes read or -1 on error.  A non-negative return value
+// will be less than `bytes_to_read` only of EOF is reached.
+ssize_t read_fully_expanding_4bits(int fd, void *rawbuf, void *buf, size_t bytes_to_read)
+{
+  ssize_t bytes_read;
+  ssize_t total_bytes_read = 0;
+
+  while(bytes_to_read > 0) {
+    bytes_read = read(fd, rawbuf, bytes_to_read);
+    if(bytes_read <= 0) {
+      if(bytes_read == 0) {
+        break;
+      } else {
+        return -1;
+      }
+    }
+    bytes_to_read -= bytes_read;
+    total_bytes_read += bytes_read;
+    while(bytes_read-- > 0){
+      // *((uint16_t *)buf) = (uint16_t) (
+      //                       *( (uint8_t*)rawbuf ) &0xf0)<<4 
+      //                     + 
+      //                     (uint16_t)(
+      //                       *( (uint8_t*)rawbuf ) &0x0f);
+      *((uint8_t *)buf)   = (*((uint8_t *) rawbuf) & 0xf0) >> 4;
+      *((uint8_t *)buf+1) =  *((uint8_t *) rawbuf) & 0x0f;
+      buf += 2;
+      rawbuf ++;
+    }
+    // buf += bytes_read;
+  }
+
+  return total_bytes_read*2;
+}
+
 static struct option long_opts[] = {
   {"dest",    1, NULL, 'd'},
   {"ffts",    1, NULL, 'f'},
@@ -152,6 +190,9 @@ char tmp[16];
   unsigned int Np;   // Number of polarizations
   unsigned int Ntpb; // Number of time samples per block
   unsigned int Nbps; // Number of bits per sample
+  uint32_t block_byte_length; // Compute the length once
+  char expand4bps_to8bps; // Expansion flag
+  void *expansion_buf; // Scratch buffer for expansion
   int64_t pktidx0;
   int64_t pktidx;
   int64_t dpktidx;
@@ -549,7 +590,18 @@ char tmp[16];
             ctx.Nbps = 0;
             break;
           } else {
-            //printf("initialization succeeded for new block dimensions\n");
+            // printf("initialization succeeded for new block dimensions\n");
+            block_byte_length = (2 * ctx.Np * ctx.Nc * ctx.Nbps)/8 * ctx.Ntpb;
+
+            if (ctx.Nbps == 8 && Nbps == 4){
+              printf("CUDA memory initialised for %d bits per sample,\n\t"
+                     "will expand header specified %d bits per sample.\n", ctx.Nbps, Nbps);
+              expand4bps_to8bps = 1;
+              if (expansion_buf){
+                free(expansion_buf);
+              }
+              expansion_buf = (void *)malloc(block_byte_length/2);
+            }
 
             // Copy fields from ctx to cb_data
             for(i=0; i<ctx.No; i++) {
@@ -711,9 +763,16 @@ char tmp[16];
         lseek(fdin, (2 * ctx.Np * schan * ctx.Nbps)/8 * ctx.Ntpb, SEEK_CUR);
 
         // Read ctx.Nc coarse channels from this block
-        bytes_read = read_fully(fdin,
-                                ctx.h_blkbufs[bi % ctx.Nb_host],
-                                (2 * ctx.Np * ctx.Nc * ctx.Nbps)/8 * ctx.Ntpb);
+        if(expand4bps_to8bps){
+          bytes_read = read_fully_expanding_4bits(fdin, expansion_buf,
+                                  ctx.h_blkbufs[bi % ctx.Nb_host],
+                                  block_byte_length/2);
+        }
+        else{
+          bytes_read = read_fully(fdin,
+                                  ctx.h_blkbufs[bi % ctx.Nb_host],
+                                  block_byte_length);
+        }
 
         // Seek past channels after schan+nchan
         lseek(fdin, (2 * ctx.Np * (raw_hdr.obsnchan-(schan+Nc)) * ctx.Nbps)/8 * ctx.Ntpb, SEEK_CUR);
@@ -722,7 +781,7 @@ char tmp[16];
           perror("read");
           next_stem = 1;
           break; // Goto next file
-        } else if(bytes_read < (2 * ctx.Np * ctx.Nc * ctx.Nbps)/8 * ctx.Ntpb) {
+        } else if(bytes_read < block_byte_length) {
           fprintf(stderr, "incomplete block at EOF\n");
           next_stem = 1;
           break; // Goto next file
@@ -797,6 +856,9 @@ char tmp[16];
 
   // Final cleanup
   rawspec_cleanup(&ctx);
+  if(expansion_buf){
+    free(expansion_buf);
+  }
 
   // Close sockets (or should-"never"-happen unclosed files)
   for(i=0; i<ctx.No; i++) {
