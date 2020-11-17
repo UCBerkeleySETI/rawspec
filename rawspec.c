@@ -516,10 +516,6 @@ char tmp[16];
         
         Ntpb = raw_hdr.blocsize / ((2 * Np * Nc * Nbps)/8);
 
-        fprintf(stderr, "block geometry: 2*%u*%u*(%u/8)*%u ?= %lu\n",
-            Np, Nc, Nbps, Ntpb, raw_hdr.blocsize);
-        fflush(stderr);            
-
         // First pktidx of first file
         pktidx0 = raw_hdr.pktidx;
         // Previous pktidx
