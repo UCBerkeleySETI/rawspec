@@ -60,6 +60,7 @@ ssize_t read_fully(int fd, void * buf, size_t bytes_to_read)
 }
 
 static struct option long_opts[] = {
+  {"ant",     1, NULL, 'a'},
   {"dest",    1, NULL, 'd'},
   {"ffts",    1, NULL, 'f'},
   {"gpu",     1, NULL, 'g'},
@@ -86,6 +87,7 @@ void usage(const char *argv0) {
     "Usage: %s [options] STEM [...]\n"
     "\n"
     "Options:\n"
+    "  -a, --ant=ANT          The 0-indexed antenna to exclusively process\n"
     "  -d, --dest=DEST        Destination directory or host:port\n"
     "  -f, --ffts=N1[,N2...]  FFT lengths [1048576, 8, 1024]\n"
     "  -g, --GPU=IDX          Select GPU device to use [0]\n"
@@ -148,7 +150,8 @@ char tmp[16];
   int fdhdrs = -1;
   int next_stem = 0;
   int save_headers = 0;
-  unsigned int Nc;   // Number of coarse channels
+  unsigned int Nc;   // Number of coarse channels across the observation (possibly multi-antenna)
+  unsigned int NcAnt;// Number of coarse channels per antenna
   unsigned int Np;   // Number of polarizations
   unsigned int Ntpb; // Number of time samples per block
   unsigned int Nbps; // Number of bits per sample
@@ -171,6 +174,7 @@ char tmp[16];
   rawspec_raw_hdr_t raw_hdr;
   callback_data_t cb_data[MAX_OUTPUTS];
   rawspec_context ctx;
+  int ant = 0;
   unsigned int schan = 0;
   unsigned int nchan = 0;
   unsigned int outidx = 0;
@@ -189,11 +193,15 @@ char tmp[16];
 
   // Parse command line.
   argv0 = argv[0];
-  while((opt=getopt_long(argc,argv,"d:f:g:Hn:o:p:r:s:t:hv",long_opts,NULL))!=-1) {
+  while((opt=getopt_long(argc,argv,"a:d:f:g:Hn:o:p:r:s:t:hv",long_opts,NULL))!=-1) {
     switch (opt) {
       case 'h': // Help
         usage(argv0);
         return 0;
+        break;
+
+      case 'a': // Antenna selection to process
+        ant = strtol(optarg, NULL, 0);
         break;
 
       case 'd': // Output destination
@@ -470,6 +478,7 @@ char tmp[16];
 
         // Calculate Ntpb and validate block dimensions
         Nc = raw_hdr.obsnchan;
+        NcAnt = raw_hdr.obsnchan/raw_hdr.nants;
         Np = raw_hdr.npol;
         Nbps = raw_hdr.nbits;
         Ntpb = raw_hdr.blocsize / (2 * Np * Nc * (Nbps/8));
@@ -499,16 +508,41 @@ char tmp[16];
         fprintf(stderr, "TBIN     = %g\n",  raw_hdr.tbin);
 #endif // VERBOSE
 
+
+        // If processing a specific antenna
+        if(ant != -1) {
+          // Validate ant
+          if(ant > raw_hdr.nants) {
+            printf("bad antenna selection: ant > nants (%u > %d)\n",
+                ant, raw_hdr.nants);
+            close(fdin);
+            break; // Goto next stem
+          }
+
+          // Set Nc to NcAnt and skip previous antennas
+          printf("Selection of antenna %d equates to a starting channel of %d\n", ant, ant*NcAnt);
+          schan += ant * NcAnt;
+          Nc = NcAnt;
+        }
+
         // If processing a subset of coarse channels
         if(nchan != 0) {
           // Validate schan and nchan
-          if(nchan != 0 && schan + nchan > Nc) {
+          if(ant == -1 && // no antenna selection
+              (nchan != 0 && schan + nchan > Nc)) {
+
             printf("bad channel range: schan + nchan > obsnchan (%u + %u > %d)\n",
                 schan, nchan, raw_hdr.obsnchan);
             close(fdin);
             break; // Goto next stem
           }
-
+          else if(ant != -1 && // antenna selection
+            (nchan != 0 && nchan > NcAnt)) {
+            printf("bad channel range: nchan > antnchan {obsnchan/nants} (%u > %d {%d/%d})\n",
+                nchan, NcAnt, raw_hdr.obsnchan, raw_hdr.nants);
+            close(fdin);
+            break; // Goto next stem
+          }
           // Use nchan as Nc
           Nc = nchan;
         }
