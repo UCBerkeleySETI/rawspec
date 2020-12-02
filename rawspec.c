@@ -33,7 +33,7 @@
 #ifndef DEBUG_CALLBACKS
 #define DEBUG_CALLBACKS (0)
 #endif
-
+// #define VERBOSE
 // Reads `bytes_to_read` bytes from `fd` into the buffer pointed to by `buf`.
 // Returns the total bytes read or -1 on error.  A non-negative return value
 // will be less than `bytes_to_read` only of EOF is reached.
@@ -756,6 +756,9 @@ char tmp[16];
               fprintf(stderr, "\n");
 #endif // VERBOSE
               rawspec_wait_for_completion(&ctx);
+              if(expand4bps_to8bps){
+                rawspec_expand_4bit_blocks(&ctx, ctx.Nb);
+              }
               rawspec_copy_blocks_to_gpu(&ctx, 0, 0, ctx.Nb);
               rawspec_start_processing(&ctx, RAWSPEC_FORWARD_FFT);
             }
@@ -770,10 +773,14 @@ char tmp[16];
 
         // Read ctx.Nc coarse channels from this block
         if(expand4bps_to8bps){
-          bytes_read = read_fully_expanding_4bits(fdin, expansion_lut_8bit_to_16bit, 
-                                  expansion_buf,
+          bytes_read = read_fully(fdin,
                                   ctx.h_blkbufs[bi % ctx.Nb_host],
                                   block_byte_length/2);
+          bytes_read *= 2;
+          // bytes_read = read_fully_expanding_4bits(fdin, expansion_lut_8bit_to_16bit, 
+          //                         expansion_buf,
+          //                         ctx.h_blkbufs[bi % ctx.Nb_host],
+          //                         block_byte_length/2);
         }
         else{
           bytes_read = read_fully(fdin,
@@ -813,6 +820,9 @@ char tmp[16];
           fprintf(stderr, "\n");
 #endif // VERBOSE
           rawspec_wait_for_completion(&ctx);
+          if(expand4bps_to8bps){
+            rawspec_expand_4bit_blocks(&ctx, ctx.Nb);
+          }
           rawspec_copy_blocks_to_gpu(&ctx, 0, 0, ctx.Nb);
           rawspec_start_processing(&ctx, RAWSPEC_FORWARD_FFT);
         }

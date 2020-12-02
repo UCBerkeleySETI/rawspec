@@ -274,6 +274,32 @@ __global__ void accumulate(float * pwr_buf, unsigned int Na, size_t xpitch, size
   pwr_buf[offset0] = sum;
 }
 
+// 4bit Expansion kernel
+// Takes the half full blocks of the fft_in buffer and expands each complex4 byte
+__global__ void copy_expand_complex4(char *complex4_src, char *complex4_dst, size_t width)
+{
+  
+  // grid.x = (width + thread_count - 1) / thread_count;
+  // grid.y = ctx->Nc;
+  // grid.z = num_blocks;
+
+  unsigned int i;
+  off_t offset = threadIdx.x*width + 
+                 blockIdx.z*blockIdx.y*blockIdx.x*width*blockDim.x +
+                            blockIdx.y*blockIdx.x*width*blockDim.x +
+                                       blockIdx.x*width*blockDim.x;
+
+//  (width*blockDim.x)*(blockIdx.x + block)
+
+  char* complex4_src_offset = complex4_src + offset;
+  char* complex4_dst_offset = complex4_dst + offset;
+
+  for(i=0; i<width/2; i++) {
+    complex4_dst_offset[2*i+0] =  ((char)(complex4_src_offset[i]&0xf0))>>4;
+    complex4_dst_offset[2*i+1] = ((char)((complex4_src_offset[i]&0x0f)<<4)) >> 4;
+  }
+}
+
 // Stream callback function that is called right before an output product's GPU
 // power buffer has been copied to the host power buffer.
 static void CUDART_CB pre_dump_stream_callback(cudaStream_t stream,
@@ -1015,6 +1041,68 @@ void rawspec_cleanup(rawspec_context * ctx)
     free(ctx->gpu_ctx);
     ctx->gpu_ctx = NULL;
   }
+}
+
+int rawspec_expand_4bit_blocks(rawspec_context * ctx, size_t num_blocks){
+  char *d_blkbufs, *d_blkbufs_expanded;
+  int b;
+  dim3 grid;
+  cudaError_t rc;
+
+  // TODO Store in GPU context?
+  size_t width = ctx->Ntpb * ctx->Np * 2 /*complex*/ * (ctx->Nbps/8);
+  size_t block_size = width * ctx->Nc;
+
+  rc = cudaMalloc(&d_blkbufs, num_blocks*block_size);
+  if(rc != cudaSuccess) {
+    PRINT_ERRMSG(rc);
+    rawspec_cleanup(ctx);
+    return 1;
+  }
+  rc = cudaMalloc(&d_blkbufs_expanded, num_blocks*block_size);
+  if(rc != cudaSuccess) {
+    PRINT_ERRMSG(rc);
+    rawspec_cleanup(ctx);
+    return 1;
+  }
+
+  for(b=0; b < num_blocks; b++) {
+    cudaMemcpy(d_blkbufs + b * block_size, ctx->h_blkbufs[b], block_size, cudaMemcpyHostToDevice);
+  }
+
+
+  // Calculate grid dimensions, fastest to slowest
+  unsigned int thread_count = width/MAX_THREADS;
+  if (width < thread_count){
+    thread_count = width;
+  }
+  // TODO if (width % thread_count != 0)
+
+  grid.x = (width + thread_count - 1) / thread_count;
+  grid.y = ctx->Nc;
+  grid.z = num_blocks;
+  unsigned int pcount = grid.x * grid.y * grid.z
+
+
+
+  fprintf(stderr, "Parallelisation grid: (%u, %u, %u) %u threads\n", grid.x, grid.y, grid.z, thread_count);
+  fprintf(stderr, "ctx->Ntpb: %u\n", ctx->Ntpb);
+  fprintf(stderr, "width: %lu\n", width);
+  fprintf(stderr, "width/thread_count: %lu\n", width/thread_count);
+  fprintf(stderr, "num_blocks: %lu\n", num_blocks);
+  fprintf(stderr, "<<<(num_blocks + ctx->Nc-1) / ctx->Nc (%lu), ctx->Nc (%u)>>>\n", (num_blocks + ctx->Nc-1) / ctx->Nc, ctx->Nc);
+  copy_expand_complex4<<<grid, thread_count>>>(d_blkbufs, d_blkbufs_expanded, width/thread_count);
+
+  // copy_expand_complex4<<<1, 1>>>(d_blkbufs, d_blkbufs_expanded, num_blocks*block_size);
+
+  for(b=0; b < num_blocks; b++) {
+    cudaMemcpy(ctx->h_blkbufs[b], d_blkbufs_expanded + b * block_size, block_size, cudaMemcpyDeviceToHost);
+  }
+
+  cudaFree(d_blkbufs);
+  cudaFree(d_blkbufs_expanded);
+
+  return 0;
 }
 
 // Copy `ctx->h_blkbufs` to GPU input buffer.

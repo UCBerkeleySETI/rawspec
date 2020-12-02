@@ -4,12 +4,14 @@ INCDIR = $(PREFIX)/include
 LIBDIR = $(PREFIX)/lib
 DATADIR = $(PREFIX)/share
 
-CUDA_DIR ?= /usr/local/cuda-8.0
+CUDA_DIR ?= /usr/local/cuda-10.2
 CUDA_PATH ?= $(CUDA_DIR)
 
 CC=gcc
 HOST_COMPILER ?= $(CC)
 NVCC          := $(CUDA_PATH)/bin/nvcc -ccbin $(HOST_COMPILER)
+
+# VERBOSE_ALLOC=1
 
 CFLAGS = -ggdb -fPIC
 ifdef DEBUG_CALLBACKS
