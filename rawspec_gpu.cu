@@ -276,25 +276,17 @@ __global__ void accumulate(float * pwr_buf, unsigned int Na, size_t xpitch, size
 
 // 4bit Expansion kernel
 // Takes the half full blocks of the fft_in buffer and expands each complex4 byte
-__global__ void copy_expand_complex4(char *complex4_src, char *complex4_dst, size_t width)
+__global__ void copy_expand_complex4(char *complex4_src, char *complex4_dst,
+                                     size_t block_pitch, size_t channel_pitch, size_t thread_pitch)
 {
-  
-  // grid.x = (width + thread_count - 1) / thread_count;
-  // grid.y = ctx->Nc;
-  // grid.z = num_blocks;
-
   unsigned int i;
-  off_t offset = threadIdx.x*width + 
-                 blockIdx.z*blockIdx.y*blockIdx.x*width*blockDim.x +
-                            blockIdx.y*blockIdx.x*width*blockDim.x +
-                                       blockIdx.x*width*blockDim.x;
+  off_t offset = blockIdx.y*channel_pitch +
+                 ((blockIdx.x*blockDim.x + threadIdx.x)*thread_pitch);
 
-//  (width*blockDim.x)*(blockIdx.x + block)
+  char* complex4_src_offset = complex4_src + blockIdx.z*block_pitch + offset;
+  char* complex4_dst_offset = complex4_dst + blockIdx.z*block_pitch + 2*offset;
 
-  char* complex4_src_offset = complex4_src + offset;
-  char* complex4_dst_offset = complex4_dst + offset;
-
-  for(i=0; i<width/2; i++) {
+  for(i=0; i<thread_pitch; i++) {
     complex4_dst_offset[2*i+0] =  ((char)(complex4_src_offset[i]&0xf0))>>4;
     complex4_dst_offset[2*i+1] = ((char)((complex4_src_offset[i]&0x0f)<<4)) >> 4;
   }
@@ -1072,28 +1064,14 @@ int rawspec_expand_4bit_blocks(rawspec_context * ctx, size_t num_blocks){
 
 
   // Calculate grid dimensions, fastest to slowest
-  unsigned int thread_count = width/MAX_THREADS;
-  if (width < thread_count){
-    thread_count = width;
-  }
-  // TODO if (width % thread_count != 0)
+  unsigned int thread_count = 1;
 
-  grid.x = (width + thread_count - 1) / thread_count;
-  grid.y = ctx->Nc;
   grid.z = num_blocks;
-  unsigned int pcount = grid.x * grid.y * grid.z
-
-
-
-  fprintf(stderr, "Parallelisation grid: (%u, %u, %u) %u threads\n", grid.x, grid.y, grid.z, thread_count);
-  fprintf(stderr, "ctx->Ntpb: %u\n", ctx->Ntpb);
-  fprintf(stderr, "width: %lu\n", width);
-  fprintf(stderr, "width/thread_count: %lu\n", width/thread_count);
-  fprintf(stderr, "num_blocks: %lu\n", num_blocks);
-  fprintf(stderr, "<<<(num_blocks + ctx->Nc-1) / ctx->Nc (%lu), ctx->Nc (%u)>>>\n", (num_blocks + ctx->Nc-1) / ctx->Nc, ctx->Nc);
-  copy_expand_complex4<<<grid, thread_count>>>(d_blkbufs, d_blkbufs_expanded, width/thread_count);
-
-  // copy_expand_complex4<<<1, 1>>>(d_blkbufs, d_blkbufs_expanded, num_blocks*block_size);
+  grid.y = ctx->Nc;
+  grid.x = 32; // TODO grid.x = gcd(MAX_THREADS, width);
+  
+  copy_expand_complex4<<<grid, thread_count>>>(d_blkbufs, d_blkbufs_expanded,
+                                               block_size, width/2, width/(2*grid.x*thread_count));
 
   for(b=0; b < num_blocks; b++) {
     cudaMemcpy(ctx->h_blkbufs[b], d_blkbufs_expanded + b * block_size, block_size, cudaMemcpyDeviceToHost);

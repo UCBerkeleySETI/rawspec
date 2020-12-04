@@ -59,51 +59,6 @@ ssize_t read_fully(int fd, void * buf, size_t bytes_to_read)
   return total_bytes_read;
 }
 
-#define expand_complex4(signed_byte_val) \
-		__bswap_16(	(((short)signed_byte_val<<4)&0x0f00) \
-		|  ((char)(signed_byte_val   )&0x0f))
-
-#define expand_complex4_signed(signed_byte_val) \
-		__bswap_16(	(((short)signed_byte_val<<4)&0xff00) \
-		| (((char)(signed_byte_val<<4) >> 4)&0xff))
-
-void fill_expansion_lut_8bit_to_16bit(uint16_t *exp_compl4_lut){
-  for(int i = 0; i<256; i++)
-    exp_compl4_lut[i] =  expand_complex4_signed((int8_t) i);
-}
-
-// Reads `bytes_to_read` bytes from `fd` into the buffer pointed to a provided
-// scratch `rawbuf`, and expand each complex4bit byte to 2 bytes, filling `buf`.
-// `rawbuf` must be malloc'd `bytes_to_read` and managed by caller.
-// Returns the total bytes read or -1 on error.  A non-negative return value
-// will be less than `bytes_to_read` only of EOF is reached.
-ssize_t read_fully_expanding_4bits(int fd, uint16_t *exp_compl4_lut, 
-                                   void *rawbuf, void *buf, size_t bytes_to_read)
-{
-  ssize_t bytes_read;
-  ssize_t total_bytes_read = 0;
-
-  while(bytes_to_read > 0) {
-    bytes_read = read(fd, rawbuf, bytes_to_read);
-    if(bytes_read <= 0) {
-      if(bytes_read == 0) {
-        break;
-      } else {
-        return -1;
-      }
-    }
-    bytes_to_read -= bytes_read;
-    total_bytes_read += bytes_read;
-    while(bytes_read-- > 0){
-      *((uint16_t *)buf) =  exp_compl4_lut[*((uint8_t *) rawbuf)];
-      buf += 2;
-      rawbuf ++;
-    }
-  }
-
-  return total_bytes_read*2;
-}
-
 static struct option long_opts[] = {
   {"dest",    1, NULL, 'd'},
   {"ffts",    1, NULL, 'f'},
@@ -199,8 +154,6 @@ char tmp[16];
   unsigned int Nbps; // Number of bits per sample
   uint64_t block_byte_length; // Compute the length once
   char expand4bps_to8bps; // Expansion flag
-  void *expansion_buf = NULL;
-  uint16_t expansion_lut_8bit_to_16bit[256];
   int64_t pktidx0;
   int64_t pktidx;
   int64_t dpktidx;
@@ -601,12 +554,6 @@ char tmp[16];
               printf("CUDA memory initialised for %d bits per sample,\n\t"
                      "will expand header specified %d bits per sample.\n", ctx.Nbps, Nbps);
               expand4bps_to8bps = 1;
-              fill_expansion_lut_8bit_to_16bit(expansion_lut_8bit_to_16bit);
-              
-              if (expansion_buf){
-                free(expansion_buf);
-              }
-              expansion_buf = (void *)malloc(block_byte_length/2);
             }
 
             // Copy fields from ctx to cb_data
@@ -772,20 +719,11 @@ char tmp[16];
         lseek(fdin, (2 * ctx.Np * schan * ctx.Nbps)/8 * ctx.Ntpb, SEEK_CUR);
 
         // Read ctx.Nc coarse channels from this block
+        bytes_read = read_fully(fdin,
+                                ctx.h_blkbufs[bi % ctx.Nb_host],
+                                (expand4bps_to8bps ? block_byte_length/2 : block_byte_length));
         if(expand4bps_to8bps){
-          bytes_read = read_fully(fdin,
-                                  ctx.h_blkbufs[bi % ctx.Nb_host],
-                                  block_byte_length/2);
           bytes_read *= 2;
-          // bytes_read = read_fully_expanding_4bits(fdin, expansion_lut_8bit_to_16bit, 
-          //                         expansion_buf,
-          //                         ctx.h_blkbufs[bi % ctx.Nb_host],
-          //                         block_byte_length/2);
-        }
-        else{
-          bytes_read = read_fully(fdin,
-                                  ctx.h_blkbufs[bi % ctx.Nb_host],
-                                  block_byte_length);
         }
 
         // Seek past channels after schan+nchan
@@ -873,9 +811,6 @@ char tmp[16];
 
   // Final cleanup
   rawspec_cleanup(&ctx);
-  if(expansion_buf){
-    free(expansion_buf);
-  }
 
   // Close sockets (or should-"never"-happen unclosed files)
   for(i=0; i<ctx.No; i++) {
