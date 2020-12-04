@@ -1059,16 +1059,15 @@ int rawspec_expand_4bit_blocks(rawspec_context * ctx, size_t num_blocks){
   }
 
   for(b=0; b < num_blocks; b++) {
-    cudaMemcpy(d_blkbufs + b * block_size, ctx->h_blkbufs[b], block_size, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_blkbufs + b * block_size, ctx->h_blkbufs[b], block_size/2, cudaMemcpyHostToDevice);
   }
-
 
   // Calculate grid dimensions, fastest to slowest
   unsigned int thread_count = 1;
 
   grid.z = num_blocks;
   grid.y = ctx->Nc;
-  grid.x = 32; // TODO grid.x = gcd(MAX_THREADS, width);
+  grid.x = ctx->Ntpb;
   
   copy_expand_complex4<<<grid, thread_count>>>(d_blkbufs, d_blkbufs_expanded,
                                                block_size, width/2, width/(2*grid.x*thread_count));
