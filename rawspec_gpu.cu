@@ -1084,6 +1084,52 @@ int rawspec_expand_4bit_blocks(rawspec_context * ctx, size_t num_blocks){
 
 // Copy `ctx->h_blkbufs` to GPU input buffer.
 // Returns 0 on success, non-zero on error.
+int rawspec_copy_blocks_to_gpu_expanding_complex4(rawspec_context * ctx, size_t num_blocks)
+{
+  int b;
+  cudaError_t rc;
+  rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
+
+  char *d_blkbufs;
+  dim3 grid;
+
+  // TODO Store in GPU context?
+  size_t width = ctx->Ntpb * ctx->Np * 2 /*complex*/ * (ctx->Nbps/8);
+  size_t block_size = width * ctx->Nc;
+
+  rc = cudaMalloc(&d_blkbufs, num_blocks*block_size);
+  if(rc != cudaSuccess) {
+    PRINT_ERRMSG(rc);
+    rawspec_cleanup(ctx);
+    return 1;
+  }
+
+
+  for(b=0; b < num_blocks; b++) {
+    rc = cudaMemcpy(d_blkbufs + b * block_size, ctx->h_blkbufs[b], block_size/2, cudaMemcpyHostToDevice);
+
+    if(rc != cudaSuccess) {
+      PRINT_ERRMSG(rc);
+      return 1;
+    }
+  }
+  
+  // Calculate grid dimensions, fastest to slowest
+  unsigned int thread_count = 1;
+
+  grid.z = num_blocks;
+  grid.y = ctx->Nc;
+  grid.x = ctx->Ntpb;
+  
+  copy_expand_complex4<<<grid, thread_count>>>(d_blkbufs, gpu_ctx->d_fft_in,
+                                               block_size, width/2, width/(2*grid.x*thread_count));
+
+  cudaFree(d_blkbufs);
+  return 0;
+}
+
+// Copy `ctx->h_blkbufs` to GPU input buffer.
+// Returns 0 on success, non-zero on error.
 int rawspec_copy_blocks_to_gpu(rawspec_context * ctx,
     off_t src_idx, off_t dst_idx, size_t num_blocks)
 {
