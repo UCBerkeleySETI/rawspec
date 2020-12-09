@@ -151,7 +151,7 @@ char tmp[16];
   int next_stem = 0;
   int save_headers = 0;
   unsigned int Nc;   // Number of coarse channels across the observation (possibly multi-antenna)
-  unsigned int NcAnt;// Number of coarse channels per antenna
+  unsigned int Ncpa;// Number of coarse channels per antenna
   unsigned int Np;   // Number of polarizations
   unsigned int Ntpb; // Number of time samples per block
   unsigned int Nbps; // Number of bits per sample
@@ -174,7 +174,7 @@ char tmp[16];
   rawspec_raw_hdr_t raw_hdr;
   callback_data_t cb_data[MAX_OUTPUTS];
   rawspec_context ctx;
-  int ant = 0;
+  int ant = -1;
   unsigned int schan = 0;
   unsigned int nchan = 0;
   unsigned int outidx = 0;
@@ -478,7 +478,7 @@ char tmp[16];
 
         // Calculate Ntpb and validate block dimensions
         Nc = raw_hdr.obsnchan;
-        NcAnt = raw_hdr.obsnchan/raw_hdr.nants;
+        Ncpa = raw_hdr.obsnchan/raw_hdr.nants;
         Np = raw_hdr.npol;
         Nbps = raw_hdr.nbits;
         Ntpb = raw_hdr.blocsize / (2 * Np * Nc * (Nbps/8));
@@ -512,17 +512,17 @@ char tmp[16];
         // If processing a specific antenna
         if(ant != -1) {
           // Validate ant
-          if(ant > raw_hdr.nants) {
+          if(ant > raw_hdr.nants - 1) {
             printf("bad antenna selection: ant > nants (%u > %d)\n",
                 ant, raw_hdr.nants);
             close(fdin);
             break; // Goto next stem
           }
 
-          // Set Nc to NcAnt and skip previous antennas
-          printf("Selection of antenna %d equates to a starting channel of %d\n", ant, ant*NcAnt);
-          schan += ant * NcAnt;
-          Nc = NcAnt;
+          // Set Nc to Ncpa and skip previous antennas
+          printf("Selection of antenna %d equates to a starting channel of %d\n", ant, ant*Ncpa);
+          schan += ant * Ncpa;
+          Nc = Ncpa;
         }
 
         // If processing a subset of coarse channels
@@ -537,9 +537,9 @@ char tmp[16];
             break; // Goto next stem
           }
           else if(ant != -1 && // antenna selection
-            (nchan != 0 && nchan > NcAnt)) {
+            (nchan != 0 && nchan > Ncpa)) {
             printf("bad channel range: nchan > antnchan {obsnchan/nants} (%u > %d {%d/%d})\n",
-                nchan, NcAnt, raw_hdr.obsnchan, raw_hdr.nants);
+                nchan, Ncpa, raw_hdr.obsnchan, raw_hdr.nants);
             close(fdin);
             break; // Goto next stem
           }
