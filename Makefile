@@ -1,10 +1,11 @@
-PREFIX = /usr/local
+#PREFIX = /usr/local
+PREFIX = /opt/mnt
 BINDIR = $(PREFIX)/bin
 INCDIR = $(PREFIX)/include
 LIBDIR = $(PREFIX)/lib
 DATADIR = $(PREFIX)/share
 
-CUDA_DIR ?= /usr/local/cuda-10.2
+CUDA_DIR ?= $(CUDA_ROOT)
 CUDA_PATH ?= $(CUDA_DIR)
 
 CC=gcc

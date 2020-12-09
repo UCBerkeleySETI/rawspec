@@ -1,4 +1,5 @@
 #!/bin/bash
+PREFIX_EXEC=/opt/mnt/bin/
 
 # -f specifies the number of fine channels, equalling the number of timesamples used per output.
 # -t specifies the number of time integrations
@@ -6,23 +7,32 @@
 # The output has a shape equal (|SAMPLES|/(|FINE|*|INTEG|), 1, |COARSE|*|FINE|)
 
 
-# echo "8bit GUPPI RAW (random values)"
+echo "8bit GUPPI RAW (random values)"
 
-# rm ./outputs_8bit/guppiSigFile8bit-random.rawspec.0000.fil
-# time rawspec -f 1024 -t 32 -d ./outputs_8bit ./inputs/guppiSigFile8bit-random
-# # time bash ./run_repeat.sh "rawspec -f 1024 -t 32 -d ./outputs_8bit ./inputs/guppiSigFile8bit-random"
+rm ./outputs_8bit/guppiSigFile8bit-random.rawspec.0000.fil
+time ${PREFIX_EXEC}rawspec -f 2 -t 32 -d ./outputs_8bit ./inputs/guppiSigFile8bit-random
+# time bash ./run_repeat.sh "rawspec -f 1 -t 1 -d ./outputs_8bit ./inputs/guppiSigFile8bit-random"
 # # python3 analyse.py ./outputs_8bit/guppiSigFile8bit-random
+# rm ./outputs_8bit/guppiSigFile8bit-smallrandom.rawspec.0000.fil
+# time ${PREFIX_EXEC}rawspec -f 1 -t 1 -d ./outputs_8bit ./inputs/guppiSigFile8bit-smallrandom
+# # time bash ./run_repeat.sh "rawspec -f 1 -t 1 -d ./outputs_8bit ./inputs/guppiSigFile8bit-smallrandom"
+# # python3 analyse.py ./outputs_8bit/guppiSigFile8bit-smallrandom
 
-# echo "4bit GUPPI RAW (random values)"
-
+echo "4bit GUPPI RAW (random values)"
 # rm ./outputs_4bit/guppiSigFile4bit-random.rawspec.0000.fil
-time rawspec -f 1024 -t 32 -d ./outputs_4bit ./inputs_4bit/guppiSigFile4bit-random
-# # time bash ./run_repeat.sh "rawspec -f 1024 -t 32 -d ./outputs_4bit ./inputs_4bit/guppiSigFile4bit-random"
+time ${PREFIX_EXEC}rawspec -f 2 -t 32 -d ./outputs_4bit ./inputs_4bit/guppiSigFile4bit-random
+# # time bash ./run_repeat.sh "rawspec -f 1 -t 1 -d ./outputs_4bit ./inputs_4bit/guppiSigFile4bit-random"
+
+# # rm ./outputs_4bit/guppiSigFile4bit-smallrandom.rawspec.0000.fil
+# time ${PREFIX_EXEC}rawspec -f 1 -t 1 -d ./outputs_4bit ./inputs_4bit/guppiSigFile4bit-smallrandom
+# # # time bash ./run_repeat.sh "rawspec -f 1 -t 1 -d ./outputs_4bit ./inputs_4bit/guppiSigFile4bit-smallrandom"
 
 python3 analyse.py ./outputs_4bit/guppiSigFile4bit-random ./outputs_8bit/guppiSigFile8bit-random
+# python3 analyse.py ./outputs_4bit/guppiSigFile4bit-smallrandom ./outputs_8bit/guppiSigFile8bit-smallrandom
 
 
-# time rawspec -f 1024 -t 32 -a 1 -d ./outputs_8bit ./inputs/guppiSigFile8bit-4ant-ant2nonzero
+
+# time ${PREFIX_EXEC}rawspec -f 1024 -t 32 -a 1 -d ./outputs_8bit ./inputs/guppiSigFile8bit-4ant-ant2nonzero
 # python3 analyse.py ./outputs_8bit/guppiSigFile8bit-4ant-ant2nonzero
 
 # time ./rawspec -f 1024 -t 1 -p 4 -d ./outputs_8bit ./inputs/guppiSigFile8bit-4ant-8chan

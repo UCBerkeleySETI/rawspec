@@ -1,4 +1,4 @@
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 import sys
 import numpy as np
 # import pylab as plt
@@ -26,13 +26,13 @@ if len(sys.argv) == 3:
 	else:
 		print("Sum of differences is", delta_sum, " != 0.")
 
-else:
-	fig = plt.figure()
-	# plot(obs.data)
-	# fig.savefig(stem+'-waterfall.png')
+# else:
+# 	fig = plt.figure()
+# 	# plot(obs.data)
+# 	# fig.savefig(stem+'-waterfall.png')
 
 
-	obs.plot_waterfall()
-	fig.savefig(stem+'-waterfall.png')
-	obs.plot_spectrum()
-	fig.savefig(stem+'-spectra.png')
+# 	obs.plot_waterfall()
+# 	fig.savefig(stem+'-waterfall.png')
+# 	obs.plot_spectrum()
+# 	fig.savefig(stem+'-spectra.png')
