@@ -87,7 +87,7 @@ void usage(const char *argv0) {
     "Usage: %s [options] STEM [...]\n"
     "\n"
     "Options:\n"
-    "  -a, --ant=ANT          The 0-indexed antenna to exclusively process\n"
+    "  -a, --ant=ANT          The 0-indexed antenna to exclusively process [-1]\n"
     "  -d, --dest=DEST        Destination directory or host:port\n"
     "  -f, --ffts=N1[,N2...]  FFT lengths [1048576, 8, 1024]\n"
     "  -g, --GPU=IDX          Select GPU device to use [0]\n"
@@ -512,8 +512,8 @@ char tmp[16];
         // If processing a specific antenna
         if(ant != -1) {
           // Validate ant
-          if(ant > raw_hdr.nants - 1) {
-            printf("bad antenna selection: ant > nants (%u > %d)\n",
+          if(ant > raw_hdr.nants - 1 || ant < 0) {
+            printf("bad antenna selection: ant <> {0, nants} (%u <> {0, %d})\n",
                 ant, raw_hdr.nants);
             close(fdin);
             break; // Goto next stem
