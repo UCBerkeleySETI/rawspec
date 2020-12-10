@@ -276,6 +276,10 @@ __global__ void accumulate(float * pwr_buf, unsigned int Na, size_t xpitch, size
 
 // 4bit Expansion kernel
 // Takes the half full blocks of the fft_in buffer and expands each complex4 byte
+// Expectation of blockIdx, with a single thread each:
+// grid.x = ctx->Ntpb;
+// grid.y = ctx->Nc;
+// grid.z = num_blocks;
 __global__ void copy_expand_complex4(char *complex4_dst, char *complex4_src,
                                      size_t block_pitch, size_t channel_pitch, size_t thread_pitch)
 {
@@ -288,7 +292,7 @@ __global__ void copy_expand_complex4(char *complex4_dst, char *complex4_src,
 
   for(i=0; i<thread_pitch; i++) {
     complex4_dst_offset[2*i+0] =  ((char)(complex4_src_offset[i]&0xf0))>>4;
-    complex4_dst_offset[2*i+1] = ((char)((complex4_src_offset[i]&0x0f)<<4)) >> 4;
+    complex4_dst_offset[2*i+1] = ((char)((complex4_src_offset[i]&0x0f)<<4)) >> 4;// <<-cast captures nibble's sign bit
   }
 }
 
@@ -1070,9 +1074,9 @@ int rawspec_copy_blocks_to_gpu_expanding_complex4(rawspec_context * ctx, size_t 
   // Calculate grid dimensions, fastest to slowest
   unsigned int thread_count = 1;
 
-  grid.z = num_blocks;
-  grid.y = ctx->Nc;
   grid.x = ctx->Ntpb;
+  grid.y = ctx->Nc;
+  grid.z = num_blocks;
   
   copy_expand_complex4<<<grid, thread_count>>>(d_blkbufs, gpu_ctx->d_fft_in,
                                                block_size, width/2, width/(2*grid.x*thread_count));
