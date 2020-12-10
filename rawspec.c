@@ -510,25 +510,30 @@ char tmp[16];
 
         // If splitting output per antenna, re-alloc the fd array.
         if(per_ant_out) {
-          printf("Splitting output per %d antennas\n",
-              raw_hdr.nants);
-          // close previous
-          for(i=0; i<ctx.No; i++) {
-            if (cb_data[i].Nant != raw_hdr.nants){
+          if(output_mode == RAWSPEC_FILE){
+            printf("Splitting output per %d antennas\n",
+                raw_hdr.nants);
+            // close previous
+            for(i=0; i<ctx.No; i++) {
+              if (cb_data[i].Nant != raw_hdr.nants){
 
-              for(j=0; j<cb_data[i].Nant; j++) {
-                if(cb_data[i].fd[j] != -1) {
-                  close(cb_data[i].fd[j]);
-                  cb_data[i].fd[j] = -1;
+                for(j=0; j<cb_data[i].Nant; j++) {
+                  if(cb_data[i].fd[j] != -1) {
+                    close(cb_data[i].fd[j]);
+                    cb_data[i].fd[j] = -1;
+                  }
                 }
-              }
-              free(cb_data[i].fd);
+                free(cb_data[i].fd);
 
-              cb_data[i].Nant = raw_hdr.nants;
-              // Re-init callback file descriptors to sentinal values
-              cb_data[i].fd = malloc(sizeof(int)*cb_data[i].Nant);
-              memset(cb_data[i].fd, -1, cb_data[i].Nant);
+                cb_data[i].Nant = raw_hdr.nants;
+                // Re-init callback file descriptors to sentinal values
+                cb_data[i].fd = malloc(sizeof(int)*cb_data[i].Nant);
+                memset(cb_data[i].fd, -1, cb_data[i].Nant);
+              }
             }
+          }
+          else{
+            printf("Ignoring --splitant flag in network mode\n");
           }
         }
 
