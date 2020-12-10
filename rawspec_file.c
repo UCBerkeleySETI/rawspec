@@ -43,12 +43,12 @@ int open_output_file_per_antenna(callback_data_t *cb_data, const char * dest, co
   char ant_stem[PATH_MAX+1];
 
   for(int i = 0; i < cb_data->Nant; i++){
-    // if(cb_data->Nant == 1){
-    //   snprintf(ant_stem, PATH_MAX, "%s", stem);
-    // }
-    // else{
+    if(cb_data->Nant == 1){
+      snprintf(ant_stem, PATH_MAX, "%s", stem);
+    }
+    else{
       snprintf(ant_stem, PATH_MAX, "%s-ant%03d", stem, i);
-    // }
+    }
 
     cb_data->fd[i] = open_output_file(dest, ant_stem, output_idx);
     if(cb_data->fd[i] == -1) {
