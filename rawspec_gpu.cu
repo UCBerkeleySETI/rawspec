@@ -1078,7 +1078,7 @@ int rawspec_copy_blocks_to_gpu_expanding_complex4(rawspec_context * ctx, size_t 
   grid.y = ctx->Nc;
   grid.z = num_blocks;
   
-  copy_expand_complex4<<<grid, thread_count>>>(d_blkbufs, gpu_ctx->d_fft_in,
+  copy_expand_complex4<<<grid, thread_count>>>(gpu_ctx->d_fft_in, d_blkbufs,
                                                block_size, width/2, width/(2*grid.x*thread_count));
 
   cudaFree(d_blkbufs);
