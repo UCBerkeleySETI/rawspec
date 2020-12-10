@@ -5,7 +5,8 @@
 #include "rawspec_fbutils.h"
 
 typedef struct {
-  int fd; // Output file descriptor or socket
+  int *fd; // Output file descriptors (one for each antenna) or socket (at most 1)
+  unsigned int Nant; // Number of antenna, splitting Nf per fd
   unsigned int total_spectra;
   unsigned int total_packets;
   unsigned int total_bytes;
