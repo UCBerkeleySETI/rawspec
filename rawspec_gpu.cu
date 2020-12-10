@@ -276,7 +276,7 @@ __global__ void accumulate(float * pwr_buf, unsigned int Na, size_t xpitch, size
 
 // 4bit Expansion kernel
 // Takes the half full blocks of the fft_in buffer and expands each complex4 byte
-__global__ void copy_expand_complex4(char *complex4_src, char *complex4_dst,
+__global__ void copy_expand_complex4(char *complex4_dst, char *complex4_src,
                                      size_t block_pitch, size_t channel_pitch, size_t thread_pitch)
 {
   unsigned int i;
@@ -1069,7 +1069,7 @@ int rawspec_expand_4bit_blocks(rawspec_context * ctx, size_t num_blocks){
   grid.y = ctx->Nc;
   grid.x = ctx->Ntpb;
   
-  copy_expand_complex4<<<grid, thread_count>>>(d_blkbufs, d_blkbufs_expanded,
+  copy_expand_complex4<<<grid, thread_count>>>(d_blkbufs_expanded, d_blkbufs,
                                                block_size, width/2, width/(2*grid.x*thread_count));
 
   for(b=0; b < num_blocks; b++) {
