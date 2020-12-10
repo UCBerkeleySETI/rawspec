@@ -518,6 +518,13 @@ char tmp[16];
             close(fdin);
             break; // Goto next stem
           }
+          if(schan >= Ncpa) {
+            printf("bad schan specification with antenna selection: "
+                   "schan > antnchan {obsnchan/nants} (%u > %u {%d/%d})\n",
+                schan, Ncpa, raw_hdr.obsnchan, raw_hdr.nants);
+            close(fdin);
+            break; // Goto next stem
+          }
 
           // Set Nc to Ncpa and skip previous antennas
           printf("Selection of antenna %d equates to a starting channel of %d\n", ant, ant*Ncpa);
@@ -529,7 +536,7 @@ char tmp[16];
         if(nchan != 0) {
           // Validate schan and nchan
           if(ant == -1 && // no antenna selection
-              (nchan != 0 && schan + nchan > Nc)) {
+              (schan + nchan > Nc)) {
 
             printf("bad channel range: schan + nchan > obsnchan (%u + %u > %d)\n",
                 schan, nchan, raw_hdr.obsnchan);
@@ -537,9 +544,9 @@ char tmp[16];
             break; // Goto next stem
           }
           else if(ant != -1 && // antenna selection
-            (nchan != 0 && nchan > Ncpa)) {
-            printf("bad channel range: nchan > antnchan {obsnchan/nants} (%u > %d {%d/%d})\n",
-                nchan, Ncpa, raw_hdr.obsnchan, raw_hdr.nants);
+                 (schan + nchan > (ant + 1) * Ncpa)) {
+            printf("bad channel range: schan + nchan > antnchan {obsnchan/nants} (%u + %u > %d {%d/%d})\n",
+                schan - ant * Ncpa, nchan, Ncpa, raw_hdr.obsnchan, raw_hdr.nants);
             close(fdin);
             break; // Goto next stem
           }
