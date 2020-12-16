@@ -10,7 +10,7 @@ extern "C" {
 
 int open_output_file(const char * dest, const char *stem, int output_idx);
 
-int open_output_file_per_antenna(callback_data_t *cb_data, const char * dest, const char *stem, int output_idx);
+int open_output_file_per_antenna_and_write_header(callback_data_t *cb_data, const char * dest, const char *stem, int output_idx);
 
 void dump_file_callback(
     rawspec_context * ctx, int output_product, int callback_type);
