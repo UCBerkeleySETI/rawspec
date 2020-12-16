@@ -44,6 +44,9 @@ void * dump_file_thread_func(void *arg)
   callback_data_t * cb_data = (callback_data_t *)arg;
 
   write(cb_data->fd, cb_data->h_pwrbuf, cb_data->h_pwrbuf_size);
+  if(cb_data->fd_ics && cb_data->h_icsbuf){
+    write(cb_data->fd_ics, cb_data->h_icsbuf, cb_data->h_pwrbuf_size/cb_data->Nant);
+  }
 
   // Increment total spectra counter for this output product
   cb_data->total_spectra += cb_data->Nds;

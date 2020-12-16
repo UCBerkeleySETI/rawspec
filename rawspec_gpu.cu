@@ -66,6 +66,8 @@ typedef struct {
   cufftComplex * d_fft_out;
   // Array of device pointers to power buffers
   float * d_pwr_out[MAX_OUTPUTS];
+  // Array of device pointers to incoherent-sum buffers
+  float * d_ics_out[MAX_OUTPUTS];
   // Array of handles to FFT plans.
   // Each output product gets a pair of plans (one for each pol).
   cufftHandle plan[MAX_OUTPUTS][2];
@@ -272,6 +274,26 @@ __global__ void accumulate(float * pwr_buf, unsigned int Na, size_t xpitch, size
   }
 
   pwr_buf[offset0] = sum;
+}
+
+// Incoherent summation kernal (across antenna)
+__global__ void incoherently_sum(float * pwr_buf, float * incoh_buf, 
+                                 unsigned int Nant, size_t ant_pitch, size_t time_pitch, size_t pol_pitch)
+{
+  unsigned int i;
+
+  // TODO Add check for past end of spectrum
+
+  off_t offset_ics = blockIdx.z * pol_pitch
+                + blockIdx.y * time_pitch;
+  off_t offset_pwr = offset_ics;
+
+  off_t offset = offset0;
+
+  for(i=1; i<Nant; i++) {
+    offset_pwr += ant_pitch;
+    incoh_buf[offset_ics] pwr_buf[offset];
+  }
 }
 
 // Stream callback function that is called right before an output product's GPU
@@ -482,6 +504,7 @@ int rawspec_initialize(rawspec_context * ctx)
   // TODO Add support for client managed host buffers
   for(i=0; i < MAX_OUTPUTS; i++) {
     ctx->h_pwrbuf[i] = NULL;
+    ctx->h_icsbuf[i] = NULL;
   }
   ctx->gpu_ctx = NULL;
 
@@ -600,6 +623,16 @@ int rawspec_initialize(rawspec_context * ctx)
       rawspec_cleanup(ctx);
       return 1;
     }
+    if(ctx->incoherently_sum == 1){// TODO validate that Nant > 1
+      cuda_rc = cudaHostAlloc(&ctx->h_icsbuf[i], ctx->h_pwrbuf_size[i]/ctx->Nant,
+                        cudaHostAllocDefault);
+
+      if(cuda_rc != cudaSuccess) {
+        PRINT_ERRMSG(cuda_rc);
+        rawspec_cleanup(ctx);
+        return 1;
+      }
+    }
   }
 
   // Allocate buffers
@@ -708,6 +741,24 @@ int rawspec_initialize(rawspec_context * ctx)
       PRINT_ERRMSG(cuda_rc);
       rawspec_cleanup(ctx);
       return 1;
+    }
+
+    if(ctx->incoherently_sum){
+      cuda_rc = cudaMalloc(&gpu_ctx->d_ics_out[i],
+          abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float)/ctx->Nant);
+      if(cuda_rc != cudaSuccess) {
+        PRINT_ERRMSG(cuda_rc);
+        rawspec_cleanup(ctx);
+        return 1;
+      }
+      // Clear incoherent-sum output buffer
+      cuda_rc = cudaMemset(gpu_ctx->d_ics_out[i], 0,
+          abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float)/ctx->Nant);
+      if(cuda_rc != cudaSuccess) {
+        PRINT_ERRMSG(cuda_rc);
+        rawspec_cleanup(ctx);
+        return 1;
+      }
     }
     // Save pointer to FFT output buffer in store_cb_data
     h_scb_data.fft_out_pol0 = gpu_ctx->d_fft_out;
@@ -963,6 +1014,10 @@ void rawspec_cleanup(rawspec_context * ctx)
       cudaFreeHost(ctx->h_pwrbuf[i]);
       ctx->h_pwrbuf[i] = NULL;
     }
+    if(ctx->h_icsbuf[i]) {
+      cudaFreeHost(ctx->h_icsbuf[i]);
+      ctx->h_icsbuf[i] = NULL;
+    }
   }
 
   if(ctx->gpu_ctx) {
@@ -1004,6 +1059,9 @@ void rawspec_cleanup(rawspec_context * ctx)
     for(i=0; i<MAX_OUTPUTS; i++) {
       if(gpu_ctx->d_pwr_out[i]) {
         cudaFree(gpu_ctx->d_pwr_out[i]);
+      }
+      if(gpu_ctx->d_ics_out[i]) {
+        cudaFree(gpu_ctx->d_ics_out[i]);
       }
       for(p=0; p<2; p++) {
         if(gpu_ctx->plan[i][p] != NO_PLAN) {
