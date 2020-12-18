@@ -719,7 +719,7 @@ char tmp[16];
         } // irregular pktidx step
 
         // Seek past first schan channel
-        lseek(fdin, (2 * ctx.Np * schan * ctx.Nbps)/8 * ctx.Ntpb, SEEK_CUR);
+        lseek(fdin, (2 * ctx.Np * schan * Nbps)/8 * ctx.Ntpb, SEEK_CUR);
 
         // Read ctx.Nc coarse channels from this block
         bytes_read = read_fully(fdin,
@@ -730,7 +730,7 @@ char tmp[16];
         }
 
         // Seek past channels after schan+nchan
-        lseek(fdin, (2 * ctx.Np * (raw_hdr.obsnchan-(schan+Nc)) * ctx.Nbps)/8 * ctx.Ntpb, SEEK_CUR);
+        lseek(fdin, (2 * ctx.Np * (raw_hdr.obsnchan-(schan+Nc)) * Nbps)/8 * ctx.Ntpb, SEEK_CUR);
 
         if(bytes_read == -1) {
           perror("read");
