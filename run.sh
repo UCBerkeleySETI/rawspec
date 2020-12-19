@@ -53,16 +53,25 @@ time ./rawspec -f 2 -t 2 -a 2 -d ./outputs_8bit/ant_2 ./inputs/guppiSigFile8bit-
 time ./rawspec -f 2 -t 2 -a 3 -d ./outputs_8bit/ant_3 ./inputs/guppiSigFile8bit-4ant-ant2nonzero
 # python3 analyse.py ./outputs_8bit/ant_3/guppiSigFile8bit-4ant-ant2nonzero ./outputs_8bit/per_ant_out/guppiSigFile8bit-4ant-ant2nonzero-ant003
 
-# rawspec -f 2 -t 2 -S -d ./outputs_4bit/per_ant_out ./inputs_4bit/guppiSigFile4bit-4ant-ant2nonzero
 
-# rawspec -f 2 -t 2 -a 0 -d ./outputs_4bit/ant_0 ./inputs_4bit/guppiSigFile4bit-4ant-ant2nonzero
+#########################
+
+time ./rawspec -f 2 -t 2  -d ./outputs_4bit/per_ant_out ./inputs_4bit/guppiSigFile4bit-4ant-ant2nonzero
+time ./rawspec -f 2 -t 2 -S -d ./outputs_4bit/per_ant_out ./inputs_4bit/guppiSigFile4bit-4ant-ant2nonzero
+
+# python3 analyse.py ./outputs_4bit/per_ant_out/guppiSigFile4bit-4ant-ant2nonzero-ant000
+# python3 analyse.py ./outputs_4bit/per_ant_out/guppiSigFile4bit-4ant-ant2nonzero-ant001
+# python3 analyse.py ./outputs_4bit/per_ant_out/guppiSigFile4bit-4ant-ant2nonzero-ant002
+# python3 analyse.py ./outputs_4bit/per_ant_out/guppiSigFile4bit-4ant-ant2nonzero-ant003
+
+time ./rawspec -f 2 -t 2 -a 0 -d ./outputs_4bit/ant_0 ./inputs_4bit/guppiSigFile4bit-4ant-ant2nonzero
 # python3 analyse.py ./outputs_4bit/ant_0/guppiSigFile4bit-4ant-ant2nonzero ./outputs_4bit/per_ant_out/guppiSigFile4bit-4ant-ant2nonzero-ant000
 
-# rawspec -f 2 -t 2 -a 1 -d ./outputs_4bit/ant_1 ./inputs_4bit/guppiSigFile4bit-4ant-ant2nonzero
+time ./rawspec -f 2 -t 2 -a 1 -d ./outputs_4bit/ant_1 ./inputs_4bit/guppiSigFile4bit-4ant-ant2nonzero
 # python3 analyse.py ./outputs_4bit/ant_1/guppiSigFile4bit-4ant-ant2nonzero ./outputs_4bit/per_ant_out/guppiSigFile4bit-4ant-ant2nonzero-ant001
 
-# rawspec -f 2 -t 2 -a 2 -d ./outputs_4bit/ant_2 ./inputs_4bit/guppiSigFile4bit-4ant-ant2nonzero
+time ./rawspec -f 2 -t 2 -a 2 -d ./outputs_4bit/ant_2 ./inputs_4bit/guppiSigFile4bit-4ant-ant2nonzero
 # python3 analyse.py ./outputs_4bit/ant_2/guppiSigFile4bit-4ant-ant2nonzero ./outputs_4bit/per_ant_out/guppiSigFile4bit-4ant-ant2nonzero-ant002
 
-# rawspec -f 2 -t 2 -a 3 -d ./outputs_4bit/ant_3 ./inputs_4bit/guppiSigFile4bit-4ant-ant2nonzero
+time ./rawspec -f 2 -t 2 -a 3 -d ./outputs_4bit/ant_3 ./inputs_4bit/guppiSigFile4bit-4ant-ant2nonzero
 # python3 analyse.py ./outputs_4bit/ant_3/guppiSigFile4bit-4ant-ant2nonzero ./outputs_4bit/per_ant_out/guppiSigFile4bit-4ant-ant2nonzero-ant003
