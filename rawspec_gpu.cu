@@ -277,22 +277,17 @@ __global__ void accumulate(float * pwr_buf, unsigned int Na, size_t xpitch, size
 }
 
 // Incoherent summation kernal (across antenna)
-__global__ void incoherently_sum(float * pwr_buf, float * incoh_buf, 
-                                 unsigned int Nant, size_t ant_pitch, size_t time_pitch, size_t pol_pitch)
+__global__ void incoherent_sum(float * pwr_buf, float * incoh_buf, 
+                                 unsigned int Nant, size_t ant_pitch, size_t pol_pitch, size_t spectra_pitch)
 {
-  unsigned int i;
 
-  // TODO Add check for past end of spectrum
-
-  off_t offset_ics = blockIdx.z * pol_pitch
-                + blockIdx.y * time_pitch;
+  off_t offset_ics = blockIdx.z * spectra_pitch
+                + blockIdx.y * pol_pitch;
   off_t offset_pwr = offset_ics;
 
-  off_t offset = offset0;
-
-  for(i=1; i<Nant; i++) {
+  for(unsigned int i=1; i<Nant; i++) {
+    incoh_buf[offset_ics] += pwr_buf[offset_pwr];
     offset_pwr += ant_pitch;
-    incoh_buf[offset_ics] pwr_buf[offset];
   }
 }
 
@@ -1175,6 +1170,8 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
   cufftResult cufft_rc;
   rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
   size_t fft_outbuf_length;
+  dim3 grid_ics;
+  grid_ics.x = 1;
 
   // Increment inbuf_count
   gpu_ctx->inbuf_count++;
@@ -1281,6 +1278,26 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
           // Increment src and dst pointers
           src += ctx->Nts[i] * ctx->Nas[i];
           dst += abs(ctx->Npolout[i]) * ctx->Nts[i] * ctx->Nc;
+        }
+      }
+
+      if(ctx->incoherently_sum){
+        grid_ics.y = abs(ctx->Npolout[i]);
+        grid_ics.z = ctx->Nds[i];
+
+        incoherent_sum<<<grid_ics, 1>>>(gpu_ctx->d_pwr_out[i], gpu_ctx->d_ics_out[i], ctx->Nant,
+                                        gpu_ctx->Nss[i] * ctx->Nts[i]/ctx->Nant, // Antenna pitch
+                                        ctx->Nb*ctx->Ntpb*ctx->Nc, // Polarisation pitch
+                                        ctx->Nts[i] * ctx->Nas[i]); // Spectra pitch
+        
+        // Copy store_cb_data_t array from host to device
+        cuda_rc = cudaMemcpy(gpu_ctx->d_ics_out[i],
+          ctx->h_icsbuf[i],
+          ctx->h_pwrbuf_size[i]/ctx->Nant,
+          cudaMemcpyDeviceToHost);
+        if(cuda_rc != cudaSuccess) {
+          PRINT_ERRMSG(cuda_rc);
+          return 1;
         }
       }
 

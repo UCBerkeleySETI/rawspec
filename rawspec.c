@@ -64,6 +64,7 @@ static struct option long_opts[] = {
   {"ffts",    1, NULL, 'f'},
   {"gpu",     1, NULL, 'g'},
   {"hdrs",    0, NULL, 'H'},
+  {"ics",     0, NULL, 'i'},
   {"nchan",   1, NULL, 'n'},
   {"outidx",  1, NULL, 'o'},
   {"pols",    1, NULL, 'p'},
@@ -90,6 +91,7 @@ void usage(const char *argv0) {
     "  -f, --ffts=N1[,N2...]  FFT lengths [1048576, 8, 1024]\n"
     "  -g, --GPU=IDX          Select GPU device to use [0]\n"
     "  -H, --hdrs             Save headers to separate file\n"
+    "  -i, --ics              Incoherent-sum output\n"
     "  -n, --nchan=N          Number of coarse channels to process [all]\n"
     "  -o, --outidx=N         First index number for output files [0]\n"
     "  -p  --pols={1|4}[,...] Number of output polarizations [1]\n"
@@ -191,7 +193,7 @@ char tmp[16];
 
   // Parse command line.
   argv0 = argv[0];
-  while((opt=getopt_long(argc,argv,"d:f:g:Hn:o:p:r:s:t:hv:i",long_opts,NULL))!=-1) {
+  while((opt=getopt_long(argc,argv,"d:f:g:Hin:o:p:r:s:t:hv",long_opts,NULL))!=-1) {
     switch (opt) {
       case 'h': // Help
         usage(argv0);
@@ -435,7 +437,7 @@ char tmp[16];
         free(ics_output_stem);
       }
       ics_output_stem = malloc(strlen(argv[si])+5);
-      snprintf(ics_output_stem, strlen(argv[si])+5, "%s-ics\0", argv[si]);
+      snprintf(ics_output_stem, strlen(argv[si])+5, "%s-ics", argv[si]);
     }
 
     // bi is the block counter for the entire sequence of files for this stem.
@@ -635,10 +637,10 @@ char tmp[16];
                 return 1; // Give up
               }
 
-              cb_data[i].fb_hdr.nchans /= ctx->Nant;
+              cb_data[i].fb_hdr.nchans /= ctx.Nant;
               // Write filterbank header to output file
               fb_fd_write_header(cb_data[i].fd_ics, &cb_data[i].fb_hdr);
-              cb_data[i].fb_hdr.nchans *= ctx->Nant;
+              cb_data[i].fb_hdr.nchans *= ctx.Nant;
             }
           }
         }
@@ -820,13 +822,16 @@ char tmp[16];
           close(cb_data[i].fd);
           cb_data[i].fd = -1;
         }
+        if(cb_data[i].fd_ics != -1) {
+          close(cb_data[i].fd_ics);
+          cb_data[i].fd_ics = -1;
+        }
       }
     }
   } // each stem
 
   // Final cleanup
   rawspec_cleanup(&ctx);
-  
   if(ics_output_stem){
     free(ics_output_stem);
   }

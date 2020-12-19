@@ -46,6 +46,7 @@ void * dump_file_thread_func(void *arg)
   write(cb_data->fd, cb_data->h_pwrbuf, cb_data->h_pwrbuf_size);
   if(cb_data->fd_ics && cb_data->h_icsbuf){
     write(cb_data->fd_ics, cb_data->h_icsbuf, cb_data->h_pwrbuf_size/cb_data->Nant);
+    lseek(cb_data->fd_ics, -1*cb_data->h_pwrbuf_size/cb_data->Nant, SEEK_CUR);// Seek so that subsequent calls overwrite
   }
 
   // Increment total spectra counter for this output product
