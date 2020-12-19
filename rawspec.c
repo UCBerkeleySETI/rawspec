@@ -60,6 +60,7 @@ ssize_t read_fully(int fd, void * buf, size_t bytes_to_read)
 }
 
 static struct option long_opts[] = {
+  {"ant",     1, NULL, 'a'},
   {"dest",    1, NULL, 'd'},
   {"ffts",    1, NULL, 'f'},
   {"gpu",     1, NULL, 'g'},
@@ -87,6 +88,7 @@ void usage(const char *argv0) {
     "Usage: %s [options] STEM [...]\n"
     "\n"
     "Options:\n"
+    "  -a, --ant=ANT          The 0-indexed antenna to exclusively process [-1]\n"
     "  -d, --dest=DEST        Destination directory or host:port\n"
     "  -f, --ffts=N1[,N2...]  FFT lengths [1048576, 8, 1024]\n"
     "  -g, --GPU=IDX          Select GPU device to use [0]\n"
@@ -151,7 +153,8 @@ char tmp[16];
   int next_stem = 0;
   int save_headers = 0;
   int per_ant_out = 0;
-  unsigned int Nc;   // Number of coarse channels
+  unsigned int Nc;   // Number of coarse channels across the observation (possibly multi-antenna)
+  unsigned int Ncpa;// Number of coarse channels per antenna
   unsigned int Np;   // Number of polarizations
   unsigned int Ntpb; // Number of time samples per block
   unsigned int Nbps; // Number of bits per sample
@@ -176,6 +179,7 @@ char tmp[16];
   rawspec_raw_hdr_t raw_hdr;
   callback_data_t cb_data[MAX_OUTPUTS];
   rawspec_context ctx;
+  int ant = -1;
   unsigned int schan = 0;
   unsigned int nchan = 0;
   unsigned int outidx = 0;
@@ -194,11 +198,15 @@ char tmp[16];
 
   // Parse command line.
   argv0 = argv[0];
-  while((opt=getopt_long(argc,argv,"d:f:g:Hn:o:p:r:Ss:t:hv",long_opts,NULL))!=-1) {
+  while((opt=getopt_long(argc,argv,"a:d:f:g:Hn:o:p:r:Ss:t:hv",long_opts,NULL))!=-1) {
     switch (opt) {
       case 'h': // Help
         usage(argv0);
         return 0;
+        break;
+
+      case 'a': // Antenna selection to process
+        ant = strtol(optarg, NULL, 0);
         break;
 
       case 'd': // Output destination
@@ -481,6 +489,7 @@ char tmp[16];
 
         // Calculate Ntpb and validate block dimensions
         Nc = raw_hdr.obsnchan;
+        Ncpa = raw_hdr.obsnchan/raw_hdr.nants;
         Np = raw_hdr.npol;
         Nbps = raw_hdr.nbits;
         
@@ -514,6 +523,9 @@ char tmp[16];
         // If splitting output per antenna, re-alloc the fd array.
         if(per_ant_out) {
           if(output_mode == RAWSPEC_FILE){
+            if(ant != -1){
+              printf("Ignoring --ant %d option:\n\t", ant);
+            }
             printf("Splitting output per %d antennas\n",
                 raw_hdr.nants);
             // close previous
@@ -540,16 +552,47 @@ char tmp[16];
           }
         }
 
+        // If processing a specific antenna
+        if(ant != -1 && !per_ant_out) {
+          // Validate ant
+          if(ant > raw_hdr.nants - 1 || ant < 0) {
+            printf("bad antenna selection: ant <> {0, nants} (%u <> {0, %d})\n",
+                ant, raw_hdr.nants);
+            close(fdin);
+            break; // Goto next stem
+          }
+          if(schan >= Ncpa) {
+            printf("bad schan specification with antenna selection: "
+                   "schan > antnchan {obsnchan/nants} (%u > %u {%d/%d})\n",
+                schan, Ncpa, raw_hdr.obsnchan, raw_hdr.nants);
+            close(fdin);
+            break; // Goto next stem
+          }
+
+          // Set Nc to Ncpa and skip previous antennas
+          printf("Selection of antenna %d equates to a starting channel of %d\n", ant, ant*Ncpa);
+          schan += ant * Ncpa;
+          Nc = Ncpa;
+        }
+
         // If processing a subset of coarse channels
         if(nchan != 0) {
           // Validate schan and nchan
-          if(nchan != 0 && schan + nchan > Nc) {
+          if(ant == -1 && // no antenna selection
+              (schan + nchan > Nc)) {
+
             printf("bad channel range: schan + nchan > obsnchan (%u + %u > %d)\n",
                 schan, nchan, raw_hdr.obsnchan);
             close(fdin);
             break; // Goto next stem
           }
-
+          else if(ant != -1 && // antenna selection
+                 (schan + nchan > (ant + 1) * Ncpa)) {
+            printf("bad channel range: schan + nchan > antnchan {obsnchan/nants} (%u + %u > %d {%d/%d})\n",
+                schan - ant * Ncpa, nchan, Ncpa, raw_hdr.obsnchan, raw_hdr.nants);
+            close(fdin);
+            break; // Goto next stem
+          }
           // Use nchan as Nc
           Nc = nchan;
         }
