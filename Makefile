@@ -1,5 +1,5 @@
-PREFIX = /opt/mnt
 # PREFIX = /usr/local
+PREFIX = /opt/mnt
 BINDIR = $(PREFIX)/bin
 INCDIR = $(PREFIX)/include
 LIBDIR = $(PREFIX)/lib
