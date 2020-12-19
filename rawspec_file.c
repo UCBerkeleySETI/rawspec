@@ -6,7 +6,6 @@
 #include <fcntl.h>
 
 #include "rawspec_file.h"
-#include "rawspec_callback.h"
 
 int open_output_file(const char * dest, const char *stem, int output_idx)
 {
@@ -39,11 +38,52 @@ int open_output_file(const char * dest, const char *stem, int output_idx)
   return fd;
 }
 
+int open_output_file_per_antenna_and_write_header(callback_data_t *cb_data, const char * dest, const char *stem, int output_idx)
+{
+  char ant_stem[PATH_MAX+1];
+
+  for(int i = 0; i < cb_data->Nant; i++){
+    if(cb_data->Nant == 1){
+      snprintf(ant_stem, PATH_MAX, "%s", stem);
+    }
+    else{
+      snprintf(ant_stem, PATH_MAX, "%s-ant%03d", stem, i);
+    }
+
+    cb_data->fd[i] = open_output_file(dest, ant_stem, output_idx);
+    if(cb_data->fd[i] == -1) {
+      // If we can't open this output file, we probably won't be able to
+      // open any more output files, so print message and bail out.
+      fprintf(stderr, "cannot open output file, giving up\n");
+      return 1; // Give up
+    }
+
+    // Write filterbank header to output file
+    fb_fd_write_header(cb_data->fd[i], &cb_data->fb_hdr);
+  }
+  return 0;
+}
+
 void * dump_file_thread_func(void *arg)
 {
   callback_data_t * cb_data = (callback_data_t *)arg;
 
-  write(cb_data->fd, cb_data->h_pwrbuf, cb_data->h_pwrbuf_size);
+  if(cb_data->Nant > 1){
+    size_t spectra_stride = cb_data->h_pwrbuf_size / (cb_data->Nds * sizeof(float));
+    size_t pol_stride = spectra_stride / cb_data->fb_hdr.nifs;
+    size_t ant_stride = pol_stride / cb_data->Nant;
+
+    for(size_t k = 0; k < cb_data->Nds; k++){// Spectra out
+      for(size_t j = 0; j < cb_data->fb_hdr.nifs; j++){// Npolout
+        for(size_t i = 0; i < cb_data->Nant; i++){ 
+          write(cb_data->fd[i], cb_data->h_pwrbuf + i * ant_stride + j * pol_stride + k * spectra_stride, ant_stride * sizeof(float));
+        }
+      }
+    }
+  }
+  else{
+    write(cb_data->fd[0], cb_data->h_pwrbuf, cb_data->h_pwrbuf_size);
+  }
 
   // Increment total spectra counter for this output product
   cb_data->total_spectra += cb_data->Nds;

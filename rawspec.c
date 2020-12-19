@@ -69,6 +69,7 @@ static struct option long_opts[] = {
   {"pols",    1, NULL, 'p'},
   {"rate",    1, NULL, 'r'},
   {"schan",   1, NULL, 's'},
+  {"splitant",0, NULL, 'S'},
   {"ints",    1, NULL, 't'},
   {"help",    0, NULL, 'h'},
   {"version", 0, NULL, 'v'},
@@ -97,6 +98,7 @@ void usage(const char *argv0) {
     "  -r, --rate=GBPS        Desired net data rate in Gbps [6.0]\n"
     "  -s, --schan=C          First coarse channel to process [0]\n"
     "  -t, --ints=N1[,N2...]  Spectra to integrate [51, 128, 3072]\n"
+    "  -S, --splitant         Split output into per antenna files\n"
     "\n"
     "  -h, --help             Show this message\n"
     "  -v, --version          Show version and exit\n"
@@ -148,6 +150,7 @@ char tmp[16];
   int fdhdrs = -1;
   int next_stem = 0;
   int save_headers = 0;
+  int per_ant_out = 0;
   unsigned int Nc;   // Number of coarse channels
   unsigned int Np;   // Number of polarizations
   unsigned int Ntpb; // Number of time samples per block
@@ -191,7 +194,7 @@ char tmp[16];
 
   // Parse command line.
   argv0 = argv[0];
-  while((opt=getopt_long(argc,argv,"d:f:g:Hn:o:p:r:s:t:hv",long_opts,NULL))!=-1) {
+  while((opt=getopt_long(argc,argv,"d:f:g:Hn:o:p:r:Ss:t:hv",long_opts,NULL))!=-1) {
     switch (opt) {
       case 'h': // Help
         usage(argv0);
@@ -266,6 +269,10 @@ char tmp[16];
 
       case 's': // First coarse channel to process
         schan = strtoul(optarg, NULL, 0);
+        break;
+
+      case 'S': // Split output per antenna
+        per_ant_out = 1;
         break;
 
       case 't': // Number of spectra to accumumate
@@ -386,11 +393,13 @@ char tmp[16];
     cb_data[i].fb_hdr.nbits  = 32;
     cb_data[i].fb_hdr.nifs   = abs(ctx.Npolout[i]);
     cb_data[i].rate          = rate;
+    cb_data[i].Nant          = 1;
   }
 
   // Init callback file descriptors to sentinal values
   for(i=0; i<ctx.No; i++) {
-    cb_data[i].fd = -1;
+    cb_data[i].fd = malloc(sizeof(int)*cb_data[i].Nant);
+    memset(cb_data[i].fd, -1, cb_data[i].Nant);
   }
 
   // Set output mode specific callback function
@@ -402,14 +411,14 @@ char tmp[16];
 
 #if 1
     // Open socket and store for all output products
-    cb_data[0].fd = open_output_socket(dest, dest_port);
-    if(cb_data[0].fd == -1) {
+    cb_data[0].fd[0] = open_output_socket(dest, dest_port);
+    if(cb_data[0].fd[0] == -1) {
       fprintf(stderr, "cannot open output socket, giving up\n");
       return 1; // Give up
     }
     // Share socket descriptor with other callbacks
     for(i=1; i<ctx.No; i++) {
-      cb_data[i].fd = cb_data[0].fd;
+      cb_data[i].fd[0] = cb_data[0].fd[0];
     }
 #else
     for(i=0; i<ctx.No; i++) {
@@ -501,6 +510,35 @@ char tmp[16];
         fprintf(stderr, "OBSBW    = %g\n",  raw_hdr.obsbw);
         fprintf(stderr, "TBIN     = %g\n",  raw_hdr.tbin);
 #endif // VERBOSE
+
+        // If splitting output per antenna, re-alloc the fd array.
+        if(per_ant_out) {
+          if(output_mode == RAWSPEC_FILE){
+            printf("Splitting output per %d antennas\n",
+                raw_hdr.nants);
+            // close previous
+            for(i=0; i<ctx.No; i++) {
+              if (cb_data[i].Nant != raw_hdr.nants){
+
+                for(j=0; j<cb_data[i].Nant; j++) {
+                  if(cb_data[i].fd[j] != -1) {
+                    close(cb_data[i].fd[j]);
+                    cb_data[i].fd[j] = -1;
+                  }
+                }
+                free(cb_data[i].fd);
+
+                cb_data[i].Nant = raw_hdr.nants;
+                // Re-init callback file descriptors to sentinal values
+                cb_data[i].fd = malloc(sizeof(int)*cb_data[i].Nant);
+                memset(cb_data[i].fd, -1, cb_data[i].Nant);
+              }
+            }
+          }
+          else{
+            printf("Ignoring --splitant flag in network mode\n");
+          }
+        }
 
         // If processing a subset of coarse channels
         if(nchan != 0) {
@@ -602,20 +640,13 @@ char tmp[16];
             - (ctx.Nts[i]/2) * cb_data[i].fb_hdr.foff
             + (schan % (raw_hdr.obsnchan/raw_hdr.nants)) * // Adjust for schan
                 raw_hdr.obsbw / (raw_hdr.obsnchan/raw_hdr.nants);
-          cb_data[i].fb_hdr.nchans = ctx.Nc * ctx.Nts[i];
+          cb_data[i].fb_hdr.nchans = ctx.Nc * ctx.Nts[i] / cb_data[i].Nant;
           cb_data[i].fb_hdr.tsamp = raw_hdr.tbin * ctx.Nts[i] * ctx.Nas[i];
 
           if(output_mode == RAWSPEC_FILE) {
-            cb_data[i].fd = open_output_file(dest, argv[si], outidx + i);
-            if(cb_data[i].fd == -1) {
-              // If we can't open this output file, we probably won't be able to
-              // open any more output files, so print message and bail out.
-              fprintf(stderr, "cannot open output file, giving up\n");
-              return 1; // Give up
+            if(open_output_file_per_antenna_and_write_header(&cb_data[i], dest, argv[si], outidx + i) != 0){
+              return 1; // give up
             }
-
-            // Write filterbank header to output file
-            fb_fd_write_header(cb_data[i].fd, &cb_data[i].fb_hdr);
           }
         }
 
@@ -807,9 +838,11 @@ char tmp[16];
     // Close output files
     if(output_mode == RAWSPEC_FILE) {
       for(i=0; i<ctx.No; i++) {
-        if(cb_data[i].fd != -1) {
-          close(cb_data[i].fd);
-          cb_data[i].fd = -1;
+        for(j=0; j<cb_data[i].Nant; j++) {
+          if(cb_data[i].fd[j] != -1) {
+            close(cb_data[i].fd[j]);
+            cb_data[i].fd[j] = -1;
+          }
         }
       }
     }
@@ -820,10 +853,11 @@ char tmp[16];
 
   // Close sockets (or should-"never"-happen unclosed files)
   for(i=0; i<ctx.No; i++) {
-    if(cb_data[i].fd != -1) {
-      close(cb_data[i].fd);
-      cb_data[i].fd = -1;
+    if(cb_data[i].fd[0] != -1) {
+      close(cb_data[i].fd[0]);
+      cb_data[i].fd[0] = -1;
     }
+    free(cb_data[i].fd);
   }
 
   // Print stats
