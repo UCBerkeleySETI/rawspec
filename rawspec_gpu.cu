@@ -1291,8 +1291,8 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
                                         ctx->Nts[i] * ctx->Nas[i]); // Spectra pitch
         
         // Copy store_cb_data_t array from host to device
-        cuda_rc = cudaMemcpy(gpu_ctx->d_ics_out[i],
-          ctx->h_icsbuf[i],
+        cuda_rc = cudaMemcpy(ctx->h_icsbuf[i],
+          gpu_ctx->d_ics_out[i],
           ctx->h_pwrbuf_size[i]/ctx->Nant,
           cudaMemcpyDeviceToHost);
         if(cuda_rc != cudaSuccess) {
