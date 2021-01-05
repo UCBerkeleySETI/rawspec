@@ -1331,6 +1331,17 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
         PRINT_ERRMSG(cuda_rc);
         return 1;
       }
+      if(ctx->incoherently_sum){
+        // Add ics buffer clearing cudaMemset call to stream
+        cuda_rc = cudaMemsetAsync(gpu_ctx->d_ics_out[i], 0,
+                                  abs(ctx->Npolout[i])*ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float)/ctx->Nant,
+                                  gpu_ctx->compute_stream);
+  
+        if(cuda_rc != cudaSuccess) {
+          PRINT_ERRMSG(cuda_rc);
+          return 1;
+        }
+      }
 
     } // If time to dump
   } // For each output product
