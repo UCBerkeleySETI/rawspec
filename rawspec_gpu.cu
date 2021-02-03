@@ -62,6 +62,8 @@ typedef struct {
 typedef struct {
   // Device pointer to FFT input buffer
   char * d_fft_in;
+  // Device pointer to intermediary buffer for expansion of complex4 samples
+  char * d_blk_expansion_buf;
   // Device pointer to FFT output buffer
   cufftComplex * d_fft_out;
   // Array of device pointers to power buffers
@@ -345,6 +347,7 @@ int rawspec_initialize(rawspec_context * ctx)
 {
   int i;
   int p;
+  char NbpsIsExpanded = 0;
   size_t buf_size;
   size_t work_size = 0;
   store_cb_data_t h_scb_data;
@@ -400,6 +403,7 @@ int rawspec_initialize(rawspec_context * ctx)
         "number of bits per sample must be 8 or 16 (not %d), using 8 bps\n",
         ctx->Nbps);
     fflush(stderr);
+    NbpsIsExpanded = ctx->Nbps == 4;
     ctx->Nbps = 8;
   }
 
@@ -531,6 +535,7 @@ int rawspec_initialize(rawspec_context * ctx)
 
   // NULL out pointers (and invalidate plans)
   gpu_ctx->d_fft_in = NULL;
+  gpu_ctx->d_blk_expansion_buf = NULL;
   gpu_ctx->d_fft_out = NULL;
   gpu_ctx->d_work_area = NULL;
   gpu_ctx->work_size = 0;
@@ -644,6 +649,15 @@ int rawspec_initialize(rawspec_context * ctx)
     PRINT_ERRMSG(cuda_rc);
     rawspec_cleanup(ctx);
     return 1;
+  }
+
+  if(NbpsIsExpanded){
+    cuda_rc = cudaMalloc(&gpu_ctx->d_blk_expansion_buf, buf_size);
+    if(cuda_rc != cudaSuccess) {
+      PRINT_ERRMSG(cuda_rc);
+      rawspec_cleanup(ctx);
+      return 1;
+    }
   }
 
   // Create texture object for device input buffer
@@ -1011,6 +1025,10 @@ void rawspec_cleanup(rawspec_context * ctx)
       cudaFree(gpu_ctx->d_fft_in);
     }
 
+    if(gpu_ctx->d_blk_expansion_buf) {
+      cudaFree(gpu_ctx->d_blk_expansion_buf);
+    }
+
     if(gpu_ctx->d_work_area) {
       cudaFree(gpu_ctx->d_work_area);
     }
@@ -1043,27 +1061,20 @@ void rawspec_cleanup(rawspec_context * ctx)
 // Returns 0 on success, non-zero on error.
 int rawspec_copy_blocks_to_gpu_expanding_complex4(rawspec_context * ctx, size_t num_blocks)
 {
+  if(num_blocks > ctx->Nb){
+    fprintf(stderr, "%s: num_blocks (%lu) > Nb (%u)\n", __FUNCTION__, num_blocks, ctx->Nb);
+  }
+
   int b;
+  dim3 grid;
   cudaError_t rc;
   rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
 
-  char *d_blkbufs;
-  dim3 grid;
-
-  // TODO Store in GPU context?
   size_t width = ctx->Ntpb * ctx->Np * 2 /*complex*/ * (ctx->Nbps/8);
   size_t block_size = width * ctx->Nc;
 
-  rc = cudaMalloc(&d_blkbufs, num_blocks*block_size);
-  if(rc != cudaSuccess) {
-    PRINT_ERRMSG(rc);
-    rawspec_cleanup(ctx);
-    return 1;
-  }
-
-
   for(b=0; b < num_blocks; b++) {
-    rc = cudaMemcpy(d_blkbufs + b * block_size, ctx->h_blkbufs[b], block_size/2, cudaMemcpyHostToDevice);
+    rc = cudaMemcpy(gpu_ctx->d_blk_expansion_buf + b * block_size, ctx->h_blkbufs[b], block_size/2, cudaMemcpyHostToDevice);
 
     if(rc != cudaSuccess) {
       PRINT_ERRMSG(rc);
@@ -1078,10 +1089,9 @@ int rawspec_copy_blocks_to_gpu_expanding_complex4(rawspec_context * ctx, size_t 
   grid.y = ctx->Nc;
   grid.z = num_blocks;
   
-  copy_expand_complex4<<<grid, thread_count>>>(gpu_ctx->d_fft_in, d_blkbufs,
+  copy_expand_complex4<<<grid, thread_count>>>(gpu_ctx->d_fft_in, gpu_ctx->d_blk_expansion_buf,
                                                block_size, width/2, width/(2*grid.x*thread_count));
 
-  cudaFree(d_blkbufs);
   return 0;
 }
 
