@@ -282,19 +282,20 @@ __global__ void accumulate(float * pwr_buf, unsigned int Na, size_t xpitch, size
 // grid.x = ctx->Ntpb;
 // grid.y = ctx->Nc;
 // grid.z = num_blocks;
-__global__ void copy_expand_complex4(char *complex4_dst, char *complex4_src,
+__global__ void copy_expand_complex4(char *comp8_dst, char *comp4_src,
                                      size_t block_pitch, size_t channel_pitch, size_t thread_pitch)
 {
   unsigned int i;
-  off_t offset = blockIdx.y*channel_pitch +
-                 ((blockIdx.x*blockDim.x + threadIdx.x)*thread_pitch);
+  off_t comp4_offset =  blockIdx.z*block_pitch + 
+                        blockIdx.y*channel_pitch +
+                      ((blockIdx.x*blockDim.x + threadIdx.x)*thread_pitch);
 
-  char* complex4_src_offset = complex4_src + blockIdx.z*block_pitch + offset;
-  char* complex4_dst_offset = complex4_dst + blockIdx.z*block_pitch + 2*offset;
+  char* comp4_src_offset = comp4_src + comp4_offset;
+  char* comp8_dst_offset = comp8_dst + 2*comp4_offset;
 
   for(i=0; i<thread_pitch; i++) {
-    complex4_dst_offset[2*i+0] =  ((char)(complex4_src_offset[i]&0xf0))>>4;
-    complex4_dst_offset[2*i+1] = ((char)((complex4_src_offset[i]&0x0f)<<4)) >> 4;// <<-cast captures nibble's sign bit
+    comp8_dst_offset[2*i+0] =  ((char)(comp4_src_offset[i]&0xf0))>>4;
+    comp8_dst_offset[2*i+1] = ((char)((comp4_src_offset[i]&0x0f)<<4)) >> 4;// <<-cast captures nibble's sign bit
   }
 }
 
@@ -652,7 +653,7 @@ int rawspec_initialize(rawspec_context * ctx)
   }
 
   if(NbpsIsExpanded){
-    cuda_rc = cudaMalloc(&gpu_ctx->d_blk_expansion_buf, buf_size);
+    cuda_rc = cudaMalloc(&gpu_ctx->d_blk_expansion_buf, buf_size/2);
     if(cuda_rc != cudaSuccess) {
       PRINT_ERRMSG(cuda_rc);
       rawspec_cleanup(ctx);
@@ -1063,6 +1064,7 @@ int rawspec_copy_blocks_to_gpu_expanding_complex4(rawspec_context * ctx, size_t 
 {
   if(num_blocks > ctx->Nb){
     fprintf(stderr, "%s: num_blocks (%lu) > Nb (%u)\n", __FUNCTION__, num_blocks, ctx->Nb);
+    return 1;
   }
 
   int b;
@@ -1070,11 +1072,12 @@ int rawspec_copy_blocks_to_gpu_expanding_complex4(rawspec_context * ctx, size_t 
   cudaError_t rc;
   rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
 
-  size_t width = ctx->Ntpb * ctx->Np * 2 /*complex*/ * (ctx->Nbps/8);
+  // Calculated for complex4 samples
+  size_t width = ctx->Ntpb * ctx->Np; // * 2 /*complex*/ * (4/8)
   size_t block_size = width * ctx->Nc;
 
   for(b=0; b < num_blocks; b++) {
-    rc = cudaMemcpy(gpu_ctx->d_blk_expansion_buf + b * block_size, ctx->h_blkbufs[b], block_size/2, cudaMemcpyHostToDevice);
+    rc = cudaMemcpy(gpu_ctx->d_blk_expansion_buf + (b * block_size), ctx->h_blkbufs[b], block_size, cudaMemcpyHostToDevice);
 
     if(rc != cudaSuccess) {
       PRINT_ERRMSG(rc);
@@ -1090,7 +1093,7 @@ int rawspec_copy_blocks_to_gpu_expanding_complex4(rawspec_context * ctx, size_t 
   grid.z = num_blocks;
   
   copy_expand_complex4<<<grid, thread_count>>>(gpu_ctx->d_fft_in, gpu_ctx->d_blk_expansion_buf,
-                                               block_size, width/2, width/(2*grid.x*thread_count));
+                                               block_size, width, width/(grid.x*thread_count));
 
   return 0;
 }
