@@ -278,20 +278,22 @@ __global__ void accumulate(float * pwr_buf, unsigned int Na, size_t xpitch, size
 
 // 4bit Expansion kernel
 // Takes the half full blocks of the fft_in buffer and expands each complex4 byte
-// Expectation of blockIdx, with a single thread each:
+// Expectation of blockDim, with a single thread each:
 // grid.x = ctx->Ntpb;
 // grid.y = ctx->Nc;
 // grid.z = num_blocks;
-__global__ void copy_expand_complex4(char *comp8_dst, char *comp4_src,
+__global__ void copy_expand_complex4(char *comp8_dst, char *comp4_src, size_t num_blocks,
                                      size_t block_pitch, size_t channel_pitch, size_t thread_pitch)
 {
   unsigned int i;
-  off_t comp4_offset =  blockIdx.z*block_pitch + 
-                        blockIdx.y*channel_pitch +
-                      ((blockIdx.x*blockDim.x + threadIdx.x)*thread_pitch);
 
-  char* comp4_src_offset = comp4_src + comp4_offset;
-  char* comp8_dst_offset = comp8_dst + 2*comp4_offset;
+  char* comp4_src_offset = comp4_src +  blockIdx.z*block_pitch + 
+                                        blockIdx.y*channel_pitch +
+                                      ((blockIdx.x*blockDim.x + threadIdx.x)*thread_pitch);
+                                      
+  char* comp8_dst_offset = comp8_dst + 2*(blockIdx.y*num_blocks*channel_pitch +
+                                          blockIdx.z*channel_pitch +
+                                        ((blockIdx.x*blockDim.x + threadIdx.x)*thread_pitch));
 
   for(i=0; i<thread_pitch; i++) {
     comp8_dst_offset[2*i+0] =  ((char)(comp4_src_offset[i]&0xf0))>>4;
@@ -1073,8 +1075,8 @@ int rawspec_copy_blocks_to_gpu_expanding_complex4(rawspec_context * ctx, size_t 
   rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
 
   // Calculated for complex4 samples
-  size_t width = ctx->Ntpb * ctx->Np; // * 2 /*complex*/ * (4/8)
-  size_t block_size = width * ctx->Nc;
+  const size_t width = ctx->Ntpb * ctx->Np; // * 2 /*complex*/ * (4/8)
+  const size_t block_size = width * ctx->Nc;
 
   for(b=0; b < num_blocks; b++) {
     rc = cudaMemcpy(gpu_ctx->d_blk_expansion_buf + (b * block_size), ctx->h_blkbufs[b], block_size, cudaMemcpyHostToDevice);
@@ -1086,13 +1088,13 @@ int rawspec_copy_blocks_to_gpu_expanding_complex4(rawspec_context * ctx, size_t 
   }
   
   // Calculate grid dimensions, fastest to slowest
-  unsigned int thread_count = 1;
+  const unsigned int thread_count = 1;
 
   grid.x = ctx->Ntpb;
   grid.y = ctx->Nc;
   grid.z = num_blocks;
   
-  copy_expand_complex4<<<grid, thread_count>>>(gpu_ctx->d_fft_in, gpu_ctx->d_blk_expansion_buf,
+  copy_expand_complex4<<<grid, thread_count>>>(gpu_ctx->d_fft_in, gpu_ctx->d_blk_expansion_buf, num_blocks,
                                                block_size, width, width/(grid.x*thread_count));
 
   return 0;
