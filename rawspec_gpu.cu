@@ -285,7 +285,7 @@ __global__ void incoherent_sum(float * pwr_buf, float * incoh_buf, unsigned int 
 
   off_t offset_pwr = blockIdx.x * spectra_pitch
                 + blockIdx.y * pol_pitch
-                + blockIdx.z * chan_pitch + (blockIdx.z < Nc_half ? 0 : Nt/2);
+                + blockIdx.z * chan_pitch + (blockIdx.z < Nc_half ? 0 : (Nt+1)/2);
   const off_t offset_ics = blockIdx.x * spectra_out_pitch
                 + blockIdx.y * pol_out_pitch
                 + (blockIdx.z * chan_out_pitch) + (blockIdx.z < Nc_half ? Nt/2 : -spectra_out_pitch);
