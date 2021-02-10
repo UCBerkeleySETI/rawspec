@@ -65,6 +65,7 @@ static struct option long_opts[] = {
   {"ffts",    1, NULL, 'f'},
   {"gpu",     1, NULL, 'g'},
   {"hdrs",    0, NULL, 'H'},
+  {"ics",     1, NULL, 'i'},
   {"nchan",   1, NULL, 'n'},
   {"outidx",  1, NULL, 'o'},
   {"pols",    1, NULL, 'p'},
@@ -93,6 +94,7 @@ void usage(const char *argv0) {
     "  -f, --ffts=N1[,N2...]  FFT lengths [1048576, 8, 1024]\n"
     "  -g, --GPU=IDX          Select GPU device to use [0]\n"
     "  -H, --hdrs             Save headers to separate file\n"
+    "  -i, --ics=W1[,W2...]   Output incoherent-sum, specifying per antenna-weights or a singular, uniform weight\n"
     "  -n, --nchan=N          Number of coarse channels to process [all]\n"
     "  -o, --outidx=N         First index number for output files [0]\n"
     "  -p  --pols={1|4}[,...] Number of output polarizations [1]\n"
@@ -169,6 +171,7 @@ char tmp[16];
   char * pchar;
   char * bfname;
   char * dest = NULL; // default output dest is same place as input stem
+  char * ics_output_stem = NULL;
   rawspec_output_mode_t output_mode = RAWSPEC_FILE;
   char * dest_port = NULL; // dest port for network output
   int fdout;
@@ -198,7 +201,7 @@ char tmp[16];
 
   // Parse command line.
   argv0 = argv[0];
-  while((opt=getopt_long(argc,argv,"a:d:f:g:Hn:o:p:r:Ss:t:hv",long_opts,NULL))!=-1) {
+  while((opt=getopt_long(argc,argv,"a:d:f:g:Hi:n:o:p:r:Ss:t:hv",long_opts,NULL))!=-1) {
     switch (opt) {
       case 'h': // Help
         usage(argv0);
@@ -245,6 +248,23 @@ char tmp[16];
 
       case 'H': // Save headers
         save_headers = 1;
+        break;
+
+      case 'i': // Incoherently sum
+        ctx.incoherently_sum = 1;
+        ctx.Naws = 1;
+        // Count number of 
+        for(i=0; i < strlen(optarg); i++)
+          ctx.Naws += optarg[i]==',';
+        
+        char *weight_end;
+        ctx.Aws = malloc(ctx.Naws*sizeof(float));
+
+        for(i=0; i < ctx.Naws; i++){
+          ctx.Aws[i] = strtof(optarg, &weight_end);
+          optarg = weight_end;
+        }
+        
         break;
 
       case 'n': // Number of coarse channels to process
@@ -442,6 +462,13 @@ char tmp[16];
   // For each stem
   for(si=0; si<argc; si++) {
     printf("working stem: %s\n", argv[si]);
+    if(ctx.incoherently_sum){
+      if(ics_output_stem){
+        free(ics_output_stem);
+      }
+      ics_output_stem = malloc(strlen(argv[si])+5);
+      snprintf(ics_output_stem, strlen(argv[si])+5, "%s-ics", argv[si]);
+    }
 
     // bi is the block counter for the entire sequence of files for this stem.
     // Note that bi is the count of contiguous blocks that are fed to the GPU.
@@ -608,6 +635,7 @@ char tmp[16];
             rawspec_cleanup(&ctx);
           }
           // Remember new dimensions and input conjugation
+          ctx.Nant = raw_hdr.nants;
           ctx.Nc   = Nc;
           ctx.Np   = Np;
           ctx.Ntpb = Ntpb;
@@ -622,6 +650,7 @@ char tmp[16];
             fprintf(stderr, "rawspec initialization failed\n");
             close(fdin);
             // Forget new dimensions
+            ctx.Nant = 0;
             ctx.Nc   = 0;
             ctx.Np   = 0;
             ctx.Ntpb = 0;
@@ -641,6 +670,8 @@ char tmp[16];
             for(i=0; i<ctx.No; i++) {
               cb_data[i].h_pwrbuf = ctx.h_pwrbuf[i];
               cb_data[i].h_pwrbuf_size = ctx.h_pwrbuf_size[i];
+              cb_data[i].h_icsbuf = ctx.h_icsbuf[i];
+              cb_data[i].Nant = ctx.Nant;
               cb_data[i].Nds = ctx.Nds[i];
               cb_data[i].Nf  = ctx.Nts[i] * ctx.Nc;
               cb_data[i].debug_callback = DEBUG_CALLBACKS;
@@ -687,8 +718,24 @@ char tmp[16];
           cb_data[i].fb_hdr.tsamp = raw_hdr.tbin * ctx.Nts[i] * ctx.Nas[i];
 
           if(output_mode == RAWSPEC_FILE) {
+            // Write filterbank header to output file (handles both per-antenna output and single file output)
             if(open_output_file_per_antenna_and_write_header(&cb_data[i], dest, argv[si], outidx + i) != 0){
               return 1; // give up
+            }
+
+            if(ctx.incoherently_sum){
+              cb_data[i].fd_ics = open_output_file(dest, ics_output_stem, outidx + i);
+              if(cb_data[i].fd_ics == -1) {
+                // If we can't open this output file, we probably won't be able to
+                // open any more output files, so print message and bail out.
+                fprintf(stderr, "cannot open output file, giving up\n");
+                return 1; // Give up
+              }
+
+              cb_data[i].fb_hdr.nchans /= ctx.Nant;
+              // Write filterbank header to output file
+              fb_fd_write_header(cb_data[i].fd_ics, &cb_data[i].fb_hdr);
+              cb_data[i].fb_hdr.nchans *= ctx.Nant;
             }
           }
         }
@@ -887,12 +934,19 @@ char tmp[16];
             cb_data[i].fd[j] = -1;
           }
         }
+        if(cb_data[i].fd_ics != -1) {
+          close(cb_data[i].fd_ics);
+          cb_data[i].fd_ics = -1;
+        }
       }
     }
   } // each stem
 
   // Final cleanup
   rawspec_cleanup(&ctx);
+  if(ics_output_stem){
+    free(ics_output_stem);
+  }
 
   // Close sockets (or should-"never"-happen unclosed files)
   for(i=0; i<ctx.No; i++) {

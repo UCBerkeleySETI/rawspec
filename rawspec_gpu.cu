@@ -68,6 +68,9 @@ typedef struct {
   cufftComplex * d_fft_out;
   // Array of device pointers to power buffers
   float * d_pwr_out[MAX_OUTPUTS];
+  // Array of device pointers to incoherent-sum buffers
+  float * d_ics_out[MAX_OUTPUTS];
+  float * d_Aws;
   // Array of handles to FFT plans.
   // Each output product gets a pair of plans (one for each pol).
   cufftHandle plan[MAX_OUTPUTS][2];
@@ -301,6 +304,26 @@ __global__ void copy_expand_complex4(char *comp8_dst, char *comp4_src, size_t nu
   }
 }
 
+// Incoherent summation kernel (across antenna)
+__global__ void incoherent_sum(float * pwr_buf, float * incoh_buf, float * ant_weights, unsigned int Nant, size_t Nt,
+                                size_t ant_pitch, size_t chan_pitch, size_t pol_pitch, size_t spectra_pitch,
+                                size_t chan_out_pitch, size_t pol_out_pitch, size_t spectra_out_pitch
+                              )
+{
+
+  off_t offset_pwr = blockIdx.x * spectra_pitch
+                + blockIdx.y * pol_pitch
+                + blockIdx.z * chan_pitch + threadIdx.x;
+  const off_t offset_ics = blockIdx.x * spectra_out_pitch
+                + blockIdx.y * pol_out_pitch
+                + blockIdx.z * chan_out_pitch + threadIdx.x + (threadIdx.x < (Nt+1)/2 ? Nt/2 : -Nt/2);
+
+  for(unsigned int i=0; i<Nant; i++) {
+    incoh_buf[offset_ics] += ant_weights[i] * pwr_buf[offset_pwr];
+    offset_pwr += ant_pitch;
+  }
+}
+
 // Stream callback function that is called right before an output product's GPU
 // power buffer has been copied to the host power buffer.
 static void CUDART_CB pre_dump_stream_callback(cudaStream_t stream,
@@ -511,6 +534,7 @@ int rawspec_initialize(rawspec_context * ctx)
   // TODO Add support for client managed host buffers
   for(i=0; i < MAX_OUTPUTS; i++) {
     ctx->h_pwrbuf[i] = NULL;
+    ctx->h_icsbuf[i] = NULL;
   }
   ctx->gpu_ctx = NULL;
 
@@ -630,6 +654,16 @@ int rawspec_initialize(rawspec_context * ctx)
       rawspec_cleanup(ctx);
       return 1;
     }
+    if(ctx->incoherently_sum == 1){// TODO validate that Nant > 1
+      cuda_rc = cudaHostAlloc(&ctx->h_icsbuf[i], ctx->h_pwrbuf_size[i]/ctx->Nant,
+                        cudaHostAllocDefault);
+
+      if(cuda_rc != cudaSuccess) {
+        PRINT_ERRMSG(cuda_rc);
+        rawspec_cleanup(ctx);
+        return 1;
+      }
+    }
   }
 
   // Allocate buffers
@@ -747,6 +781,49 @@ int rawspec_initialize(rawspec_context * ctx)
       PRINT_ERRMSG(cuda_rc);
       rawspec_cleanup(ctx);
       return 1;
+    }
+
+    if(ctx->incoherently_sum){
+      cuda_rc = cudaMalloc(&gpu_ctx->d_ics_out[i],
+          abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float)/ctx->Nant);
+      if(cuda_rc != cudaSuccess) {
+        PRINT_ERRMSG(cuda_rc);
+        rawspec_cleanup(ctx);
+        return 1;
+      }
+      // Clear incoherent-sum output buffer
+      cuda_rc = cudaMemset(gpu_ctx->d_ics_out[i], 0,
+          abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float)/ctx->Nant);
+      if(cuda_rc != cudaSuccess) {
+        PRINT_ERRMSG(cuda_rc);
+        rawspec_cleanup(ctx);
+        return 1;
+      }
+
+      // Setup device antenna-weight buffer
+      cuda_rc = cudaMalloc(&gpu_ctx->d_Aws, ctx->Nant*sizeof(float));
+      if(cuda_rc != cudaSuccess) {
+        PRINT_ERRMSG(cuda_rc);
+        rawspec_cleanup(ctx);
+        return 1;
+      }
+
+      if(ctx->Naws == 1 && ctx->Naws < ctx->Nant){
+        printf("Using the single antenna-weight (%f) for all antennas in the incoherent-sum.\n", ctx->Aws[0]);
+        for(int w = 0; w < ctx->Nant; w++){
+          cudaMemcpy(gpu_ctx->d_Aws+w, ctx->Aws, sizeof(float), cudaMemcpyHostToDevice);
+        }
+      }
+      else if(ctx->Naws == ctx->Nant){
+        for(int w = 0; w < ctx->Nant; w++){
+          cudaMemcpy(gpu_ctx->d_Aws+w, ctx->Aws + w, sizeof(float), cudaMemcpyHostToDevice);
+        }
+      }
+      else{
+        fprintf(stderr, "Not enough antenna-weights provided for the %d antennas: only provided %d.\n", ctx->Nant, ctx->Naws);
+        rawspec_cleanup(ctx);
+        return 1;
+      }
     }
     // Save pointer to FFT output buffer in store_cb_data
     h_scb_data.fft_out_pol0 = gpu_ctx->d_fft_out;
@@ -1002,6 +1079,10 @@ void rawspec_cleanup(rawspec_context * ctx)
       cudaFreeHost(ctx->h_pwrbuf[i]);
       ctx->h_pwrbuf[i] = NULL;
     }
+    if(ctx->h_icsbuf[i]) {
+      cudaFreeHost(ctx->h_icsbuf[i]);
+      ctx->h_icsbuf[i] = NULL;
+    }
   }
 
   if(ctx->gpu_ctx) {
@@ -1048,10 +1129,22 @@ void rawspec_cleanup(rawspec_context * ctx)
       if(gpu_ctx->d_pwr_out[i]) {
         cudaFree(gpu_ctx->d_pwr_out[i]);
       }
+      if(gpu_ctx->d_ics_out[i]) {
+        cudaFree(gpu_ctx->d_ics_out[i]);
+      }
       for(p=0; p<2; p++) {
         if(gpu_ctx->plan[i][p] != NO_PLAN) {
           cufftDestroy(gpu_ctx->plan[i][p]);
         }
+      }
+    }
+
+    if(ctx->incoherently_sum){
+      if(ctx->Aws){
+        cudaFreeHost(ctx->Aws);
+      }
+      if(gpu_ctx->d_Aws){
+        cudaFree(gpu_ctx->d_Aws);
       }
     }
 
@@ -1200,6 +1293,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
   cufftResult cufft_rc;
   rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
   size_t fft_outbuf_length;
+  dim3 grid_ics;
 
   // Increment inbuf_count
   gpu_ctx->inbuf_count++;
@@ -1309,6 +1403,34 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
         }
       }
 
+      if(ctx->incoherently_sum){
+        grid_ics.x = ctx->Nds[i];
+        grid_ics.y = abs(ctx->Npolout[i]);
+        grid_ics.z = ctx->Nc/ctx->Nant;
+
+        incoherent_sum<<<grid_ics, ctx->Nts[i]>>>(gpu_ctx->d_pwr_out[i], gpu_ctx->d_ics_out[i], gpu_ctx->d_Aws,
+                                        ctx->Nant, ctx->Nts[i],
+                                        ctx->Nb*ctx->Ntpb*ctx->Nc/ctx->Nant, // Antenna pitch
+                                        ctx->Nb*ctx->Ntpb, // Coarse Channel pitch
+                                        ctx->Nb*ctx->Ntpb*ctx->Nc, // Polarisation pitch
+                                        ctx->Nts[i]*ctx->Nas[i], // Spectra pitch
+                                        
+                                        ctx->Nts[i], // Coarse Channel pitch for ics
+                                        ctx->Nts[i]*ctx->Nc/ctx->Nant, // Polarisation pitch for ics
+                                        abs(ctx->Npolout[i]) * ctx->Nts[i] * ctx->Nc/ctx->Nant // Spectra pitch for ics
+                                        );
+        
+        // Copy store_cb_data_t array from host to device
+        cuda_rc = cudaMemcpy(ctx->h_icsbuf[i],
+          gpu_ctx->d_ics_out[i],
+          ctx->h_pwrbuf_size[i]/ctx->Nant,
+          cudaMemcpyDeviceToHost);
+        if(cuda_rc != cudaSuccess) {
+          PRINT_ERRMSG(cuda_rc);
+          return 1;
+        }
+      }
+
       // Add post-dump stream callback
       cuda_rc = cudaStreamAddCallback(gpu_ctx->compute_stream,
                                       post_dump_stream_callback,
@@ -1327,6 +1449,17 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
       if(cuda_rc != cudaSuccess) {
         PRINT_ERRMSG(cuda_rc);
         return 1;
+      }
+      if(ctx->incoherently_sum){
+        // Add ics buffer clearing cudaMemset call to stream
+        cuda_rc = cudaMemsetAsync(gpu_ctx->d_ics_out[i], 0,
+                                  abs(ctx->Npolout[i])*ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float)/ctx->Nant,
+                                  gpu_ctx->compute_stream);
+  
+        if(cuda_rc != cudaSuccess) {
+          PRINT_ERRMSG(cuda_rc);
+          return 1;
+        }
       }
 
     } // If time to dump
