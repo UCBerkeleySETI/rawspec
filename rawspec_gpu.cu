@@ -277,7 +277,7 @@ __global__ void accumulate(float * pwr_buf, unsigned int Na, size_t xpitch, size
   pwr_buf[offset0] = sum;
 }
 
-// Incoherent summation kernal (across antenna)
+// Incoherent summation kernel (across antenna)
 __global__ void incoherent_sum(float * pwr_buf, float * incoh_buf, float * ant_weights, unsigned int Nant, size_t Nt,
                                 size_t ant_pitch, size_t chan_pitch, size_t pol_pitch, size_t spectra_pitch,
                                 size_t chan_out_pitch, size_t pol_out_pitch, size_t spectra_out_pitch
