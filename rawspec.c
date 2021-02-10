@@ -64,7 +64,7 @@ static struct option long_opts[] = {
   {"ffts",    1, NULL, 'f'},
   {"gpu",     1, NULL, 'g'},
   {"hdrs",    0, NULL, 'H'},
-  {"ics",     0, NULL, 'i'},
+  {"ics",     1, NULL, 'i'},
   {"nchan",   1, NULL, 'n'},
   {"outidx",  1, NULL, 'o'},
   {"pols",    1, NULL, 'p'},
@@ -193,7 +193,7 @@ char tmp[16];
 
   // Parse command line.
   argv0 = argv[0];
-  while((opt=getopt_long(argc,argv,"d:f:g:Hin:o:p:r:s:t:hv",long_opts,NULL))!=-1) {
+  while((opt=getopt_long(argc,argv,"d:f:g:Hi:n:o:p:r:s:t:hv",long_opts,NULL))!=-1) {
     switch (opt) {
       case 'h': // Help
         usage(argv0);
@@ -240,6 +240,19 @@ char tmp[16];
 
       case 'i': // Incoherently sum
         incoherently_sum = 1;
+        ctx.Naws = 1;
+        // Count number of 
+        for(i=0; i < strlen(optarg); i++)
+          ctx.Naws += optarg[i]==',';
+        
+        char *weight_end;
+        ctx.Aws = malloc(ctx.Naws*sizeof(float));
+
+        for(i=0; i < ctx.Naws; i++){
+          ctx.Aws[i] = strtof(optarg, &weight_end);
+          optarg = weight_end;
+        }
+        
         break;
 
       case 'n': // Number of coarse channels to process

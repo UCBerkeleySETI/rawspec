@@ -106,6 +106,9 @@ struct rawspec_context_s {
 
   // Flag indicating the concurrent output of the output data's incoherent-sum.
   int incoherently_sum;
+  int Naws;
+  // An array for the per-antenna weights to be used in the incoherent-sum.
+  float *Aws;
 
   // Fields above here should be specified by client.  Fields below here are
   // managed by library (but can be used by the caller as needed).

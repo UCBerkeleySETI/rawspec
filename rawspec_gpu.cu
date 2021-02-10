@@ -68,6 +68,7 @@ typedef struct {
   float * d_pwr_out[MAX_OUTPUTS];
   // Array of device pointers to incoherent-sum buffers
   float * d_ics_out[MAX_OUTPUTS];
+  float * d_Aws;
   // Array of handles to FFT plans.
   // Each output product gets a pair of plans (one for each pol).
   cufftHandle plan[MAX_OUTPUTS][2];
@@ -277,7 +278,7 @@ __global__ void accumulate(float * pwr_buf, unsigned int Na, size_t xpitch, size
 }
 
 // Incoherent summation kernal (across antenna)
-__global__ void incoherent_sum(float * pwr_buf, float * incoh_buf, unsigned int Nant, size_t Nt,
+__global__ void incoherent_sum(float * pwr_buf, float * incoh_buf, float * ant_weights, unsigned int Nant, size_t Nt,
                                 size_t ant_pitch, size_t chan_pitch, size_t pol_pitch, size_t spectra_pitch,
                                 size_t chan_out_pitch, size_t pol_out_pitch, size_t spectra_out_pitch
                               )
@@ -291,7 +292,7 @@ __global__ void incoherent_sum(float * pwr_buf, float * incoh_buf, unsigned int 
                 + blockIdx.z * chan_out_pitch + threadIdx.x + (threadIdx.x < (Nt+1)/2 ? Nt/2 : -Nt/2);
 
   for(unsigned int i=0; i<Nant; i++) {
-    incoh_buf[offset_ics] += pwr_buf[offset_pwr];
+    incoh_buf[offset_ics] += ant_weights[i] * pwr_buf[offset_pwr];
     offset_pwr += ant_pitch;
   }
 }
@@ -759,6 +760,31 @@ int rawspec_initialize(rawspec_context * ctx)
         rawspec_cleanup(ctx);
         return 1;
       }
+
+      // Setup device antenna-weight buffer
+      cuda_rc = cudaMalloc(&gpu_ctx->d_Aws, ctx->Nant*sizeof(float));
+      if(cuda_rc != cudaSuccess) {
+        PRINT_ERRMSG(cuda_rc);
+        rawspec_cleanup(ctx);
+        return 1;
+      }
+
+      if(ctx->Naws == 1 && ctx->Naws < ctx->Nant){
+        printf("Using the single antenna-weight (%f) for all antennas in the incoherent-sum.\n", ctx->Aws[0]);
+        for(int w = 0; w < ctx->Nant; w++){
+          cudaMemcpy(gpu_ctx->d_Aws+w, ctx->Aws, sizeof(float), cudaMemcpyHostToDevice);
+        }
+      }
+      else if(ctx->Naws == ctx->Nant){
+        for(int w = 0; w < ctx->Nant; w++){
+          cudaMemcpy(gpu_ctx->d_Aws+w, ctx->Aws + w, sizeof(float), cudaMemcpyHostToDevice);
+        }
+      }
+      else{
+        fprintf(stderr, "Not enough antenna-weights provided for the %d antennas: only provided %d.\n", ctx->Nant, ctx->Naws);
+        rawspec_cleanup(ctx);
+        return 1;
+      }
     }
     // Save pointer to FFT output buffer in store_cb_data
     h_scb_data.fft_out_pol0 = gpu_ctx->d_fft_out;
@@ -1070,6 +1096,15 @@ void rawspec_cleanup(rawspec_context * ctx)
       }
     }
 
+    if(ctx->incoherently_sum){
+      if(ctx->Aws){
+        cudaFreeHost(ctx->Aws);
+      }
+      if(gpu_ctx->d_Aws){
+        cudaFree(gpu_ctx->d_Aws);
+      }
+    }
+
     free(ctx->gpu_ctx);
     ctx->gpu_ctx = NULL;
   }
@@ -1290,7 +1325,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
         grid_ics.y = abs(ctx->Npolout[i]);
         grid_ics.z = ctx->Nc/ctx->Nant;
 
-        incoherent_sum<<<grid_ics, ctx->Nts[i]>>>(gpu_ctx->d_pwr_out[i], gpu_ctx->d_ics_out[i],
+        incoherent_sum<<<grid_ics, ctx->Nts[i]>>>(gpu_ctx->d_pwr_out[i], gpu_ctx->d_ics_out[i], gpu_ctx->d_Aws,
                                         ctx->Nant, ctx->Nts[i],
                                         ctx->Nb*ctx->Ntpb*ctx->Nc/ctx->Nant, // Antenna pitch
                                         ctx->Nb*ctx->Ntpb, // Coarse Channel pitch
