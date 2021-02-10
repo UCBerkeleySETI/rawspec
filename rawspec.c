@@ -91,7 +91,7 @@ void usage(const char *argv0) {
     "  -f, --ffts=N1[,N2...]  FFT lengths [1048576, 8, 1024]\n"
     "  -g, --GPU=IDX          Select GPU device to use [0]\n"
     "  -H, --hdrs             Save headers to separate file\n"
-    "  -i, --ics              Incoherent-sum output\n"
+    "  -i, --ics=W1[,W2...]   Output incoherent-sum, specifying per antenna-weights or a singular, uniform weight\n"
     "  -n, --nchan=N          Number of coarse channels to process [all]\n"
     "  -o, --outidx=N         First index number for output files [0]\n"
     "  -p  --pols={1|4}[,...] Number of output polarizations [1]\n"
