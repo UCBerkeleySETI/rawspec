@@ -311,12 +311,12 @@ __global__ void incoherent_sum(float * pwr_buf, float * incoh_buf, float * ant_w
                               )
 {
 
-  off_t offset_pwr = blockIdx.x * spectra_pitch
+  off_t offset_pwr = blockIdx.z * spectra_pitch
                 + blockIdx.y * pol_pitch
-                + blockIdx.z * chan_pitch + threadIdx.x;
-  const off_t offset_ics = blockIdx.x * spectra_out_pitch
+                + blockIdx.x * chan_pitch + threadIdx.x;
+  const off_t offset_ics = blockIdx.z * spectra_out_pitch
                 + blockIdx.y * pol_out_pitch
-                + blockIdx.z * chan_out_pitch + threadIdx.x + (threadIdx.x < (Nt+1)/2 ? Nt/2 : -Nt/2);
+                + blockIdx.x * chan_out_pitch + threadIdx.x + (threadIdx.x < (Nt+1)/2 ? Nt/2 : -Nt/2);
 
   for(unsigned int i=0; i<Nant; i++) {
     incoh_buf[offset_ics] += ant_weights[i] * pwr_buf[offset_pwr];
@@ -1341,6 +1341,37 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
         }
       }
 
+      if(ctx->incoherently_sum){
+        grid_ics.x = (ctx->Nts[i] + MAX_THREADS - 1) * ctx->Nc/(ctx->Nant * MAX_THREADS);
+        grid_ics.y = abs(ctx->Npolout[i]);
+        grid_ics.z = ctx->Nds[i];
+        
+        cudaStreamSynchronize(gpu_ctx->compute_stream);
+        incoherent_sum<<<grid_ics, gpu_ctx->nthreads[i], 0, gpu_ctx->compute_stream>>>(
+                                        gpu_ctx->d_pwr_out[i], gpu_ctx->d_ics_out[i], gpu_ctx->d_Aws,
+                                        ctx->Nant, ctx->Nts[i],
+                                        ctx->Nb*ctx->Ntpb*ctx->Nc/ctx->Nant, // Antenna pitch
+                                        ctx->Nb*ctx->Ntpb, // Coarse Channel pitch
+                                        ctx->Nb*ctx->Ntpb*ctx->Nc, // Polarisation pitch
+                                        ctx->Nts[i]*ctx->Nas[i], // Spectra pitch
+                                        
+                                        ctx->Nts[i], // Coarse Channel pitch for ics
+                                        ctx->Nts[i]*ctx->Nc/ctx->Nant, // Polarisation pitch for ics
+                                        abs(ctx->Npolout[i]) * ctx->Nts[i] * ctx->Nc/ctx->Nant // Spectra pitch for ics
+                                        );
+        cudaStreamSynchronize(gpu_ctx->compute_stream);
+        
+        // Copy store_cb_data_t array from host to device
+        cuda_rc = cudaMemcpy(ctx->h_icsbuf[i],
+          gpu_ctx->d_ics_out[i],
+          ctx->h_pwrbuf_size[i]/ctx->Nant,
+          cudaMemcpyDeviceToHost);
+        if(cuda_rc != cudaSuccess) {
+          PRINT_ERRMSG(cuda_rc);
+          return 1;
+        }
+      }
+
       // Add pre-dump stream callback
       cuda_rc = cudaStreamAddCallback(gpu_ctx->compute_stream,
                                       pre_dump_stream_callback,
@@ -1400,37 +1431,6 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
           // Increment src and dst pointers
           src += ctx->Nts[i] * ctx->Nas[i];
           dst += abs(ctx->Npolout[i]) * ctx->Nts[i] * ctx->Nc;
-        }
-      }
-
-      if(ctx->incoherently_sum){
-        grid_ics.x = ctx->Nds[i];
-        grid_ics.y = abs(ctx->Npolout[i]);
-        grid_ics.z = ctx->Nc/ctx->Nant;
-        
-        cudaStreamSynchronize(gpu_ctx->compute_stream);
-        incoherent_sum<<<grid_ics, ctx->Nts[i], 0, gpu_ctx->compute_stream>>>(
-                                        gpu_ctx->d_pwr_out[i], gpu_ctx->d_ics_out[i], gpu_ctx->d_Aws,
-                                        ctx->Nant, ctx->Nts[i],
-                                        ctx->Nb*ctx->Ntpb*ctx->Nc/ctx->Nant, // Antenna pitch
-                                        ctx->Nb*ctx->Ntpb, // Coarse Channel pitch
-                                        ctx->Nb*ctx->Ntpb*ctx->Nc, // Polarisation pitch
-                                        ctx->Nts[i]*ctx->Nas[i], // Spectra pitch
-                                        
-                                        ctx->Nts[i], // Coarse Channel pitch for ics
-                                        ctx->Nts[i]*ctx->Nc/ctx->Nant, // Polarisation pitch for ics
-                                        abs(ctx->Npolout[i]) * ctx->Nts[i] * ctx->Nc/ctx->Nant // Spectra pitch for ics
-                                        );
-        cudaStreamSynchronize(gpu_ctx->compute_stream);
-        
-        // Copy store_cb_data_t array from host to device
-        cuda_rc = cudaMemcpy(ctx->h_icsbuf[i],
-          gpu_ctx->d_ics_out[i],
-          ctx->h_pwrbuf_size[i]/ctx->Nant,
-          cudaMemcpyDeviceToHost);
-        if(cuda_rc != cudaSuccess) {
-          PRINT_ERRMSG(cuda_rc);
-          return 1;
         }
       }
 
