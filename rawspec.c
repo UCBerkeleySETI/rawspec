@@ -671,7 +671,7 @@ char tmp[16];
               cb_data[i].h_pwrbuf = ctx.h_pwrbuf[i];
               cb_data[i].h_pwrbuf_size = ctx.h_pwrbuf_size[i];
               cb_data[i].h_icsbuf = ctx.h_icsbuf[i];
-              cb_data[i].Nant = ctx.Nant;
+              cb_data[i].Nant = (per_ant_out ? ctx.Nant : 1);
               cb_data[i].Nds = ctx.Nds[i];
               cb_data[i].Nf  = ctx.Nts[i] * ctx.Nc;
               cb_data[i].debug_callback = DEBUG_CALLBACKS;
