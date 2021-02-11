@@ -714,7 +714,7 @@ char tmp[16];
             - (ctx.Nts[i]/2) * cb_data[i].fb_hdr.foff
             + (schan % (raw_hdr.obsnchan/raw_hdr.nants)) * // Adjust for schan
                 raw_hdr.obsbw / (raw_hdr.obsnchan/raw_hdr.nants);
-          cb_data[i].fb_hdr.nchans = ctx.Nc * ctx.Nts[i] / (per_ant_out * cb_data[i].Nant);
+          cb_data[i].fb_hdr.nchans = ctx.Nc * ctx.Nts[i] / (per_ant_out ? cb_data[i].Nant : 1);
           cb_data[i].fb_hdr.tsamp = raw_hdr.tbin * ctx.Nts[i] * ctx.Nas[i];
 
           if(output_mode == RAWSPEC_FILE) {
@@ -732,10 +732,10 @@ char tmp[16];
                 return 1; // Give up
               }
 
-              cb_data[i].fb_hdr.nchans /= ctx.Nant;
+              cb_data[i].fb_hdr.nchans /= (per_ant_out ? 1 : cb_data[i].Nant);
               // Write filterbank header to output file
               fb_fd_write_header(cb_data[i].fd_ics, &cb_data[i].fb_hdr);
-              cb_data[i].fb_hdr.nchans *= ctx.Nant;
+              cb_data[i].fb_hdr.nchans *= (per_ant_out ? 1 : cb_data[i].Nant);
             }
           }
         }
