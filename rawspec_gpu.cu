@@ -279,17 +279,20 @@ __global__ void accumulate(float * pwr_buf, unsigned int Na, size_t xpitch, size
 
 // Incoherent summation kernel (across antenna)
 __global__ void incoherent_sum(float * pwr_buf, float * incoh_buf, float * ant_weights, unsigned int Nant, size_t Nt,
+                                size_t dim_x_coarse_chan_ratio,
                                 size_t ant_pitch, size_t chan_pitch, size_t pol_pitch, size_t spectra_pitch,
                                 size_t chan_out_pitch, size_t pol_out_pitch, size_t spectra_out_pitch
                               )
 {
+  const size_t coarse_chan_idx = blockIdx.x/dim_x_coarse_chan_ratio;
+  const size_t fine_chan_idx = threadIdx.x + (blockIdx.x%dim_x_coarse_chan_ratio);
 
-  off_t offset_pwr = blockIdx.z * spectra_pitch
-                + blockIdx.y * pol_pitch
-                + blockIdx.x * chan_pitch + threadIdx.x;
-  const off_t offset_ics = blockIdx.z * spectra_out_pitch
-                + blockIdx.y * pol_out_pitch
-                + blockIdx.x * chan_out_pitch + threadIdx.x + (threadIdx.x < (Nt+1)/2 ? Nt/2 : -Nt/2);
+  off_t offset_pwr =  blockIdx.z * spectra_pitch
+                    + blockIdx.y * pol_pitch
+                    + coarse_chan_idx * chan_pitch + fine_chan_idx;
+  const off_t offset_ics =  blockIdx.z * spectra_out_pitch
+                          + blockIdx.y * pol_out_pitch
+                          + coarse_chan_idx * chan_out_pitch + fine_chan_idx + (fine_chan_idx < (Nt+1)/2 ? Nt/2 : -Nt/2);
 
   for(unsigned int i=0; i<Nant; i++) {
     incoh_buf[offset_ics] += ant_weights[i] * pwr_buf[offset_pwr];
@@ -1259,14 +1262,16 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
       }
 
       if(ctx->incoherently_sum){
-        grid_ics.x = (ctx->Nts[i] + MAX_THREADS - 1) * ctx->Nc/(ctx->Nant * MAX_THREADS);
+        // grid_ics.x = ((ctx->Nts[i] + MAX_THREADS - 1)/MAX_THREADS) * ctx->Nc/ctx->Nant;
+        grid_ics.x = ctx->Nts[i] * ctx->Nc/ctx->Nant;
         grid_ics.y = abs(ctx->Npolout[i]);
         grid_ics.z = ctx->Nds[i];
         
         cudaStreamSynchronize(gpu_ctx->compute_stream);
-        incoherent_sum<<<grid_ics, gpu_ctx->nthreads[i], 0, gpu_ctx->compute_stream>>>(
+        // incoherent_sum<<<grid_ics, gpu_ctx->nthreads, 0, gpu_ctx->compute_stream>>>(
+        incoherent_sum<<<grid_ics, 1, 0, gpu_ctx->compute_stream>>>(
                                         gpu_ctx->d_pwr_out[i], gpu_ctx->d_ics_out[i], gpu_ctx->d_Aws,
-                                        ctx->Nant, ctx->Nts[i],
+                                        ctx->Nant, ctx->Nts[i], grid_ics.x/(ctx->Nc/ctx->Nant),
                                         ctx->Nb*ctx->Ntpb*ctx->Nc/ctx->Nant, // Antenna pitch
                                         ctx->Nb*ctx->Ntpb, // Coarse Channel pitch
                                         ctx->Nb*ctx->Ntpb*ctx->Nc, // Polarisation pitch
