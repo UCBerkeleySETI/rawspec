@@ -68,21 +68,23 @@ void * dump_file_thread_func(void *arg)
 {
   callback_data_t * cb_data = (callback_data_t *)arg;
 
-  if(cb_data->Nant > 1){
-    size_t spectra_stride = cb_data->h_pwrbuf_size / (cb_data->Nds * sizeof(float));
-    size_t pol_stride = spectra_stride / cb_data->fb_hdr.nifs;
-    size_t ant_stride = pol_stride / cb_data->Nant;
+  if(cb_data->fd && cb_data->h_pwrbuf){
+    if(cb_data->Nant > 1){
+      size_t spectra_stride = cb_data->h_pwrbuf_size / (cb_data->Nds * sizeof(float));
+      size_t pol_stride = spectra_stride / cb_data->fb_hdr.nifs;
+      size_t ant_stride = pol_stride / cb_data->Nant;
 
-    for(size_t k = 0; k < cb_data->Nds; k++){// Spectra out
-      for(size_t j = 0; j < cb_data->fb_hdr.nifs; j++){// Npolout
-        for(size_t i = 0; i < cb_data->Nant; i++){ 
-          write(cb_data->fd[i], cb_data->h_pwrbuf + i * ant_stride + j * pol_stride + k * spectra_stride, ant_stride * sizeof(float));
+      for(size_t k = 0; k < cb_data->Nds; k++){// Spectra out
+        for(size_t j = 0; j < cb_data->fb_hdr.nifs; j++){// Npolout
+          for(size_t i = 0; i < cb_data->Nant; i++){ 
+            write(cb_data->fd[i], cb_data->h_pwrbuf + i * ant_stride + j * pol_stride + k * spectra_stride, ant_stride * sizeof(float));
+          }
         }
       }
     }
-  }
-  else{
-    write(cb_data->fd[0], cb_data->h_pwrbuf, cb_data->h_pwrbuf_size);
+    else{
+      write(cb_data->fd[0], cb_data->h_pwrbuf, cb_data->h_pwrbuf_size);
+    }
   }
   
   if(cb_data->fd_ics && cb_data->h_icsbuf){

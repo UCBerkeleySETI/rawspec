@@ -66,6 +66,7 @@ static struct option long_opts[] = {
   {"gpu",     1, NULL, 'g'},
   {"hdrs",    0, NULL, 'H'},
   {"ics",     1, NULL, 'i'},
+  {"ICS",     1, NULL, 'I'},
   {"nchan",   1, NULL, 'n'},
   {"outidx",  1, NULL, 'o'},
   {"pols",    1, NULL, 'p'},
@@ -94,7 +95,8 @@ void usage(const char *argv0) {
     "  -f, --ffts=N1[,N2...]  FFT lengths [1048576, 8, 1024]\n"
     "  -g, --GPU=IDX          Select GPU device to use [0]\n"
     "  -H, --hdrs             Save headers to separate file\n"
-    "  -i, --ics=W1[,W2...]   Output incoherent-sum, specifying per antenna-weights or a singular, uniform weight\n"
+    "  -i, --ics=W1[,W2...]   Output incoherent-sum concurrently (capitilise for exclusively),\n"
+    "                         specifying per antenna-weights or a singular, uniform weight\n"
     "  -n, --nchan=N          Number of coarse channels to process [all]\n"
     "  -o, --outidx=N         First index number for output files [0]\n"
     "  -p  --pols={1|4}[,...] Number of output polarizations [1]\n"
@@ -187,6 +189,7 @@ char tmp[16];
   unsigned int nchan = 0;
   unsigned int outidx = 0;
   int input_conjugated = -1;
+  int only_output_ics = 0;
 
   // For net data rate rate calculations
   double rate = 6.0;
@@ -201,7 +204,7 @@ char tmp[16];
 
   // Parse command line.
   argv0 = argv[0];
-  while((opt=getopt_long(argc,argv,"a:d:f:g:Hi:n:o:p:r:Ss:t:hv",long_opts,NULL))!=-1) {
+  while((opt=getopt_long(argc,argv,"a:d:f:g:HI:i:n:o:p:r:Ss:t:hv",long_opts,NULL))!=-1) {
     switch (opt) {
       case 'h': // Help
         usage(argv0);
@@ -250,6 +253,8 @@ char tmp[16];
         save_headers = 1;
         break;
 
+      case 'I': // Incoherently sum exclusively
+        only_output_ics = 1;
       case 'i': // Incoherently sum
         ctx.incoherently_sum = 1;
         ctx.Naws = 1;
@@ -720,7 +725,8 @@ char tmp[16];
 
           if(output_mode == RAWSPEC_FILE) {
             // Write filterbank header to output file (handles both per-antenna output and single file output)
-            if(open_output_file_per_antenna_and_write_header(&cb_data[i], dest, argv[si], outidx + i) != 0){
+            if(!only_output_ics && 
+                open_output_file_per_antenna_and_write_header(&cb_data[i], dest, argv[si], outidx + i) != 0){
               return 1; // give up
             }
 
