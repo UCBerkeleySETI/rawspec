@@ -65,6 +65,7 @@ static struct option long_opts[] = {
   {"gpu",     1, NULL, 'g'},
   {"hdrs",    0, NULL, 'H'},
   {"ics",     1, NULL, 'i'},
+  {"ICS",     1, NULL, 'I'},
   {"nchan",   1, NULL, 'n'},
   {"outidx",  1, NULL, 'o'},
   {"pols",    1, NULL, 'p'},
@@ -91,7 +92,8 @@ void usage(const char *argv0) {
     "  -f, --ffts=N1[,N2...]  FFT lengths [1048576, 8, 1024]\n"
     "  -g, --GPU=IDX          Select GPU device to use [0]\n"
     "  -H, --hdrs             Save headers to separate file\n"
-    "  -i, --ics=W1[,W2...]   Output incoherent-sum, specifying per antenna-weights or a singular, uniform weight\n"
+    "  -i, --ics=W1[,W2...]   Output incoherent-sum concurrently (capitilise for exclusively),\n"
+    "                         specifying per antenna-weights or a singular, uniform weight\n"
     "  -n, --nchan=N          Number of coarse channels to process [all]\n"
     "  -o, --outidx=N         First index number for output files [0]\n"
     "  -p  --pols={1|4}[,...] Number of output polarizations [1]\n"
@@ -178,7 +180,7 @@ char tmp[16];
   unsigned int nchan = 0;
   unsigned int outidx = 0;
   int input_conjugated = -1;
-  int incoherently_sum = 0;
+  int only_output_ics = 0;
 
   // For net data rate rate calculations
   double rate = 6.0;
@@ -193,7 +195,7 @@ char tmp[16];
 
   // Parse command line.
   argv0 = argv[0];
-  while((opt=getopt_long(argc,argv,"d:f:g:Hi:n:o:p:r:s:t:hv",long_opts,NULL))!=-1) {
+  while((opt=getopt_long(argc,argv,"d:f:g:HI:i:n:o:p:r:s:t:hv",long_opts,NULL))!=-1) {
     switch (opt) {
       case 'h': // Help
         usage(argv0);
@@ -238,8 +240,10 @@ char tmp[16];
         save_headers = 1;
         break;
 
+      case 'I': // Incoherently sum exclusively
+        only_output_ics = 1;
       case 'i': // Incoherently sum
-        incoherently_sum = 1;
+        ctx.incoherently_sum = 1;
         ctx.Naws = 1;
         // Count number of 
         for(i=0; i < strlen(optarg); i++)
@@ -445,7 +449,7 @@ char tmp[16];
   // For each stem
   for(si=0; si<argc; si++) {
     printf("working stem: %s\n", argv[si]);
-    if(incoherently_sum){
+    if(ctx.incoherently_sum){
       if(ics_output_stem){
         free(ics_output_stem);
       }
@@ -559,7 +563,6 @@ char tmp[16];
           ctx.Ntpb = Ntpb;
           ctx.Nbps = Nbps;
           ctx.input_conjugated = input_conjugated;
-          ctx.incoherently_sum = incoherently_sum;
 
           // Initialize for new dimensions and/or conjugation
           ctx.Nb = 0;           // auto-calculate
@@ -630,18 +633,19 @@ char tmp[16];
           cb_data[i].fb_hdr.tsamp = raw_hdr.tbin * ctx.Nts[i] * ctx.Nas[i];
 
           if(output_mode == RAWSPEC_FILE) {
-            cb_data[i].fd = open_output_file(dest, argv[si], outidx + i);
-            if(cb_data[i].fd == -1) {
-              // If we can't open this output file, we probably won't be able to
-              // open any more output files, so print message and bail out.
-              fprintf(stderr, "cannot open output file, giving up\n");
-              return 1; // Give up
+            if(!only_output_ics){
+              cb_data[i].fd = open_output_file(dest, argv[si], outidx + i);
+              if(cb_data[i].fd == -1) {
+                // If we can't open this output file, we probably won't be able to
+                // open any more output files, so print message and bail out.
+                fprintf(stderr, "cannot open output file, giving up\n");
+                return 1; // Give up
+              }
+              // Write filterbank header to output file
+              fb_fd_write_header(cb_data[i].fd, &cb_data[i].fb_hdr);
             }
 
-            // Write filterbank header to output file
-            fb_fd_write_header(cb_data[i].fd, &cb_data[i].fb_hdr);
-
-            if(incoherently_sum){
+            if(ctx.incoherently_sum){
               cb_data[i].fd_ics = open_output_file(dest, ics_output_stem, outidx + i);
               if(cb_data[i].fd_ics == -1) {
                 // If we can't open this output file, we probably won't be able to
