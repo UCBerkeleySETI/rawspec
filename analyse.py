@@ -27,6 +27,17 @@ if len(sys.argv) == 3:
 	else:
 		print("Sum of differences is", delta_sum, " != 0.")
 
+	equal = obs.data == comp_obs.data
+	# print(equal)
+	# print()
+	# print(equal[:,:,0:6])
+	# print()
+	# print(equal[:,:,-6:])
+	# print()
+	print('Correct {}/{} = {:0.2f}%'.format(np.sum(equal), np.prod(obs.data.shape), 100*np.sum(equal)/np.prod(obs.data.shape)))
+	print()
+	print()
+
 # else:
 # 	fig = plt.figure()
 # 	# plot(obs.data)
