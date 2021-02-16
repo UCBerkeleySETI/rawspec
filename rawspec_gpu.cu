@@ -1222,7 +1222,8 @@ int rawspec_copy_blocks_to_gpu_expanding_complex4(rawspec_context * ctx, size_t 
   const size_t block_size = width * ctx->Nc;
 
   for(b=0; b < num_blocks; b++) {
-    rc = cudaMemcpy(gpu_ctx->d_blk_expansion_buf + (b * block_size), ctx->h_blkbufs[b], block_size, cudaMemcpyHostToDevice);
+    rc = cudaMemcpyAsync(gpu_ctx->d_blk_expansion_buf + (b * block_size), ctx->h_blkbufs[b],
+                          block_size, cudaMemcpyHostToDevice, gpu_ctx->compute_stream);
 
     if(rc != cudaSuccess) {
       PRINT_ERRMSG(rc);
