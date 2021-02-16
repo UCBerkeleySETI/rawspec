@@ -1280,13 +1280,13 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
                                         ctx->Nts[i]*ctx->Nc/ctx->Nant, // Polarisation pitch for ics
                                         abs(ctx->Npolout[i]) * ctx->Nts[i] * ctx->Nc/ctx->Nant // Spectra pitch for ics
                                         );
-        cudaStreamSynchronize(gpu_ctx->compute_stream);
         
         // Copy store_cb_data_t array from host to device
-        cuda_rc = cudaMemcpy(ctx->h_icsbuf[i],
+        cuda_rc = cudaMemcpyAsync(ctx->h_icsbuf[i],
           gpu_ctx->d_ics_out[i],
           ctx->h_pwrbuf_size[i]/ctx->Nant,
-          cudaMemcpyDeviceToHost);
+          cudaMemcpyDeviceToHost,
+          gpu_ctx->compute_stream);
         if(cuda_rc != cudaSuccess) {
           PRINT_ERRMSG(cuda_rc);
           return 1;
