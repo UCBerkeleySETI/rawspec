@@ -62,6 +62,8 @@ typedef struct {
 typedef struct {
   // Device pointer to FFT input buffer
   char * d_fft_in;
+  // Device pointer to complex4 expansion LUT
+  char2 * d_comp4_exp_LUT;
   // Device pointer to intermediary buffer for expansion of complex4 samples
   char * d_blk_expansion_buf;
   // Device pointer to FFT output buffer
@@ -94,6 +96,8 @@ typedef struct {
   dump_cb_data_t dump_cb_data[MAX_OUTPUTS];
   // CUDA Texture Object used to convert from integer to floating point
   cudaTextureObject_t tex_obj;
+  // CUDA Texture Object used to convert from complex4bit byte data to complex8bit short data
+  cudaTextureObject_t comp4_exp_tex_obj;
   // Flag indicating that the caller is managing the input block buffers
   // Non-zero when caller is managing (i.e. allocating and freeing) the
   // buffers; zero when we are.
@@ -102,6 +106,7 @@ typedef struct {
 
 // Device-side texture object declaration
 __device__ cudaTextureObject_t d_tex_obj;
+__device__ cudaTextureObject_t d_comp4_exp_tex_obj;
 
 // The load_callback gets the input value through the texture memory to achieve
 // a "for free" mapping of 8-bit integer values into 32-bit float values.
@@ -276,6 +281,10 @@ __global__ void accumulate(float * pwr_buf, unsigned int Na, size_t xpitch, size
   pwr_buf[offset0] = sum;
 }
 
+__global__ void complex4_expansion(char2 *lut){
+  lut[blockIdx.x] = make_char2( ((char)(blockIdx.x&0xf0))>>4,
+                                ((char)((blockIdx.x&0x0f)<<4)) >> 4);
+}
 // 4bit Expansion kernel
 // Takes the half full blocks of the fft_in buffer and expands each complex4 byte
 // Expectation of blockDim, with a single thread each:
@@ -283,22 +292,16 @@ __global__ void accumulate(float * pwr_buf, unsigned int Na, size_t xpitch, size
 // grid.y = ctx->Nc;
 // grid.z = num_blocks;
 __global__ void copy_expand_complex4(char *comp8_dst, char *comp4_src, size_t num_blocks,
-                                     size_t block_pitch, size_t channel_pitch, size_t thread_pitch)
-{
-  unsigned int i;
-
-  char* comp4_src_offset = comp4_src +  blockIdx.z*block_pitch + 
-                                        blockIdx.y*channel_pitch +
-                                      ((blockIdx.x*blockDim.x + threadIdx.x)*thread_pitch);
-                                      
+                                     size_t block_pitch, size_t channel_pitch)
+{                                     
   char* comp8_dst_offset = comp8_dst + 2*(blockIdx.y*num_blocks*channel_pitch +
                                           blockIdx.z*channel_pitch +
-                                        ((blockIdx.x*blockDim.x + threadIdx.x)*thread_pitch));
-
-  for(i=0; i<thread_pitch; i++) {
-    comp8_dst_offset[2*i+0] =  ((char)(comp4_src_offset[i]&0xf0))>>4;
-    comp8_dst_offset[2*i+1] = ((char)((comp4_src_offset[i]&0x0f)<<4)) >> 4;// <<-cast captures nibble's sign bit
-  }
+                                          blockIdx.x*blockDim.x + threadIdx.x);
+  const char2 comp8 = tex1Dfetch<char2>(d_comp4_exp_tex_obj, (unsigned char) (comp4_src[blockIdx.z*block_pitch + 
+                                                                      blockIdx.y*channel_pitch +
+                                                                      blockIdx.x*blockDim.x + threadIdx.x]));
+  comp8_dst_offset[0] = comp8.x;
+  comp8_dst_offset[1] = comp8.y;
 }
 
 // Stream callback function that is called right before an output product's GPU
@@ -538,6 +541,7 @@ int rawspec_initialize(rawspec_context * ctx)
 
   // NULL out pointers (and invalidate plans)
   gpu_ctx->d_fft_in = NULL;
+  gpu_ctx->d_comp4_exp_LUT = NULL;
   gpu_ctx->d_blk_expansion_buf = NULL;
   gpu_ctx->d_fft_out = NULL;
   gpu_ctx->d_work_area = NULL;
@@ -654,15 +658,6 @@ int rawspec_initialize(rawspec_context * ctx)
     return 1;
   }
 
-  if(NbpsIsExpanded){
-    cuda_rc = cudaMalloc(&gpu_ctx->d_blk_expansion_buf, buf_size/2);
-    if(cuda_rc != cudaSuccess) {
-      PRINT_ERRMSG(cuda_rc);
-      rawspec_cleanup(ctx);
-      return 1;
-    }
-  }
-
   // Create texture object for device input buffer
   // res_desc describes input resource
   // Width is 32K elements, height is buf_size/32K elements, pitch is 32K elements
@@ -704,6 +699,53 @@ int rawspec_initialize(rawspec_context * ctx)
     PRINT_ERRMSG(cuda_rc);
     rawspec_cleanup(ctx);
     return 1;
+  }
+
+  if(NbpsIsExpanded){
+    cuda_rc = cudaMalloc(&gpu_ctx->d_blk_expansion_buf, buf_size/2);
+    if(cuda_rc != cudaSuccess) {
+      PRINT_ERRMSG(cuda_rc);
+      rawspec_cleanup(ctx);
+      return 1;
+    }
+
+    cuda_rc = cudaMalloc(&gpu_ctx->d_comp4_exp_LUT, 256*sizeof(char2));
+    if(cuda_rc != cudaSuccess) {
+      PRINT_ERRMSG(cuda_rc);
+      rawspec_cleanup(ctx);
+      return 1;
+    }
+    complex4_expansion<<<256,1>>>(gpu_ctx->d_comp4_exp_LUT);
+
+    memset(&res_desc, 0, sizeof(res_desc));
+    res_desc.resType = cudaResourceTypeLinear;
+    res_desc.res.linear.devPtr = gpu_ctx->d_comp4_exp_LUT;
+    res_desc.res.linear.desc.f = cudaChannelFormatKindSigned;
+    res_desc.res.linear.desc.x = 8; // bits per channel
+    res_desc.res.linear.desc.y = 8; // bits per channel
+    res_desc.res.linear.sizeInBytes = 256*sizeof(char2);
+
+    memset(&tex_desc, 0, sizeof(tex_desc));
+    tex_desc.readMode = cudaReadModeElementType;
+  
+    cuda_rc = cudaCreateTextureObject(&gpu_ctx->comp4_exp_tex_obj,
+                                      &res_desc, &tex_desc, NULL);
+  
+    if(cuda_rc != cudaSuccess) {
+      PRINT_ERRMSG(cuda_rc);
+      rawspec_cleanup(ctx);
+      return 1;
+    }
+  
+    cuda_rc = cudaMemcpyToSymbol(d_comp4_exp_tex_obj,
+                                &gpu_ctx->comp4_exp_tex_obj,
+                                sizeof(cudaTextureObject_t));
+
+    if(cuda_rc != cudaSuccess) {
+      PRINT_ERRMSG(cuda_rc);
+      rawspec_cleanup(ctx);
+      return 1;
+    }
   }
 
   // FFT output buffer
@@ -1031,6 +1073,11 @@ void rawspec_cleanup(rawspec_context * ctx)
     if(gpu_ctx->d_blk_expansion_buf) {
       cudaFree(gpu_ctx->d_blk_expansion_buf);
     }
+    
+    if(gpu_ctx->d_comp4_exp_LUT) {
+      cudaFree(gpu_ctx->d_comp4_exp_LUT);
+      cudaDestroyTextureObject(gpu_ctx->comp4_exp_tex_obj);
+    }
 
     if(gpu_ctx->d_work_area) {
       cudaFree(gpu_ctx->d_work_area);
@@ -1088,14 +1135,14 @@ int rawspec_copy_blocks_to_gpu_expanding_complex4(rawspec_context * ctx, size_t 
   }
   
   // Calculate grid dimensions, fastest to slowest
-  const unsigned int thread_count = 1;
+  const unsigned int thread_count = ctx->Np;
 
   grid.x = ctx->Ntpb;
   grid.y = ctx->Nc;
   grid.z = num_blocks;
   
-  copy_expand_complex4<<<grid, thread_count>>>(gpu_ctx->d_fft_in, gpu_ctx->d_blk_expansion_buf, num_blocks,
-                                               block_size, width, width/(grid.x*thread_count));
+  copy_expand_complex4<<<grid, thread_count>>>(gpu_ctx->d_fft_in, gpu_ctx->d_blk_expansion_buf, 
+                                              num_blocks, block_size, width);
 
   return 0;
 }
