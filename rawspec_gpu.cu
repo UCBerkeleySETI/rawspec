@@ -1237,7 +1237,8 @@ int rawspec_copy_blocks_to_gpu_expanding_complex4(rawspec_context * ctx, size_t 
   grid.y = ctx->Nc;
   grid.z = num_blocks;
   
-  copy_expand_complex4<<<grid, thread_count>>>(gpu_ctx->d_fft_in, gpu_ctx->d_blk_expansion_buf, 
+  copy_expand_complex4<<<grid, thread_count, 0, gpu_ctx->compute_stream>>>(
+                                              gpu_ctx->d_fft_in, gpu_ctx->d_blk_expansion_buf, 
                                               num_blocks, block_size, width);
 
   return 0;
