@@ -1398,7 +1398,6 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
         grid_ics.y = abs(ctx->Npolout[i]);
         grid_ics.z = ctx->Nds[i];
         
-        cudaStreamSynchronize(gpu_ctx->compute_stream);
         // incoherent_sum<<<grid_ics, gpu_ctx->nthreads, 0, gpu_ctx->compute_stream>>>(
         incoherent_sum<<<grid_ics, 1, 0, gpu_ctx->compute_stream>>>(
                                         gpu_ctx->d_pwr_out[i], gpu_ctx->d_ics_out[i], gpu_ctx->d_Aws,
