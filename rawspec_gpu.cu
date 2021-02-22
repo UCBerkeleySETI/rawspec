@@ -8,6 +8,9 @@
 #define NO_PLAN   ((cufftHandle)-1)
 #define NO_STREAM ((cudaStream_t)-1)
 
+#define LOAD_TEXTURE_WIDTH_POWER 15
+#define LOAD_TEXTURE_WIDTH_MASK (unsigned int)((1<<LOAD_TEXTURE_WIDTH_POWER)-1)
+
 #define MIN(a,b) ((a < b) ? (a) : (b))
 
 #define PRINT_ERRMSG(error)                  \
@@ -115,8 +118,8 @@ __device__ cufftComplex load_callback(void *p_v_in,
   // the polarization offset by subtracting p_v_user from p_v_in and add it to
   // offset.
   offset += (cufftComplex *)p_v_in - (cufftComplex *)p_v_user;
-  c.x = tex2D<float>(d_tex_obj, ((2*offset  ) & 0x7fff), ((  offset  ) >> 14));
-  c.y = tex2D<float>(d_tex_obj, ((2*offset+1) & 0x7fff), ((2*offset+1) >> 15));
+  c.x = tex2D<float>(d_tex_obj, ((2*offset  ) & LOAD_TEXTURE_WIDTH_MASK), ((  offset  ) >> (LOAD_TEXTURE_WIDTH_POWER-1)));
+  c.y = tex2D<float>(d_tex_obj, ((2*offset+1) & LOAD_TEXTURE_WIDTH_MASK), ((2*offset+1) >> LOAD_TEXTURE_WIDTH_POWER));
   return c;
 }
 
@@ -323,7 +326,7 @@ int rawspec_initialize(rawspec_context * ctx)
 {
   int i;
   int p;
-  size_t buf_size;
+  uint64_t buf_size;
   size_t work_size = 0;
   store_cb_data_t h_scb_data;
   cudaError_t cuda_rc;
@@ -605,13 +608,14 @@ int rawspec_initialize(rawspec_context * ctx)
   // Allocate buffers
 
   // FFT input buffer
-  // The input buffer is padded to the next multiple of 32KB to facilitate 2D
-  // texture lookups by treating the input buffer as a 2D array that is 32KB
-  // wide.
-  buf_size = ctx->Nb*ctx->Ntpb*ctx->Np*ctx->Nc* 2/*complex*/ *(ctx->Nbps/8);
-  if((buf_size & 0x7fff) != 0) {
-    // Round up to next multiple of 32KB
-    buf_size = (buf_size & ~0x7fff) + 0x8000;
+  // The input buffer is padded to the next multiple of 1<<LOAD_TEXTURE_WIDTH_POWER
+  // to facilitate 2D texture lookups by treating the input buffer as a 2D array
+  // that is 1<<LOAD_TEXTURE_WIDTH_POWER wide.
+  buf_size = ctx->Nb*ctx->Ntpb;
+  buf_size *= ctx->Np*ctx->Nc* 2/*complex*/ *(ctx->Nbps/8);
+  if((buf_size & LOAD_TEXTURE_WIDTH_MASK) != 0) {
+    // Round up to next multiple of 64KB
+    buf_size = (buf_size & ~LOAD_TEXTURE_WIDTH_MASK) + 1<<LOAD_TEXTURE_WIDTH_POWER;
   }
 
 #ifdef VERBOSE_ALLOC
@@ -632,9 +636,9 @@ int rawspec_initialize(rawspec_context * ctx)
   res_desc.res.pitch2D.devPtr = gpu_ctx->d_fft_in;
   res_desc.res.pitch2D.desc.f = cudaChannelFormatKindSigned;
   res_desc.res.pitch2D.desc.x = ctx->Nbps; // bits per sample
-  res_desc.res.pitch2D.width = 1<<15;         // elements
-  res_desc.res.pitch2D.height = buf_size>>15; // elements
-  res_desc.res.pitch2D.pitchInBytes = (1<<15) * (ctx->Nbps/8);  // bytes!
+  res_desc.res.pitch2D.width = 1<<LOAD_TEXTURE_WIDTH_POWER;         // elements
+  res_desc.res.pitch2D.height = buf_size>>LOAD_TEXTURE_WIDTH_POWER; // elements
+  res_desc.res.pitch2D.pitchInBytes = (1<<LOAD_TEXTURE_WIDTH_POWER) * (ctx->Nbps/8);  // bytes!
   // tex_desc describes texture mapping
   memset(&tex_desc, 0, sizeof(tex_desc));
 #if 0 // These settings are not used in online examples involved cudaReadModeNormalizedFloat
