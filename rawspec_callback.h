@@ -7,6 +7,7 @@
 typedef struct {
   int *fd; // Output file descriptors (one for each antenna) or socket (at most 1)
   unsigned int Nant; // Number of antenna, splitting Nf per fd
+  char per_ant_out; // Flag to account for Nant
   unsigned int total_spectra;
   unsigned int total_packets;
   unsigned int total_bytes;

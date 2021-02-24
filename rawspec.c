@@ -392,12 +392,10 @@ char tmp[16];
     cb_data[i].fb_hdr.nifs   = abs(ctx.Npolout[i]);
     cb_data[i].rate          = rate;
     cb_data[i].Nant          = 1;
-  }
 
-  // Init callback file descriptors to sentinal values
-  for(i=0; i<ctx.No; i++) {
-    cb_data[i].fd = malloc(sizeof(int)*cb_data[i].Nant);
-    memset(cb_data[i].fd, -1, cb_data[i].Nant);
+    // Init callback file descriptors to sentinal values
+    cb_data[i].fd = malloc(sizeof(int)*1);
+    cb_data[i].fd[0] = -1;
   }
 
   // Set output mode specific callback function
@@ -525,10 +523,12 @@ char tmp[16];
                 }
                 free(cb_data[i].fd);
 
-                cb_data[i].Nant = raw_hdr.nants;
+                cb_data[i].per_ant_out = per_ant_out;
                 // Re-init callback file descriptors to sentinal values
-                cb_data[i].fd = malloc(sizeof(int)*cb_data[i].Nant);
-                memset(cb_data[i].fd, -1, cb_data[i].Nant);
+                cb_data[i].fd = malloc(sizeof(int)*raw_hdr.nants);
+                for(j=0; j<raw_hdr.nants; j++){
+                  cb_data[i].fd[j] = -1;
+                }
               }
             }
           }
@@ -591,6 +591,7 @@ char tmp[16];
               cb_data[i].Nds = ctx.Nds[i];
               cb_data[i].Nf  = ctx.Nts[i] * ctx.Nc;
               cb_data[i].debug_callback = DEBUG_CALLBACKS;
+              cb_data[i].Nant = raw_hdr.nants;
             }
 #if 0
             if(output_mode == RAWSPEC_NET) {
@@ -630,7 +631,7 @@ char tmp[16];
             - (ctx.Nts[i]/2) * cb_data[i].fb_hdr.foff
             + (schan % (raw_hdr.obsnchan/raw_hdr.nants)) * // Adjust for schan
                 raw_hdr.obsbw / (raw_hdr.obsnchan/raw_hdr.nants);
-          cb_data[i].fb_hdr.nchans = ctx.Nc * ctx.Nts[i] / cb_data[i].Nant;
+          cb_data[i].fb_hdr.nchans = ctx.Nc * ctx.Nts[i];
           cb_data[i].fb_hdr.tsamp = raw_hdr.tbin * ctx.Nts[i] * ctx.Nas[i];
 
           if(output_mode == RAWSPEC_FILE) {

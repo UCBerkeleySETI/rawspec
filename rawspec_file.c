@@ -41,13 +41,15 @@ int open_output_file(const char * dest, const char *stem, int output_idx)
 int open_output_file_per_antenna_and_write_header(callback_data_t *cb_data, const char * dest, const char *stem, int output_idx)
 {
   char ant_stem[PATH_MAX+1];
-
-  for(int i = 0; i < cb_data->Nant; i++){
-    if(cb_data->Nant == 1){
-      snprintf(ant_stem, PATH_MAX, "%s", stem);
+  if(cb_data->per_ant_out){
+    cb_data->fb_hdr.nchans /= cb_data->Nant;
+  }
+  for(int i = 0; i < (cb_data->per_ant_out ? cb_data->Nant : 1); i++){
+    if(cb_data->per_ant_out){
+      snprintf(ant_stem, PATH_MAX, "%s-ant%03d", stem, i);
     }
     else{
-      snprintf(ant_stem, PATH_MAX, "%s-ant%03d", stem, i);
+      snprintf(ant_stem, PATH_MAX, "%s", stem);
     }
 
     cb_data->fd[i] = open_output_file(dest, ant_stem, output_idx);
@@ -61,6 +63,9 @@ int open_output_file_per_antenna_and_write_header(callback_data_t *cb_data, cons
     // Write filterbank header to output file
     fb_fd_write_header(cb_data->fd[i], &cb_data->fb_hdr);
   }
+  if(cb_data->per_ant_out){
+    cb_data->fb_hdr.nchans *= cb_data->Nant;
+  }
   return 0;
 }
 
@@ -68,7 +73,7 @@ void * dump_file_thread_func(void *arg)
 {
   callback_data_t * cb_data = (callback_data_t *)arg;
 
-  if(cb_data->Nant > 1){
+  if(cb_data->per_ant_out){
     size_t spectra_stride = cb_data->h_pwrbuf_size / (cb_data->Nds * sizeof(float));
     size_t pol_stride = spectra_stride / cb_data->fb_hdr.nifs;
     size_t ant_stride = pol_stride / cb_data->Nant;
@@ -76,13 +81,17 @@ void * dump_file_thread_func(void *arg)
     for(size_t k = 0; k < cb_data->Nds; k++){// Spectra out
       for(size_t j = 0; j < cb_data->fb_hdr.nifs; j++){// Npolout
         for(size_t i = 0; i < cb_data->Nant; i++){ 
+          if(cb_data->fd[i] == -1){
+            // Assume that the following file-descriptors aren't valid
+            break;
+          }
           write(cb_data->fd[i], cb_data->h_pwrbuf + i * ant_stride + j * pol_stride + k * spectra_stride, ant_stride * sizeof(float));
         }
       }
     }
   }
-  else{
-    write(cb_data->fd[0], cb_data->h_pwrbuf, cb_data->h_pwrbuf_size);
+  else if(cb_data->fd[0] != -1 && cb_data->h_pwrbuf){
+      write(cb_data->fd[0], cb_data->h_pwrbuf, cb_data->h_pwrbuf_size);
   }
 
   // Increment total spectra counter for this output product
