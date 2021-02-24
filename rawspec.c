@@ -582,6 +582,10 @@ char tmp[16];
           else{
             printf("Ignoring --splitant flag in network mode\n");
           }
+          if(only_output_ics){
+            printf("Cancelling exclusive ICS output due to --splitant.\n");
+            only_output_ics = 0;
+          }
         }
 
         // If processing a specific antenna
