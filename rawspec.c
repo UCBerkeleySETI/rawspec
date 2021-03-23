@@ -704,7 +704,6 @@ char tmp[16];
 #endif // VERBOSE
               rawspec_wait_for_completion(&ctx);
               if(expand4bps_to8bps){
-                // rawspec_expand_4bit_blocks(&ctx, ctx.Nb);
                 rawspec_copy_blocks_to_gpu_expanding_complex4(&ctx, ctx.Nb);
               }
               else{
@@ -762,7 +761,6 @@ char tmp[16];
 #endif // VERBOSE
           rawspec_wait_for_completion(&ctx);
           if(expand4bps_to8bps){
-            // rawspec_expand_4bit_blocks(&ctx, ctx.Nb);
             rawspec_copy_blocks_to_gpu_expanding_complex4(&ctx, ctx.Nb);
           }
           else{

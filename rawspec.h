@@ -156,12 +156,6 @@ int rawspec_initialize(rawspec_context * ctx);
 // Returns 0 on success, non-zero on error.
 void rawspec_cleanup(rawspec_context * ctx);
 
-// Expand the assumed complex4 bytes in `ctx->h_blkbufs` to a byte per 
-// component with a kernel on the GPU.
-// Returns 0 on success, non-zero on error.
-int rawspec_expand_4bit_blocks(rawspec_context * ctx, 
-    size_t num_blocks);
-
 // Copy `num_blocks` consecutive blocks from `ctx->h_blkbufs` to GPU input
 // buffer.  Starts with source block `src_idx` to destination block `dst_idx`.
 // Returns 0 on success, non-zero on error.
