@@ -33,7 +33,7 @@
 #ifndef DEBUG_CALLBACKS
 #define DEBUG_CALLBACKS (0)
 #endif
-// #define VERBOSE
+
 // Reads `bytes_to_read` bytes from `fd` into the buffer pointed to by `buf`.
 // Returns the total bytes read or -1 on error.  A non-negative return value
 // will be less than `bytes_to_read` only of EOF is reached.
