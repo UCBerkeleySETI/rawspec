@@ -37,8 +37,10 @@ struct rawspec_context_s {
 
   // Nbps is the number of bits per sample (per component).  The only supported
   // values are 4* or 8 or 16.  Illegal values will be treated as 8.
-  // 4 bits per sample (assumed to be paired as an 8bit complex byte, real then imag)
-  // are expanded to 8 bits on host side, see read_fully_expanding_4bits.
+  // 4 bits per sample (assumed to be paired as an 8bit complex byte, the most
+  // significant 4 bits are the real bits, the least the imaginary)
+  // are expanded to 8 bits on device side, see 
+  // rawspec_copy_blocks_to_gpu_expanding_complex4.
   unsigned int Nbps; // Number of bits per sample (per component)
 
   // Npolout is the number of output polarization values per fine channel.
