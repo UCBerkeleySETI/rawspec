@@ -724,9 +724,6 @@ char tmp[16];
         bytes_read = read_fully(fdin,
                                 ctx.h_blkbufs[bi % ctx.Nb_host],
                                 (expand4bps_to8bps ? block_byte_length/2 : block_byte_length));
-        if(expand4bps_to8bps){
-          bytes_read *= 2;
-        }
 
         // Seek past channels after schan+nchan
         lseek(fdin, (2 * ctx.Np * (raw_hdr.obsnchan-(schan+Nc)) * Nbps)/8 * ctx.Ntpb, SEEK_CUR);
@@ -735,7 +732,7 @@ char tmp[16];
           perror("read");
           next_stem = 1;
           break; // Goto next file
-        } else if(bytes_read < block_byte_length) {
+        } else if(bytes_read < (expand4bps_to8bps ? block_byte_length/2 : block_byte_length)) {
           fprintf(stderr, "incomplete block at EOF\n");
           next_stem = 1;
           break; // Goto next file
