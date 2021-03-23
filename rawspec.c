@@ -550,6 +550,13 @@ char tmp[16];
             // printf("initialization succeeded for new block dimensions\n");
             block_byte_length = (2 * ctx.Np * ctx.Nc * ctx.Nbps)/8 * ctx.Ntpb;
 
+            // The GPU supports only 8bit and 16bit sample bit-widths. The strategy
+            // for handling 4bit samples is to expand them out to 8bits, and there-onwards 
+            // use the expanded 8bit samples. The device side rawspec_initialize actually still
+            // complains about the indication of the samples being 4bits. But the 
+            // expand4bps_to8bps flag is used to call rawspec_copy_blocks_to_gpu_expanding_complex4,
+            // leading to the samples being expanded before any device side computation happens
+            // in rawspec_start_processing. The ctx.Nbps is left as 8.
             if (ctx.Nbps == 8 && Nbps == 4){
               printf("CUDA memory initialised for %d bits per sample,\n\t"
                      "will expand header specified %d bits per sample.\n", ctx.Nbps, Nbps);
