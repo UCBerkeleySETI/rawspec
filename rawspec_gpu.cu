@@ -292,8 +292,13 @@ __global__ void complex4_expansion(char2 *lut){
 }
 
 // 4bit Expansion kernel
-// Takes the half full blocks of the fft_in buffer and expands each complex4 byte
-// Expectation of blockDim, with a single thread each:
+// Takes the half full blocks of the gpu_ctx->d_blk_expansion_buf buffer and expands 
+// each complex4 byte. The transferal mimics the cudaMemcpy2D of 
+// rawspec_copy_blocks_to_gpu:
+// The src order is [time, channel, blocks]  (fastest --> slowest)
+// The dst order is [time, blocks, channels] (fastest --> slowest)
+//
+// Expectation of blockDim, with a ctx->Np threads each:
 // grid.x = ctx->Ntpb;
 // grid.y = ctx->Nc;
 // grid.z = num_blocks;
