@@ -298,7 +298,7 @@ __global__ void complex4_expansion(char2 *lut){
 // The src order is [time, channel, blocks]  (fastest --> slowest)
 // The dst order is [time, blocks, channels] (fastest --> slowest)
 //
-// Expectation of blockDim, with a ctx->Np threads each:
+// Expectation of blockDim, with ctx->Np threads each:
 // grid.x = ctx->Ntpb;
 // grid.y = ctx->Nc;
 // grid.z = num_blocks;
