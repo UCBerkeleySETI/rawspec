@@ -282,9 +282,15 @@ __global__ void accumulate(float * pwr_buf, unsigned int Na, size_t xpitch, size
 }
 
 __global__ void complex4_expansion(char2 *lut){
-  lut[blockIdx.x] = make_char2( ((char)(blockIdx.x&0xf0))>>4,
-                                ((char)((blockIdx.x&0x0f)<<4)) >> 4);
+  // The right shifts (>> 4) aren't perfectly necessary, as
+  // with out them a scaling factor is introduced. They are kept
+  // however, as the LUT only computes this 256 times, all in parallel,
+  // and so no real speed gains are to be had.
+  lut[blockIdx.x] = make_char2( ((char)(blockIdx.x&0xf0))>>4,       // Real component
+                                ((char)((blockIdx.x&0x0f)<<4)) >> 4 // Imag component
+                              );
 }
+
 // 4bit Expansion kernel
 // Takes the half full blocks of the fft_in buffer and expands each complex4 byte
 // Expectation of blockDim, with a single thread each:
