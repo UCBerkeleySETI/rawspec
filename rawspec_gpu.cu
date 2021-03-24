@@ -359,6 +359,8 @@ int rawspec_initialize(rawspec_context * ctx)
 {
   int i;
   int p;
+  // A simple bool-flag for now, but could rather hold expansion ratio
+  // ^^ would require appropriate changes in rawspec.c (see expand4bps_to8bps)
   char NbpsIsExpanded = 0;
   size_t buf_size;
   size_t work_size = 0;
