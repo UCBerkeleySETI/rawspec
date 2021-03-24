@@ -485,8 +485,8 @@ char tmp[16];
         dpktidx = 0;
 
         if((2 * Np * Nc * Nbps)/8 * Ntpb != raw_hdr.blocsize) {
-          printf("bad block geometry: 2*%u*%u*%u*(%u/8) != %lu\n",
-              Np, Nc, Nbps, Ntpb, raw_hdr.blocsize);
+          printf("bad block geometry: 2*%upol*%uchan*%utpb*(%ubps/8) != %lu\n",
+              Np, Nc, Ntpb, Nbps, raw_hdr.blocsize);
           close(fdin);
           break; // Goto next stem
         }
