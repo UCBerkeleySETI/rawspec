@@ -1115,7 +1115,8 @@ void rawspec_cleanup(rawspec_context * ctx)
 
 // Copy `ctx->h_blkbufs` to GPU input buffer.
 // Returns 0 on success, non-zero on error.
-int rawspec_copy_blocks_to_gpu_expanding_complex4(rawspec_context * ctx, size_t num_blocks)
+int rawspec_copy_blocks_to_gpu_expanding_complex4(rawspec_context * ctx,
+  off_t src_idx, off_t dst_idx, size_t num_blocks)
 {
   if(num_blocks > ctx->Nb){
     fprintf(stderr, "%s: num_blocks (%lu) > Nb (%u)\n", __FUNCTION__, num_blocks, ctx->Nb);
@@ -1123,6 +1124,8 @@ int rawspec_copy_blocks_to_gpu_expanding_complex4(rawspec_context * ctx, size_t 
   }
 
   int b;
+  off_t sblk;
+  off_t dblk;
   dim3 grid;
   cudaError_t rc;
   rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
@@ -1132,7 +1135,9 @@ int rawspec_copy_blocks_to_gpu_expanding_complex4(rawspec_context * ctx, size_t 
   const size_t block_size = width * ctx->Nc;
 
   for(b=0; b < num_blocks; b++) {
-    rc = cudaMemcpyAsync(gpu_ctx->d_blk_expansion_buf + (b * block_size), ctx->h_blkbufs[b],
+    sblk = (src_idx + b) % ctx->Nb_host;
+    dblk = (dst_idx + b) % ctx->Nb;
+    rc = cudaMemcpyAsync(gpu_ctx->d_blk_expansion_buf + (dblk * block_size), ctx->h_blkbufs[sblk],
                           block_size, cudaMemcpyHostToDevice, gpu_ctx->compute_stream);
 
     if(rc != cudaSuccess) {

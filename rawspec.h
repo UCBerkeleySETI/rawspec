@@ -169,7 +169,7 @@ int rawspec_copy_blocks_to_gpu(rawspec_context * ctx,
 // a byte per component with a kernel on the GPU.
 // Returns 0 on success, non-zero on error.
 int rawspec_copy_blocks_to_gpu_expanding_complex4(
-        rawspec_context * ctx, size_t num_blocks);
+        rawspec_context * ctx, off_t src_idx, off_t dst_idx, size_t num_blocks);
 
 // Sets `num_blocks` blocks to zero in GPU input buffer, starting with block at
 // `dst_idx`.  If `dst_idx + num_blocks > cts->Nb`, the zeroed blocks will wrap
