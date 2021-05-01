@@ -809,6 +809,11 @@ char tmp[16];
             // Give up on this stem and go to next stem
             next_stem = 1;
             break;
+          } else if (raw_hdr.pktidx == pktidx ){
+            printf("got null jump in pktidx: (%ld - %ld) == 0\n",
+                   raw_hdr.pktidx, pktidx, dpktidx);
+            // just skip this block
+            break;
           }
 
           // Put in filler blocks of zeros
