@@ -330,6 +330,9 @@ char tmp[16];
     return 1;
   }
 
+  // Show librawspec version on startup
+  printf("rawspec using librawspec %s\n", rawspec_version_string());
+
   // If schan is non-zero, nchan must be too
   if(schan != 0 && nchan == 0) {
     fprintf(stderr, "error: nchan must be non-zero if schan is non-zero\n");
