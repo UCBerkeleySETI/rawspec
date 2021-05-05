@@ -330,7 +330,22 @@ static void CUDART_CB post_dump_stream_callback(cudaStream_t stream,
 // This stringification trick is from "info cpp"
 #define STRINGIFY1(s) #s
 #define STRINGIFY(s) STRINGIFY1(s)
-static const char rawspec_version[] = STRINGIFY(RAWSPEC_VERSION);
+static const char rawspec_version[] = STRINGIFY(RAWSPEC_VERSION) " cuFFT"
+#ifdef CUFFT_VER_MAJOR
+  " " STRINGIFY(CUFFT_VER_MAJOR)
+#ifdef CUFFT_VER_MINOR
+  "." STRINGIFY(CUFFT_VER_MINOR)
+#ifdef CUFFT_VER_PATCH
+  "." STRINGIFY(CUFFT_VER_PATCH)
+#ifdef CUFFT_VER_BUILD
+  "." STRINGIFY(CUFFT_VER_BUILD)
+#endif // CUFFT_VER_BUILD
+#endif // CUFFT_VER_PATCH
+#endif // CUFFT_VER_MINOR
+#else
+  " unknown/old"
+#endif // CUFFT_VER_MAJOR
+;
 
 // Returns a pointer to a string containing the rawspec version
 const char * rawspec_version_string()
