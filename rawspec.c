@@ -811,7 +811,7 @@ char tmp[16];
             break;
           } else if (raw_hdr.pktidx == pktidx ){
             printf("got null jump in pktidx: (%ld - %ld) == 0\n",
-                   raw_hdr.pktidx, pktidx, dpktidx);
+                   raw_hdr.pktidx, pktidx);
             // just skip this block
             break;
           }
