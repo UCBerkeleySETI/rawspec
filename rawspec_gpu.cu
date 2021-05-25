@@ -1134,7 +1134,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
 
       // Add FFT to stream
       cufft_rc = cufftExecC2C(plan,
-                              ((cufftComplex *)gpu_ctx->d_fft_in) + p * (ctx->Nbps/8),
+                              ((cufftComplex *)gpu_ctx->d_fft_in) + p,
                               gpu_ctx->d_fft_out + p * fft_outbuf_length,
                               fft_dir <= 0 ? CUFFT_INVERSE : CUFFT_FORWARD);
 
