@@ -59,6 +59,25 @@ ssize_t read_fully(int fd, void * buf, size_t bytes_to_read)
   return total_bytes_read;
 }
 
+ssize_t read_to_skip(int fd, size_t bytes_to_read) {
+  char tmp_buffer[8192];
+
+  ssize_t remaining_bytes = bytes_to_read;
+  ssize_t bytes_read, next_read;
+
+  while(remaining_bytes > 0) {
+    next_read = ((remaining_bytes - 8192) > 0) ? 8192 : remaining_bytes;
+    if((bytes_read = read_fully(fd, tmp_buffer, next_read)) != next_read) {
+      printf("read_to_skip: failed to read requested %ld bytes (%ld bytes read)\n", next_read, bytes_read);
+      return bytes_read;
+    }
+    remaining_bytes -= bytes_read;
+  }
+
+  return bytes_to_read - remaining_bytes;
+
+}
+
 static struct option long_opts[] = {
   {"dest",    1, NULL, 'd'},
   {"ffts",    1, NULL, 'f'},
@@ -703,7 +722,14 @@ char tmp[16];
         } // irregular pktidx step
 
         // Seek past first schan channel
-        lseek(fdin, 2 * ctx.Np * schan * (ctx.Nbps/8) * ctx.Ntpb, SEEK_CUR);
+        if(!raw_hdr.fifo) {
+          lseek(fdin, 2 * ctx.Np * schan * (ctx.Nbps / 8) * ctx.Ntpb, SEEK_CUR);
+        } else {
+          if(read_to_skip(fdin, 2 * ctx.Np * schan * (ctx.Nbps / 8) * ctx.Ntpb) < 0) {
+            break; // Give up on this stem and go to next stem
+          }
+        }
+
 
         // Read ctx.Nc coarse channels from this block
         bytes_read = read_fully(fdin,
@@ -711,7 +737,13 @@ char tmp[16];
                                 2 * ctx.Np * ctx.Nc * (ctx.Nbps/8) * ctx.Ntpb);
 
         // Seek past channels after schan+nchan
-        lseek(fdin, 2 * ctx.Np * (raw_hdr.obsnchan-(schan+Nc)) * (ctx.Nbps/8) * ctx.Ntpb, SEEK_CUR);
+        if(!raw_hdr.fifo) {
+          lseek(fdin, 2 * ctx.Np * (raw_hdr.obsnchan - (schan + Nc)) * (ctx.Nbps / 8) * ctx.Ntpb, SEEK_CUR);
+        } else {
+          if(read_to_skip(fdin, 2 * ctx.Np * (raw_hdr.obsnchan - (schan + Nc)) * (ctx.Nbps / 8) * ctx.Ntpb) < 0) {
+            break; // Give up on this stem and go to next stem
+          }
+        }
 
         if(bytes_read == -1) {
           perror("read");

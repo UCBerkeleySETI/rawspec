@@ -3,9 +3,12 @@
 #include <unistd.h>
 #include <stdint.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <errno.h>
 
 #include "rawspec_rawutils.h"
 #include "hget.h"
+
 
 int32_t rawspec_raw_get_s32(const char * buf, const char * key, int32_t def)
 {
@@ -137,7 +140,7 @@ int rawspec_raw_header_size(char * hdr, size_t len, int directio)
   // Loop over the 80-byte records
   for(i=0; i<len; i += 80) {
     // If we found the "END " record
-    if(!strncmp(hdr+i, "END ", 4)) {
+    if(!strncmp(hdr+i, RAWPSEC_HEADER_END_KEY, 4)) {
       //printf("header_size: found END at record %d\n", i);
       // Move to just after END record
       i += 80;
@@ -196,11 +199,50 @@ off_t rawspec_raw_read_header(int fd, rawspec_raw_hdr_t * raw_hdr)
   // Ensure that hdr is aligned to a 512-byte boundary so that it can be used
   // with files opened with O_DIRECT.
   char hdr[MAX_RAW_HDR_SIZE] __attribute__ ((aligned (512)));
-  int hdr_size;
-  off_t pos = lseek(fd, 0, SEEK_CUR);
+  int hdr_size = 0;
 
-  // Read header (plus some data, probably)
-  hdr_size = read(fd, hdr, MAX_RAW_HDR_SIZE);
+  if(raw_hdr->hdr_size == 0) {
+    struct stat file_stat;
+    if(fstat(fd, &file_stat) < 0) {
+      printf("fstat failed [%d]\n", errno);
+      return -1;
+    }
+
+    if(S_ISFIFO(file_stat.st_mode)) {
+      raw_hdr->fifo = 1;
+    }
+
+  }
+  off_t pos;
+
+  if(!raw_hdr->fifo) {
+    pos = lseek(fd, 0, SEEK_CUR);
+
+    // Read header (plus some data, probably)
+    hdr_size = read(fd, hdr, MAX_RAW_HDR_SIZE);
+  } else {
+    pos = 0;
+    size_t read_len;
+    int key_length = strlen(RAWPSEC_HEADER_END_KEY);
+    while((read_len = read(fd, &(hdr[hdr_size]), RAWSPEC_HEADER_ENTRY_LEN)) == RAWSPEC_HEADER_ENTRY_LEN) {
+      if(strncmp(&(hdr[hdr_size]), RAWPSEC_HEADER_END_KEY, key_length) == 0) {
+        break;
+      }
+      hdr_size += read_len;
+
+      if(hdr_size > MAX_RAW_HDR_SIZE) {
+        printf("FIFO passed max header size (%d)\n", MAX_RAW_HDR_SIZE);
+        return -1;
+      }
+    }
+
+    if(read_len != RAWSPEC_HEADER_ENTRY_LEN) {
+      printf("last read was not the expected size");
+      return -1;
+    }
+
+    hdr_size += read_len;
+  }
 
   if(hdr_size == -1) {
     return -1;
@@ -253,7 +295,11 @@ off_t rawspec_raw_read_header(int fd, rawspec_raw_hdr_t * raw_hdr)
   //printf("RRP: hdr=%lu\n", hdr_size);
 
   // Seek forward from original position past header (and any padding)
-  pos = lseek(fd, pos + hdr_size, SEEK_SET);
+  if(!raw_hdr->fifo) {
+    pos = lseek(fd, pos + hdr_size, SEEK_SET);
+  } else {
+    pos = hdr_size;
+  }
   //printf("RRP: seek=%ld\n", pos);
 
   return pos;
