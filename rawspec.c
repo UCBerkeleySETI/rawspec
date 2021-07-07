@@ -589,7 +589,8 @@ char tmp[16];
           cb_data[i].fb_hdr.fch1 = raw_hdr.obsfreq
             - raw_hdr.obsbw*((raw_hdr.obsnchan/raw_hdr.nants)-1)
                 /(2*raw_hdr.obsnchan/raw_hdr.nants)
-            - (ctx.Nts[i]/2) * cb_data[i].fb_hdr.foff
+            - (ctx.Nts[i]/2) * cb_data[i].fb_hdr.foff // Shift to the top of the top channel
+            + cb_data[i].fb_hdr.foff / 2 // Account for the shift to the centre of the top channel
             + (schan % (raw_hdr.obsnchan/raw_hdr.nants)) * // Adjust for schan
                 raw_hdr.obsbw / (raw_hdr.obsnchan/raw_hdr.nants);
           cb_data[i].fb_hdr.nchans = ctx.Nc * ctx.Nts[i];
