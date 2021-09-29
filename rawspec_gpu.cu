@@ -62,6 +62,10 @@ typedef struct {
 typedef struct {
   // Device pointer to FFT input buffer
   char * d_fft_in;
+  // Device pointer to complex4 expansion LUT
+  char2 * d_comp4_exp_LUT;
+  // Device pointer to intermediary buffer for expansion of complex4 samples
+  char * d_blk_expansion_buf;
   // Device pointer to FFT output buffer
   cufftComplex * d_fft_out;
   // Array of device pointers to power buffers
@@ -95,6 +99,8 @@ typedef struct {
   dump_cb_data_t dump_cb_data[MAX_OUTPUTS];
   // CUDA Texture Object used to convert from integer to floating point
   cudaTextureObject_t tex_obj;
+  // CUDA Texture Object used to convert from complex4bit byte data to complex8bit short data
+  cudaTextureObject_t comp4_exp_tex_obj;
   // Flag indicating that the caller is managing the input block buffers
   // Non-zero when caller is managing (i.e. allocating and freeing) the
   // buffers; zero when we are.
@@ -103,6 +109,7 @@ typedef struct {
 
 // Device-side texture object declaration
 __device__ cudaTextureObject_t d_tex_obj;
+__device__ cudaTextureObject_t d_comp4_exp_tex_obj;
 
 // The load_callback gets the input value through the texture memory to achieve
 // a "for free" mapping of 8-bit integer values into 32-bit float values.
@@ -299,6 +306,40 @@ __global__ void incoherent_sum(float * pwr_buf, float * incoh_buf, float * ant_w
   }
 }
 
+__global__ void complex4_expansion(char2 *lut){
+  // The right shifts (>> 4) aren't perfectly necessary, as
+  // with out them a scaling factor is introduced. They are kept
+  // however, as the LUT only computes this 256 times, all in parallel,
+  // and so no real speed gains are to be had.
+  lut[blockIdx.x] = make_char2( ((char)(blockIdx.x&0xf0))>>4,       // Real component
+                                ((char)((blockIdx.x&0x0f)<<4)) >> 4 // Imag component
+                              );
+}
+
+// 4bit Expansion kernel
+// Takes the half full blocks of the gpu_ctx->d_blk_expansion_buf buffer and expands 
+// each complex4 byte. The transferal mimics the cudaMemcpy2D of 
+// rawspec_copy_blocks_to_gpu:
+// The src order is [time, channel, blocks]  (fastest --> slowest)
+// The dst order is [time, blocks, channels] (fastest --> slowest)
+//
+// Expectation of blockDim, with ctx->Np threads each:
+// grid.x = ctx->Ntpb;
+// grid.y = ctx->Nc;
+// grid.z = num_blocks;
+__global__ void copy_expand_complex4(char *comp8_dst, char *comp4_src, size_t num_blocks,
+                                     size_t block_pitch, size_t channel_pitch)
+{                                     
+  char* comp8_dst_offset = comp8_dst + 2*(blockIdx.y*num_blocks*channel_pitch +
+                                          blockIdx.z*channel_pitch +
+                                          blockIdx.x*blockDim.x + threadIdx.x);
+  const char2 comp8 = tex1Dfetch<char2>(d_comp4_exp_tex_obj, (unsigned char) (comp4_src[blockIdx.z*block_pitch + 
+                                                                      blockIdx.y*channel_pitch +
+                                                                      blockIdx.x*blockDim.x + threadIdx.x]));
+  comp8_dst_offset[0] = comp8.x;
+  comp8_dst_offset[1] = comp8.y;
+}
+
 // Stream callback function that is called right before an output product's GPU
 // power buffer has been copied to the host power buffer.
 static void CUDART_CB pre_dump_stream_callback(cudaStream_t stream,
@@ -363,6 +404,9 @@ int rawspec_initialize(rawspec_context * ctx)
 {
   int i;
   int p;
+  // A simple bool-flag for now, but could rather hold expansion ratio
+  // ^^ would require appropriate changes in rawspec.c (see expand4bps_to8bps)
+  char NbpsIsExpanded = 0;
   size_t buf_size;
   size_t work_size = 0;
   store_cb_data_t h_scb_data;
@@ -418,6 +462,7 @@ int rawspec_initialize(rawspec_context * ctx)
         "number of bits per sample must be 8 or 16 (not %d), using 8 bps\n",
         ctx->Nbps);
     fflush(stderr);
+    NbpsIsExpanded = ctx->Nbps == 4;
     ctx->Nbps = 8;
   }
 
@@ -550,6 +595,8 @@ int rawspec_initialize(rawspec_context * ctx)
 
   // NULL out pointers (and invalidate plans)
   gpu_ctx->d_fft_in = NULL;
+  gpu_ctx->d_comp4_exp_LUT = NULL;
+  gpu_ctx->d_blk_expansion_buf = NULL;
   gpu_ctx->d_fft_out = NULL;
   gpu_ctx->d_work_area = NULL;
   gpu_ctx->work_size = 0;
@@ -716,6 +763,53 @@ int rawspec_initialize(rawspec_context * ctx)
     PRINT_ERRMSG(cuda_rc);
     rawspec_cleanup(ctx);
     return 1;
+  }
+
+  if(NbpsIsExpanded){
+    cuda_rc = cudaMalloc(&gpu_ctx->d_blk_expansion_buf, buf_size/2);
+    if(cuda_rc != cudaSuccess) {
+      PRINT_ERRMSG(cuda_rc);
+      rawspec_cleanup(ctx);
+      return 1;
+    }
+
+    cuda_rc = cudaMalloc(&gpu_ctx->d_comp4_exp_LUT, 256*sizeof(char2));
+    if(cuda_rc != cudaSuccess) {
+      PRINT_ERRMSG(cuda_rc);
+      rawspec_cleanup(ctx);
+      return 1;
+    }
+    complex4_expansion<<<256,1>>>(gpu_ctx->d_comp4_exp_LUT);
+
+    memset(&res_desc, 0, sizeof(res_desc));
+    res_desc.resType = cudaResourceTypeLinear;
+    res_desc.res.linear.devPtr = gpu_ctx->d_comp4_exp_LUT;
+    res_desc.res.linear.desc.f = cudaChannelFormatKindSigned;
+    res_desc.res.linear.desc.x = 8; // bits per channel
+    res_desc.res.linear.desc.y = 8; // bits per channel
+    res_desc.res.linear.sizeInBytes = 256*sizeof(char2);
+
+    memset(&tex_desc, 0, sizeof(tex_desc));
+    tex_desc.readMode = cudaReadModeElementType;
+  
+    cuda_rc = cudaCreateTextureObject(&gpu_ctx->comp4_exp_tex_obj,
+                                      &res_desc, &tex_desc, NULL);
+  
+    if(cuda_rc != cudaSuccess) {
+      PRINT_ERRMSG(cuda_rc);
+      rawspec_cleanup(ctx);
+      return 1;
+    }
+  
+    cuda_rc = cudaMemcpyToSymbol(d_comp4_exp_tex_obj,
+                                &gpu_ctx->comp4_exp_tex_obj,
+                                sizeof(cudaTextureObject_t));
+
+    if(cuda_rc != cudaSuccess) {
+      PRINT_ERRMSG(cuda_rc);
+      rawspec_cleanup(ctx);
+      return 1;
+    }
   }
 
   // FFT output buffer
@@ -1087,6 +1181,15 @@ void rawspec_cleanup(rawspec_context * ctx)
       cudaFree(gpu_ctx->d_fft_in);
     }
 
+    if(gpu_ctx->d_blk_expansion_buf) {
+      cudaFree(gpu_ctx->d_blk_expansion_buf);
+    }
+    
+    if(gpu_ctx->d_comp4_exp_LUT) {
+      cudaFree(gpu_ctx->d_comp4_exp_LUT);
+      cudaDestroyTextureObject(gpu_ctx->comp4_exp_tex_obj);
+    }
+
     if(gpu_ctx->d_work_area) {
       cudaFree(gpu_ctx->d_work_area);
     }
@@ -1125,6 +1228,53 @@ void rawspec_cleanup(rawspec_context * ctx)
     free(ctx->gpu_ctx);
     ctx->gpu_ctx = NULL;
   }
+}
+
+// Copy `ctx->h_blkbufs` to GPU input buffer.
+// Returns 0 on success, non-zero on error.
+int rawspec_copy_blocks_to_gpu_expanding_complex4(rawspec_context * ctx,
+  off_t src_idx, off_t dst_idx, size_t num_blocks)
+{
+  if(num_blocks > ctx->Nb){
+    fprintf(stderr, "%s: num_blocks (%lu) > Nb (%u)\n", __FUNCTION__, num_blocks, ctx->Nb);
+    return 1;
+  }
+
+  int b;
+  off_t sblk;
+  off_t dblk;
+  dim3 grid;
+  cudaError_t rc;
+  rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
+
+  // Calculated for complex4 samples
+  const size_t width = ctx->Ntpb * ctx->Np; // * 2 /*complex*/ * (4/8)
+  const size_t block_size = width * ctx->Nc;
+
+  for(b=0; b < num_blocks; b++) {
+    sblk = (src_idx + b) % ctx->Nb_host;
+    dblk = (dst_idx + b) % ctx->Nb;
+    rc = cudaMemcpyAsync(gpu_ctx->d_blk_expansion_buf + (dblk * block_size), ctx->h_blkbufs[sblk],
+                          block_size, cudaMemcpyHostToDevice, gpu_ctx->compute_stream);
+
+    if(rc != cudaSuccess) {
+      PRINT_ERRMSG(rc);
+      return 1;
+    }
+  }
+  
+  // Calculate grid dimensions, fastest to slowest
+  const unsigned int thread_count = ctx->Np;
+
+  grid.x = ctx->Ntpb;
+  grid.y = ctx->Nc;
+  grid.z = num_blocks;
+  
+  copy_expand_complex4<<<grid, thread_count, 0, gpu_ctx->compute_stream>>>(
+                                              gpu_ctx->d_fft_in, gpu_ctx->d_blk_expansion_buf, 
+                                              num_blocks, block_size, width);
+
+  return 0;
 }
 
 // Copy `ctx->h_blkbufs` to GPU input buffer.

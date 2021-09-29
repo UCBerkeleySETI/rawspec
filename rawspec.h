@@ -11,11 +11,11 @@
 
 #define RAWSPEC_BLOCSIZE(pctx) \
 (                              \
-  (pctx)->Nc          *        \
+  ((pctx)->Nc         *        \
   (pctx)->Ntpb        *        \
   (pctx)->Np          *        \
   2 /* complex */     *        \
-  ((pctx)->Nbps / 8)           \
+  (pctx)->Nbps) / 8            \
 )
 
 #define RAWSPEC_CALLBACK_PRE_DUMP  (0)
@@ -37,7 +37,11 @@ struct rawspec_context_s {
   unsigned int Ntpb;  // Number of time samples per block
 
   // Nbps is the number of bits per sample (per component).  The only supported
-  // values are 8 or 16.  Illegal values will be treated as 8.
+  // values are 4* or 8 or 16.  Illegal values will be treated as 8.
+  // 4 bits per sample (assumed to be paired as an 8bit complex byte, the most
+  // significant 4 bits are the real bits, the least the imaginary)
+  // are expanded to 8 bits on device side, see 
+  // rawspec_copy_blocks_to_gpu_expanding_complex4.
   unsigned int Nbps; // Number of bits per sample (per component)
 
   // Npolout is the number of output polarization values per fine channel.
@@ -171,6 +175,13 @@ void rawspec_cleanup(rawspec_context * ctx);
 // Returns 0 on success, non-zero on error.
 int rawspec_copy_blocks_to_gpu(rawspec_context * ctx,
     off_t src_idx, off_t dst_idx, size_t num_blocks);
+
+// Copy `num_blocks` consecutive blocks from `ctx->h_blkbufs` to GPU input
+// buffer while expanding the assumed complex4 bytes in `ctx->h_blkbufs` to
+// a byte per component with a kernel on the GPU.
+// Returns 0 on success, non-zero on error.
+int rawspec_copy_blocks_to_gpu_expanding_complex4(
+        rawspec_context * ctx, off_t src_idx, off_t dst_idx, size_t num_blocks);
 
 // Sets `num_blocks` blocks to zero in GPU input buffer, starting with block at
 // `dst_idx`.  If `dst_idx + num_blocks > cts->Nb`, the zeroed blocks will wrap

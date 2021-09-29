@@ -156,6 +156,8 @@ char tmp[16];
   unsigned int Np;   // Number of polarizations
   unsigned int Ntpb; // Number of time samples per block
   unsigned int Nbps; // Number of bits per sample
+  uint64_t block_byte_length; // Compute the length once
+  char expand4bps_to8bps; // Expansion flag
   int64_t pktidx0;
   int64_t pktidx;
   int64_t dpktidx;
@@ -508,7 +510,8 @@ char tmp[16];
         Nc = raw_hdr.obsnchan;
         Np = raw_hdr.npol;
         Nbps = raw_hdr.nbits;
-        Ntpb = raw_hdr.blocsize / (2 * Np * Nc * (Nbps/8));
+        
+        Ntpb = raw_hdr.blocsize / ((2 * Np * Nc * Nbps)/8);
 
         // First pktidx of first file
         pktidx0 = raw_hdr.pktidx;
@@ -517,9 +520,9 @@ char tmp[16];
         // Expected difference be between raw_hdr.pktidx and previous pktidx
         dpktidx = 0;
 
-        if(2 * Np * Nc * (Nbps/8) * Ntpb != raw_hdr.blocsize) {
-          printf("bad block geometry: 2*%u*%u*%u*%u != %lu\n",
-              Np, Nc, (Nbps/8), Ntpb, raw_hdr.blocsize);
+        if((2 * Np * Nc * Nbps)/8 * Ntpb != raw_hdr.blocsize) {
+          printf("bad block geometry: 2*%upol*%uchan*%utpb*(%ubps/8) != %lu\n",
+              Np, Nc, Ntpb, Nbps, raw_hdr.blocsize);
           close(fdin);
           break; // Goto next stem
         }
@@ -582,7 +585,21 @@ char tmp[16];
             ctx.Nbps = 0;
             break;
           } else {
-            //printf("initialization succeeded for new block dimensions\n");
+            // printf("initialization succeeded for new block dimensions\n");
+            block_byte_length = (2 * ctx.Np * ctx.Nc * ctx.Nbps)/8 * ctx.Ntpb;
+
+            // The GPU supports only 8bit and 16bit sample bit-widths. The strategy
+            // for handling 4bit samples is to expand them out to 8bits, and there-onwards 
+            // use the expanded 8bit samples. The device side rawspec_initialize actually still
+            // complains about the indication of the samples being 4bits. But the 
+            // expand4bps_to8bps flag is used to call rawspec_copy_blocks_to_gpu_expanding_complex4,
+            // leading to the samples being expanded before any device side computation happens
+            // in rawspec_start_processing. The ctx.Nbps is left as 8.
+            if (ctx.Nbps == 8 && Nbps == 4){
+              printf("CUDA memory initialised for %d bits per sample,\n\t"
+                     "will expand header specified %d bits per sample.\n", ctx.Nbps, Nbps);
+              expand4bps_to8bps = 1;
+            }
 
             // Copy fields from ctx to cb_data
             for(i=0; i<ctx.No; i++) {
@@ -749,7 +766,12 @@ char tmp[16];
               fprintf(stderr, "\n");
 #endif // VERBOSE
               rawspec_wait_for_completion(&ctx);
-              rawspec_copy_blocks_to_gpu(&ctx, 0, 0, ctx.Nb);
+              if(expand4bps_to8bps){
+                rawspec_copy_blocks_to_gpu_expanding_complex4(&ctx, 0, 0, ctx.Nb);
+              }
+              else{
+                rawspec_copy_blocks_to_gpu(&ctx, 0, 0, ctx.Nb);
+              }
               rawspec_start_processing(&ctx, RAWSPEC_FORWARD_FFT);
             }
 
@@ -759,21 +781,21 @@ char tmp[16];
         } // irregular pktidx step
 
         // Seek past first schan channel
-        lseek(fdin, 2 * ctx.Np * schan * (ctx.Nbps/8) * ctx.Ntpb, SEEK_CUR);
+        lseek(fdin, (2 * ctx.Np * schan * Nbps)/8 * ctx.Ntpb, SEEK_CUR);
 
         // Read ctx.Nc coarse channels from this block
         bytes_read = read_fully(fdin,
                                 ctx.h_blkbufs[bi % ctx.Nb_host],
-                                2 * ctx.Np * ctx.Nc * (ctx.Nbps/8) * ctx.Ntpb);
+                                (expand4bps_to8bps ? block_byte_length/2 : block_byte_length));
 
         // Seek past channels after schan+nchan
-        lseek(fdin, 2 * ctx.Np * (raw_hdr.obsnchan-(schan+Nc)) * (ctx.Nbps/8) * ctx.Ntpb, SEEK_CUR);
+        lseek(fdin, (2 * ctx.Np * (raw_hdr.obsnchan-(schan+Nc)) * Nbps)/8 * ctx.Ntpb, SEEK_CUR);
 
         if(bytes_read == -1) {
           perror("read");
           next_stem = 1;
           break; // Goto next file
-        } else if(bytes_read < 2 * ctx.Np * ctx.Nc * (ctx.Nbps/8) * ctx.Ntpb) {
+        } else if(bytes_read < (expand4bps_to8bps ? block_byte_length/2 : block_byte_length)) {
           fprintf(stderr, "incomplete block at EOF\n");
           next_stem = 1;
           break; // Goto next file
@@ -798,7 +820,12 @@ char tmp[16];
           fprintf(stderr, "\n");
 #endif // VERBOSE
           rawspec_wait_for_completion(&ctx);
-          rawspec_copy_blocks_to_gpu(&ctx, 0, 0, ctx.Nb);
+          if(expand4bps_to8bps){
+            rawspec_copy_blocks_to_gpu_expanding_complex4(&ctx, 0, 0, ctx.Nb);
+          }
+          else{
+            rawspec_copy_blocks_to_gpu(&ctx, 0, 0, ctx.Nb);
+          }
           rawspec_start_processing(&ctx, RAWSPEC_FORWARD_FFT);
         }
 
