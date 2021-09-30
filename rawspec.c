@@ -948,7 +948,7 @@ char tmp[16];
     // Close output files
     if(output_mode == RAWSPEC_FILE) {
       for(i=0; i<ctx.No; i++) {
-        for(j=0; j<cb_data[i].Nant; j++) {
+        for(j=0; j < (cb_data[i].per_ant_out ? cb_data[i].Nant : 1); j++) {
           if(cb_data[i].fd[j] != -1) {
             close(cb_data[i].fd[j]);
             cb_data[i].fd[j] = -1;
