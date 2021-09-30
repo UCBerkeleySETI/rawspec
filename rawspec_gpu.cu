@@ -417,6 +417,7 @@ int rawspec_initialize(rawspec_context * ctx)
   cufftResult cufft_rc;
   cudaResourceDesc res_desc;
   cudaTextureDesc tex_desc;
+  int texture_attribute_maximum;
 
 
   // Host copies of cufft callback pointers
@@ -725,6 +726,32 @@ int rawspec_initialize(rawspec_context * ctx)
     rawspec_cleanup(ctx);
     return 1;
   }
+
+  
+  cudaDeviceGetAttribute(&texture_attribute_maximum, cudaDevAttrMaxTexture2DLinearWidth, ctx->gpu_index);
+  if(texture_attribute_maximum < 1<<LOAD_TEXTURE_WIDTH_POWER){
+    fprintf(stderr, "Maximum 2D texture width: %d.\n", texture_attribute_maximum);
+    fprintf(stderr, "\tThe static load-texture-width of 1<<LOAD_TEXTURE_WIDTH_POWER exceeds this: %d\n", 1<<LOAD_TEXTURE_WIDTH_POWER);
+    fprintf(stderr, "\tExpect a CUDA raised failure!\n");
+  }
+  cudaDeviceGetAttribute(&texture_attribute_maximum, cudaDevAttrMaxTexture2DLinearHeight, ctx->gpu_index);
+  if(texture_attribute_maximum < buf_size>>LOAD_TEXTURE_WIDTH_POWER){
+    fprintf(stderr, "Maximum 2D texture height: %d.\n", texture_attribute_maximum);
+    fprintf(stderr, "\tThe load-texture-height of `buf_size (%lu)>>(%d) LOAD_TEXTURE_WIDTH_POWER` exceeds this: %lu\n", buf_size, LOAD_TEXTURE_WIDTH_POWER, buf_size>>LOAD_TEXTURE_WIDTH_POWER);
+    fprintf(stderr, "\tExpect a CUDA raised failure!\n");
+
+    cudaDeviceGetAttribute(&texture_attribute_maximum, cudaDevAttrMaxTexture2DLinearWidth, ctx->gpu_index);
+    if(texture_attribute_maximum > 1<<LOAD_TEXTURE_WIDTH_POWER){
+      fprintf(stderr, "\tLOAD_TEXTURE_WIDTH_POWER could be increased to %d (at most) to possibly circumvent this issued\n", 31 - __builtin_clz(texture_attribute_maximum));
+    }
+  }
+  cudaDeviceGetAttribute(&texture_attribute_maximum, cudaDevAttrMaxTexture2DLinearPitch, ctx->gpu_index);
+  if(texture_attribute_maximum < (1<<LOAD_TEXTURE_WIDTH_POWER) * (ctx->Nbps/8)){
+    fprintf(stderr, "Maximum 2D texture pitch: %d.\n", texture_attribute_maximum);
+    fprintf(stderr, "\tThe load-texture-pitch of (1<<LOAD_TEXTURE_WIDTH_POWER) * (ctx->Nbps/8) exceeds this: %d\n", (1<<LOAD_TEXTURE_WIDTH_POWER) * (ctx->Nbps/8));
+    fprintf(stderr, "\tExpect a CUDA raised failure!\n");
+  }
+  fflush(stderr);
 
   // Create texture object for device input buffer
   // res_desc describes input resource
