@@ -108,6 +108,10 @@ typedef struct {
   // Non-zero when caller is managing (i.e. allocating and freeing) the
   // buffers; zero when we are.
   int caller_managed;
+  // This is a commonly used value to stride between channels within GUPPI input-buffers,
+  // the dimensionality of which is [channel (slowest), time, polarisation (fastest)]:
+  // (ctx->Ntpb * ctx->Np * 2 /*complex*/ * ctx->Nbps)/8
+  size_t guppi_channel_stride;
 } rawspec_gpu_context;
 
 // Device-side texture object declaration
@@ -704,14 +708,15 @@ int rawspec_initialize(rawspec_context * ctx)
     }
   }
 
+  gpu_ctx->guppi_channel_stride = (ctx->Ntpb * ctx->Np * 2 /*complex*/ * ctx->Nbps)/8;
+
   // Allocate buffers
 
   // FFT input buffer
   // The input buffer is padded to the next multiple of 1<<LOAD_TEXTURE_WIDTH_POWER
   // to facilitate 2D texture lookups by treating the input buffer as a 2D array
   // that is 1<<LOAD_TEXTURE_WIDTH_POWER wide.
-  buf_size = ctx->Nb*ctx->Ntpb;
-  buf_size *= ctx->Np*ctx->Nc* 2/*complex*/ *(ctx->Nbps/8);
+  buf_size = ctx->Nb*ctx->Nc*gpu_ctx->guppi_channel_stride;
   if((buf_size & LOAD_TEXTURE_WIDTH_MASK) != 0) {
     // Round up to next multiple of 64KB
     buf_size = (buf_size & ~LOAD_TEXTURE_WIDTH_MASK) + 1<<LOAD_TEXTURE_WIDTH_POWER;
@@ -1279,8 +1284,7 @@ int rawspec_copy_blocks_to_gpu_expanding_complex4(rawspec_context * ctx,
   rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
 
   // Calculated for complex4 samples
-  const size_t width = ctx->Ntpb * ctx->Np; // * 2 /*complex*/ * (4/8)
-  const size_t block_size = width * ctx->Nc;
+  const size_t block_size = gpu_ctx->guppi_channel_stride * ctx->Nc;
 
   for(b=0; b < num_blocks; b++) {
     sblk = (src_idx + b) % ctx->Nb_host;
@@ -1303,7 +1307,7 @@ int rawspec_copy_blocks_to_gpu_expanding_complex4(rawspec_context * ctx,
   
   copy_expand_complex4<<<grid, thread_count, 0, gpu_ctx->compute_stream>>>(
                                               gpu_ctx->d_fft_in, gpu_ctx->d_blk_expansion_buf, 
-                                              num_blocks, block_size, width);
+                                              num_blocks, block_size, gpu_ctx->guppi_channel_stride);
 
   return 0;
 }
@@ -1319,19 +1323,16 @@ int rawspec_copy_blocks_to_gpu(rawspec_context * ctx,
   cudaError_t rc;
   rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
 
-  // TODO Store in GPU context?
-  size_t width = ctx->Ntpb * ctx->Np * 2 /*complex*/ * (ctx->Nbps/8);
-
   for(b=0; b < num_blocks; b++) {
     sblk = (src_idx + b) % ctx->Nb_host;
     dblk = (dst_idx + b) % ctx->Nb;
 
-    rc = cudaMemcpy2D(gpu_ctx->d_fft_in + dblk * width,
-                      ctx->Nb * width,      // dpitch
-                      ctx->h_blkbufs[sblk], // *src
-                      width,                // spitch
-                      width,                // width
-                      ctx->Nc,              // height
+    rc = cudaMemcpy2D(gpu_ctx->d_fft_in + dblk * gpu_ctx->guppi_channel_stride,
+                      ctx->Nb * gpu_ctx->guppi_channel_stride,  // dpitch
+                      ctx->h_blkbufs[sblk],                     // *src
+                      gpu_ctx->guppi_channel_stride,            // spitch
+                      gpu_ctx->guppi_channel_stride,            // width
+                      ctx->Nc,                                  // height
                       cudaMemcpyHostToDevice);
 
     if(rc != cudaSuccess) {
@@ -1356,17 +1357,14 @@ int rawspec_zero_blocks_to_gpu(rawspec_context * ctx,
   cudaError_t rc;
   rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
 
-  // TODO Store in GPU context?
-  size_t width = ctx->Ntpb * ctx->Np * 2 /*complex*/ * (ctx->Nbps/8);
-
   for(b=0; b < num_blocks; b++) {
     dblk = (dst_idx + b) % ctx->Nb;
 
-    rc = cudaMemset2D(gpu_ctx->d_fft_in + dblk * width,
-                      ctx->Nb * width,      // pitch
-                      0,                    // value
-                      width,                // width
-                      ctx->Nc);             // height
+    rc = cudaMemset2D(gpu_ctx->d_fft_in + dblk * gpu_ctx->guppi_channel_stride,
+                      ctx->Nb * gpu_ctx->guppi_channel_stride,  // pitch
+                      0,                                        // value
+                      gpu_ctx->guppi_channel_stride,            // width
+                      ctx->Nc);                                 // height
 
     if(rc != cudaSuccess) {
       PRINT_ERRMSG(rc);
