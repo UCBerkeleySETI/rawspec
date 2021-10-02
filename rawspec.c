@@ -849,13 +849,7 @@ char tmp[16];
               fprintf(stderr, "\n");
 #endif // VERBOSE
               rawspec_wait_for_completion(&ctx);
-              if(expand4bps_to8bps){
-                rawspec_copy_blocks_to_gpu_expanding_complex4(&ctx, 0, 0, ctx.Nb);
-              }
-              else{
-                rawspec_copy_blocks_to_gpu(&ctx, 0, 0, ctx.Nb);
-              }
-              rawspec_start_processing(&ctx, RAWSPEC_FORWARD_FFT);
+              rawspec_copy_blocks_to_gpu_and_start_processing(&ctx, ctx.Nb, expand4bps_to8bps, RAWSPEC_FORWARD_FFT);
             }
 
             // Increment block counter
@@ -903,13 +897,7 @@ char tmp[16];
           fprintf(stderr, "\n");
 #endif // VERBOSE
           rawspec_wait_for_completion(&ctx);
-          if(expand4bps_to8bps){
-            rawspec_copy_blocks_to_gpu_expanding_complex4(&ctx, 0, 0, ctx.Nb);
-          }
-          else{
-            rawspec_copy_blocks_to_gpu(&ctx, 0, 0, ctx.Nb);
-          }
-          rawspec_start_processing(&ctx, RAWSPEC_FORWARD_FFT);
+          rawspec_copy_blocks_to_gpu_and_start_processing(&ctx, ctx.Nb, expand4bps_to8bps, RAWSPEC_FORWARD_FFT);
         }
 
         // Remember pktidx

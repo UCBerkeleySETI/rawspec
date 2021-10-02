@@ -1583,6 +1583,17 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
   return 0;
 }
 
+int rawspec_copy_blocks_to_gpu_and_start_processing(rawspec_context * ctx, size_t num_blocks, char expand4bps_to8bps, int fft_dir)
+{
+  if(expand4bps_to8bps){
+    rawspec_copy_blocks_to_gpu_expanding_complex4(ctx, 0, 0, num_blocks);
+  }
+  else{
+    rawspec_copy_blocks_to_gpu(ctx, 0, 0, num_blocks);
+  }
+  return rawspec_start_processing(ctx, fft_dir);
+}
+
 // Waits for any processing to finish, then clears output power buffers and
 // resets inbuf_count to 0.  Returns 0 on success, non-zero on error.
 int rawspec_reset_integration(rawspec_context * ctx)

@@ -208,6 +208,10 @@ int rawspec_zero_blocks_to_gpu(rawspec_context * ctx,
 // `rawspec_wait_for_completion` returns 0.
 int rawspec_start_processing(rawspec_context * ctx, int fft_dir);
 
+// Calls the appropriate rawspec_copy_blocks_to_gpu(), and then 
+// rawspec_start_processing.
+int rawspec_copy_blocks_to_gpu_and_start_processing(rawspec_context * ctx, size_t num_blocks, char expand4bps_to8bps, int fft_dir);
+
 // Waits for any processing to finish, then clears output power buffers and
 // resets inbuf_count to 0.  Returns 0 on success, non-zero on error.
 int rawspec_reset_integration(rawspec_context * ctx);
