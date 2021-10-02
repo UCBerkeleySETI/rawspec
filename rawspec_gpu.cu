@@ -688,6 +688,9 @@ int rawspec_initialize(rawspec_context * ctx)
     // dumped at one time (Nd).
     ctx->h_pwrbuf_size[i] = abs(ctx->Npolout[i]) *
                             ctx->Nds[i]*ctx->Nts[i]*ctx->Nc*sizeof(float);
+    #ifdef VERBOSE_ALLOC
+      printf("FFT Host dump buffer[%d] size == %lu\n", i, abs(ctx->Npolout[i]) * ctx->Nds[i]*ctx->Nts[i]*ctx->Nc*sizeof(float));
+    #endif
     cuda_rc = cudaHostAlloc(&ctx->h_pwrbuf[i], ctx->h_pwrbuf_size[i],
                        cudaHostAllocDefault);
 
@@ -802,6 +805,9 @@ int rawspec_initialize(rawspec_context * ctx)
   }
 
   if(NbpsIsExpanded){
+#ifdef VERBOSE_ALLOC
+    printf("NBITS expansion buffer size == %lu\n", buf_size/2);
+#endif
     cuda_rc = cudaMalloc(&gpu_ctx->d_blk_expansion_buf, buf_size/2);
     if(cuda_rc != cudaSuccess) {
       PRINT_ERRMSG(cuda_rc);
@@ -809,6 +815,9 @@ int rawspec_initialize(rawspec_context * ctx)
       return 1;
     }
 
+#ifdef VERBOSE_ALLOC
+    printf("Complex4 expansion LUT size == %lu\n", 256*sizeof(char2));
+#endif
     cuda_rc = cudaMalloc(&gpu_ctx->d_comp4_exp_LUT, 256*sizeof(char2));
     if(cuda_rc != cudaSuccess) {
       PRINT_ERRMSG(cuda_rc);
@@ -892,6 +901,11 @@ int rawspec_initialize(rawspec_context * ctx)
     }
 
     if(ctx->incoherently_sum){
+#ifdef VERBOSE_ALLOC
+      printf("ICS output buffer size == %u * %lu / %u == %lu\n",
+          abs(ctx->Npolout[i]),  ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float), ctx->Nant,
+          abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float)/ctx->Nant);
+#endif
       cuda_rc = cudaMalloc(&gpu_ctx->d_ics_out[i],
           abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float)/ctx->Nant);
       if(cuda_rc != cudaSuccess) {
@@ -909,6 +923,9 @@ int rawspec_initialize(rawspec_context * ctx)
       }
 
       // Setup device antenna-weight buffer
+#ifdef VERBOSE_ALLOC
+      printf("ICS antenna-weight buffer size == %lu\n", ctx->Nant*sizeof(float));
+#endif
       cuda_rc = cudaMalloc(&gpu_ctx->d_Aws, ctx->Nant*sizeof(float));
       if(cuda_rc != cudaSuccess) {
         PRINT_ERRMSG(cuda_rc);
@@ -1647,7 +1664,7 @@ unsigned int rawspec_check_for_completion(rawspec_context * ctx)
 // input buffer.  Returns zero when complete, non-zero on error.
 int rawspec_wait_for_completion(rawspec_context * ctx)
 {
-  int i;
+  int i = 0;
   cudaError_t rc;
   rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
 
