@@ -347,6 +347,8 @@ char tmp[16];
     return 1;
   }
 
+  ctx.Ncc = 1;
+
   // Show librawspec version on startup
   printf("rawspec using librawspec %s\n", rawspec_version_string());
 
