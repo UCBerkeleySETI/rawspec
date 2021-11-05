@@ -6,6 +6,7 @@
 
 typedef struct {
   int directio;
+  int fifo;
   size_t blocsize;
   unsigned int npol;
   unsigned int obsnchan;
@@ -26,8 +27,12 @@ typedef struct {
   size_t hdr_size; // Size of header in bytes (not including DIRECTIO padding)
 } rawspec_raw_hdr_t;
 
+
+#define RAWSPEC_HEADER_ENTRY_LEN (80)
 // Multiple of 80 and 512
-#define MAX_RAW_HDR_SIZE (25600)
+#define MAX_RAW_HDR_SIZE (512 * RAWSPEC_HEADER_ENTRY_LEN)
+
+#define RAWPSEC_HEADER_END_KEY "END "
 
 #ifdef __cplusplus
 extern "C" {
