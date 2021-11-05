@@ -555,7 +555,15 @@ int fb_telescope_id(const char *telescope_name)
     id=8;
   else if (strcasecmp(telescope_name,"140FT")==0)
     id=9;
+  // ATA used to be 10, but the SRT is now 10 and (at leasst in bl_sigproc) ATA
+  // is 9.  The "140FT" telescope used to be 9 so we still map from that name
+  // to 9 even though bl_sigproc will display it as "ATA".  AFAIK, the 140FT is
+  // not producing GUPPI RAW files, so there is little chance that this will
+  // ever cause any problems (but it would still be nice to reconcile
+  // telescope_id across all sigproc-derived libraries).
   else if (strcasecmp(telescope_name,"ATA")==0)
+    id=9;
+  else if (strcasecmp(telescope_name,"SRT")==0)
     id=10;
   else if (strcasecmp(telescope_name,"LEUSCHNER")==0)
     id=11;

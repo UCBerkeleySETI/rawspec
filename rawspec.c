@@ -60,15 +60,19 @@ ssize_t read_fully(int fd, void * buf, size_t bytes_to_read)
 }
 
 static struct option long_opts[] = {
+  {"ant",     1, NULL, 'a'},
   {"dest",    1, NULL, 'd'},
   {"ffts",    1, NULL, 'f'},
   {"gpu",     1, NULL, 'g'},
   {"hdrs",    0, NULL, 'H'},
+  {"ics",     1, NULL, 'i'},
+  {"ICS",     1, NULL, 'I'},
   {"nchan",   1, NULL, 'n'},
   {"outidx",  1, NULL, 'o'},
   {"pols",    1, NULL, 'p'},
   {"rate",    1, NULL, 'r'},
   {"schan",   1, NULL, 's'},
+  {"splitant",0, NULL, 'S'},
   {"ints",    1, NULL, 't'},
   {"help",    0, NULL, 'h'},
   {"version", 0, NULL, 'v'},
@@ -86,10 +90,13 @@ void usage(const char *argv0) {
     "Usage: %s [options] STEM [...]\n"
     "\n"
     "Options:\n"
+    "  -a, --ant=ANT          The 0-indexed antenna to exclusively process [-1]\n"
     "  -d, --dest=DEST        Destination directory or host:port\n"
     "  -f, --ffts=N1[,N2...]  FFT lengths [1048576, 8, 1024]\n"
     "  -g, --GPU=IDX          Select GPU device to use [0]\n"
     "  -H, --hdrs             Save headers to separate file\n"
+    "  -i, --ics=W1[,W2...]   Output incoherent-sum concurrently (capitilise for exclusively),\n"
+    "                         specifying per antenna-weights or a singular, uniform weight\n"
     "  -n, --nchan=N          Number of coarse channels to process [all]\n"
     "  -o, --outidx=N         First index number for output files [0]\n"
     "  -p  --pols={1|4}[,...] Number of output polarizations [1]\n"
@@ -97,6 +104,7 @@ void usage(const char *argv0) {
     "  -r, --rate=GBPS        Desired net data rate in Gbps [6.0]\n"
     "  -s, --schan=C          First coarse channel to process [0]\n"
     "  -t, --ints=N1[,N2...]  Spectra to integrate [51, 128, 3072]\n"
+    "  -S, --splitant         Split output into per antenna files\n"
     "\n"
     "  -h, --help             Show this message\n"
     "  -v, --version          Show version and exit\n"
@@ -148,10 +156,14 @@ char tmp[16];
   int fdhdrs = -1;
   int next_stem = 0;
   int save_headers = 0;
-  unsigned int Nc;   // Number of coarse channels
+  int per_ant_out = 0;
+  unsigned int Nc;   // Number of coarse channels across the observation (possibly multi-antenna)
+  unsigned int Ncpa;// Number of coarse channels per antenna
   unsigned int Np;   // Number of polarizations
   unsigned int Ntpb; // Number of time samples per block
   unsigned int Nbps; // Number of bits per sample
+  uint64_t block_byte_length; // Compute the length once
+  char expand4bps_to8bps; // Expansion flag
   int64_t pktidx0;
   int64_t pktidx;
   int64_t dpktidx;
@@ -161,6 +173,7 @@ char tmp[16];
   char * pchar;
   char * bfname;
   char * dest = NULL; // default output dest is same place as input stem
+  char * ics_output_stem = NULL;
   rawspec_output_mode_t output_mode = RAWSPEC_FILE;
   char * dest_port = NULL; // dest port for network output
   int fdout;
@@ -171,10 +184,12 @@ char tmp[16];
   rawspec_raw_hdr_t raw_hdr;
   callback_data_t cb_data[MAX_OUTPUTS];
   rawspec_context ctx;
+  int ant = -1;
   unsigned int schan = 0;
   unsigned int nchan = 0;
   unsigned int outidx = 0;
   int input_conjugated = -1;
+  int only_output_ics = 0;
 
   // For net data rate rate calculations
   double rate = 6.0;
@@ -189,11 +204,15 @@ char tmp[16];
 
   // Parse command line.
   argv0 = argv[0];
-  while((opt=getopt_long(argc,argv,"d:f:g:Hn:o:p:r:s:t:hv",long_opts,NULL))!=-1) {
+  while((opt=getopt_long(argc,argv,"a:d:f:g:HI:i:n:o:p:r:Ss:t:hv",long_opts,NULL))!=-1) {
     switch (opt) {
       case 'h': // Help
         usage(argv0);
         return 0;
+        break;
+
+      case 'a': // Antenna selection to process
+        ant = strtol(optarg, NULL, 0);
         break;
 
       case 'd': // Output destination
@@ -234,6 +253,25 @@ char tmp[16];
         save_headers = 1;
         break;
 
+      case 'I': // Incoherently sum exclusively
+        only_output_ics = 1;
+      case 'i': // Incoherently sum
+        ctx.incoherently_sum = 1;
+        ctx.Naws = 1;
+        // Count number of 
+        for(i=0; i < strlen(optarg); i++)
+          ctx.Naws += optarg[i]==',';
+        
+        char *weight_end;
+        ctx.Aws = malloc(ctx.Naws*sizeof(float));
+
+        for(i=0; i < ctx.Naws; i++){
+          ctx.Aws[i] = strtof(optarg, &weight_end);
+          optarg = weight_end;
+        }
+        
+        break;
+
       case 'n': // Number of coarse channels to process
         nchan = strtoul(optarg, NULL, 0);
         break;
@@ -264,6 +302,10 @@ char tmp[16];
 
       case 's': // First coarse channel to process
         schan = strtoul(optarg, NULL, 0);
+        break;
+
+      case 'S': // Split output per antenna
+        per_ant_out = 1;
         break;
 
       case 't': // Number of spectra to accumumate
@@ -304,6 +346,9 @@ char tmp[16];
     usage(argv0);
     return 1;
   }
+
+  // Show librawspec version on startup
+  printf("rawspec using librawspec %s\n", rawspec_version_string());
 
   // If schan is non-zero, nchan must be too
   if(schan != 0 && nchan == 0) {
@@ -384,11 +429,11 @@ char tmp[16];
     cb_data[i].fb_hdr.nbits  = 32;
     cb_data[i].fb_hdr.nifs   = abs(ctx.Npolout[i]);
     cb_data[i].rate          = rate;
-  }
+    cb_data[i].Nant          = 1;
 
-  // Init callback file descriptors to sentinal values
-  for(i=0; i<ctx.No; i++) {
-    cb_data[i].fd = -1;
+    // Init callback file descriptors to sentinal values
+    cb_data[i].fd = malloc(sizeof(int)*1);
+    cb_data[i].fd[0] = -1;
   }
 
   // Set output mode specific callback function
@@ -400,14 +445,14 @@ char tmp[16];
 
 #if 1
     // Open socket and store for all output products
-    cb_data[0].fd = open_output_socket(dest, dest_port);
-    if(cb_data[0].fd == -1) {
+    cb_data[0].fd[0] = open_output_socket(dest, dest_port);
+    if(cb_data[0].fd[0] == -1) {
       fprintf(stderr, "cannot open output socket, giving up\n");
       return 1; // Give up
     }
     // Share socket descriptor with other callbacks
     for(i=1; i<ctx.No; i++) {
-      cb_data[i].fd = cb_data[0].fd;
+      cb_data[i].fd[0] = cb_data[0].fd[0];
     }
 #else
     for(i=0; i<ctx.No; i++) {
@@ -423,6 +468,13 @@ char tmp[16];
   // For each stem
   for(si=0; si<argc; si++) {
     printf("working stem: %s\n", argv[si]);
+    if(ctx.incoherently_sum){
+      if(ics_output_stem){
+        free(ics_output_stem);
+      }
+      ics_output_stem = malloc(strlen(argv[si])+5);
+      snprintf(ics_output_stem, strlen(argv[si])+5, "%s-ics", argv[si]);
+    }
 
     // bi is the block counter for the entire sequence of files for this stem.
     // Note that bi is the count of contiguous blocks that are fed to the GPU.
@@ -470,9 +522,11 @@ char tmp[16];
 
         // Calculate Ntpb and validate block dimensions
         Nc = raw_hdr.obsnchan;
+        Ncpa = raw_hdr.obsnchan/raw_hdr.nants;
         Np = raw_hdr.npol;
         Nbps = raw_hdr.nbits;
-        Ntpb = raw_hdr.blocsize / (2 * Np * Nc * (Nbps/8));
+        
+        Ntpb = raw_hdr.blocsize / ((2 * Np * Nc * Nbps)/8);
 
         // First pktidx of first file
         pktidx0 = raw_hdr.pktidx;
@@ -481,9 +535,9 @@ char tmp[16];
         // Expected difference be between raw_hdr.pktidx and previous pktidx
         dpktidx = 0;
 
-        if(2 * Np * Nc * (Nbps/8) * Ntpb != raw_hdr.blocsize) {
-          printf("bad block geometry: 2*%u*%u*%u*%u != %lu\n",
-              Np, Nc, (Nbps/8), Ntpb, raw_hdr.blocsize);
+        if((2 * Np * Nc * Nbps)/8 * Ntpb != raw_hdr.blocsize) {
+          printf("bad block geometry: 2*%upol*%uchan*%utpb*(%ubps/8) != %lu\n",
+              Np, Nc, Ntpb, Nbps, raw_hdr.blocsize);
           close(fdin);
           break; // Goto next stem
         }
@@ -499,16 +553,85 @@ char tmp[16];
         fprintf(stderr, "TBIN     = %g\n",  raw_hdr.tbin);
 #endif // VERBOSE
 
+        // If splitting output per antenna, re-alloc the fd array.
+        if(per_ant_out) {
+          if(output_mode == RAWSPEC_FILE){
+            if(ant != -1){
+              printf("Ignoring --ant %d option:\n\t", ant);
+            }
+            printf("Splitting output per %d antennas\n",
+                raw_hdr.nants);
+            // close previous
+            for(i=0; i<ctx.No; i++) {
+              if (cb_data[i].Nant != raw_hdr.nants){
+
+                for(j=0; j<cb_data[i].Nant; j++) {
+                  if(cb_data[i].fd[j] != -1) {
+                    close(cb_data[i].fd[j]);
+                    cb_data[i].fd[j] = -1;
+                  }
+                }
+                free(cb_data[i].fd);
+
+                cb_data[i].per_ant_out = per_ant_out;
+                // Re-init callback file descriptors to sentinal values
+                cb_data[i].fd = malloc(sizeof(int)*raw_hdr.nants);
+                for(j=0; j<raw_hdr.nants; j++){
+                  cb_data[i].fd[j] = -1;
+                }
+              }
+            }
+          }
+          else{
+            printf("Ignoring --splitant flag in network mode\n");
+          }
+          if(only_output_ics){
+            printf("Cancelling exclusive ICS output due to --splitant.\n");
+            only_output_ics = 0;
+          }
+        }
+
+        // If processing a specific antenna
+        if(ant != -1 && !per_ant_out) {
+          // Validate ant
+          if(ant > raw_hdr.nants - 1 || ant < 0) {
+            printf("bad antenna selection: ant <> {0, nants} (%u <> {0, %d})\n",
+                ant, raw_hdr.nants);
+            close(fdin);
+            break; // Goto next stem
+          }
+          if(schan >= Ncpa) {
+            printf("bad schan specification with antenna selection: "
+                   "schan > antnchan {obsnchan/nants} (%u > %u {%d/%d})\n",
+                schan, Ncpa, raw_hdr.obsnchan, raw_hdr.nants);
+            close(fdin);
+            break; // Goto next stem
+          }
+
+          // Set Nc to Ncpa and skip previous antennas
+          printf("Selection of antenna %d equates to a starting channel of %d\n", ant, ant*Ncpa);
+          schan += ant * Ncpa;
+          Nc = Ncpa;
+        }
+
         // If processing a subset of coarse channels
         if(nchan != 0) {
           // Validate schan and nchan
-          if(nchan != 0 && schan + nchan > Nc) {
+          if(ant == -1 && // no antenna selection
+              (schan + nchan > Nc)) {
+
             printf("bad channel range: schan + nchan > obsnchan (%u + %u > %d)\n",
                 schan, nchan, raw_hdr.obsnchan);
             close(fdin);
             break; // Goto next stem
           }
-
+          else if(ant != -1 && // antenna selection
+                 (schan + nchan > (ant + 1) * Ncpa)) {
+            printf("bad channel range: schan + nchan > antnchan {obsnchan/nants} (%u + %u > %d {%d/%d})\n",
+                schan - ant * Ncpa, nchan, Ncpa, raw_hdr.obsnchan, raw_hdr.nants);
+            close(fdin);
+            break; // Goto next stem
+          }
           // Use nchan as Nc
           Nc = nchan;
         }
@@ -524,6 +647,7 @@ char tmp[16];
             rawspec_cleanup(&ctx);
           }
           // Remember new dimensions and input conjugation
+          ctx.Nant = raw_hdr.nants;
           ctx.Nc   = Nc;
           ctx.Np   = Np;
           ctx.Ntpb = Ntpb;
@@ -538,21 +662,38 @@ char tmp[16];
             fprintf(stderr, "rawspec initialization failed\n");
             close(fdin);
             // Forget new dimensions
+            ctx.Nant = 0;
             ctx.Nc   = 0;
             ctx.Np   = 0;
             ctx.Ntpb = 0;
             ctx.Nbps = 0;
             break;
           } else {
-            //printf("initialization succeeded for new block dimensions\n");
+            // printf("initialization succeeded for new block dimensions\n");
+            block_byte_length = (2 * ctx.Np * ctx.Nc * ctx.Nbps)/8 * ctx.Ntpb;
+
+            // The GPU supports only 8bit and 16bit sample bit-widths. The strategy
+            // for handling 4bit samples is to expand them out to 8bits, and there-onwards 
+            // use the expanded 8bit samples. The device side rawspec_initialize actually still
+            // complains about the indication of the samples being 4bits. But the 
+            // expand4bps_to8bps flag is used to call rawspec_copy_blocks_to_gpu_expanding_complex4,
+            // leading to the samples being expanded before any device side computation happens
+            // in rawspec_start_processing. The ctx.Nbps is left as 8.
+            if (ctx.Nbps == 8 && Nbps == 4){
+              printf("CUDA memory initialised for %d bits per sample,\n\t"
+                     "will expand header specified %d bits per sample.\n", ctx.Nbps, Nbps);
+              expand4bps_to8bps = 1;
+            }
 
             // Copy fields from ctx to cb_data
             for(i=0; i<ctx.No; i++) {
               cb_data[i].h_pwrbuf = ctx.h_pwrbuf[i];
               cb_data[i].h_pwrbuf_size = ctx.h_pwrbuf_size[i];
+              cb_data[i].h_icsbuf = ctx.h_icsbuf[i];
               cb_data[i].Nds = ctx.Nds[i];
               cb_data[i].Nf  = ctx.Nts[i] * ctx.Nc;
               cb_data[i].debug_callback = DEBUG_CALLBACKS;
+              cb_data[i].Nant = raw_hdr.nants;
             }
 #if 0
             if(output_mode == RAWSPEC_NET) {
@@ -596,16 +737,26 @@ char tmp[16];
           cb_data[i].fb_hdr.tsamp = raw_hdr.tbin * ctx.Nts[i] * ctx.Nas[i];
 
           if(output_mode == RAWSPEC_FILE) {
-            cb_data[i].fd = open_output_file(dest, argv[si], outidx + i);
-            if(cb_data[i].fd == -1) {
-              // If we can't open this output file, we probably won't be able to
-              // open any more output files, so print message and bail out.
-              fprintf(stderr, "cannot open output file, giving up\n");
-              return 1; // Give up
+            // Write filterbank header to output file (handles both per-antenna output and single file output)
+            if(!only_output_ics && 
+                open_output_file_per_antenna_and_write_header(&cb_data[i], dest, argv[si], outidx + i) != 0){
+              return 1; // give up
             }
 
-            // Write filterbank header to output file
-            fb_fd_write_header(cb_data[i].fd, &cb_data[i].fb_hdr);
+            if(ctx.incoherently_sum){
+              cb_data[i].fd_ics = open_output_file(dest, ics_output_stem, outidx + i);
+              if(cb_data[i].fd_ics == -1) {
+                // If we can't open this output file, we probably won't be able to
+                // open any more output files, so print message and bail out.
+                fprintf(stderr, "cannot open output file, giving up\n");
+                return 1; // Give up
+              }
+
+              cb_data[i].fb_hdr.nchans /= raw_hdr.nants;
+              // Write filterbank header to output file
+              fb_fd_write_header(cb_data[i].fd_ics, &cb_data[i].fb_hdr);
+              cb_data[i].fb_hdr.nchans *= raw_hdr.nants;
+            }
           }
         }
 
@@ -668,6 +819,11 @@ char tmp[16];
             // Give up on this stem and go to next stem
             next_stem = 1;
             break;
+          } else if (raw_hdr.pktidx == pktidx ){
+            printf("got null jump in pktidx: (%ld - %ld) == 0\n",
+                   raw_hdr.pktidx, pktidx);
+            // just skip this block
+            break;
           }
 
           // Put in filler blocks of zeros
@@ -693,7 +849,12 @@ char tmp[16];
               fprintf(stderr, "\n");
 #endif // VERBOSE
               rawspec_wait_for_completion(&ctx);
-              rawspec_copy_blocks_to_gpu(&ctx, 0, 0, ctx.Nb);
+              if(expand4bps_to8bps){
+                rawspec_copy_blocks_to_gpu_expanding_complex4(&ctx, 0, 0, ctx.Nb);
+              }
+              else{
+                rawspec_copy_blocks_to_gpu(&ctx, 0, 0, ctx.Nb);
+              }
               rawspec_start_processing(&ctx, RAWSPEC_FORWARD_FFT);
             }
 
@@ -703,21 +864,21 @@ char tmp[16];
         } // irregular pktidx step
 
         // Seek past first schan channel
-        lseek(fdin, 2 * ctx.Np * schan * (ctx.Nbps/8) * ctx.Ntpb, SEEK_CUR);
+        lseek(fdin, (2 * ctx.Np * schan * Nbps)/8 * ctx.Ntpb, SEEK_CUR);
 
         // Read ctx.Nc coarse channels from this block
         bytes_read = read_fully(fdin,
                                 ctx.h_blkbufs[bi % ctx.Nb_host],
-                                2 * ctx.Np * ctx.Nc * (ctx.Nbps/8) * ctx.Ntpb);
+                                (expand4bps_to8bps ? block_byte_length/2 : block_byte_length));
 
         // Seek past channels after schan+nchan
-        lseek(fdin, 2 * ctx.Np * (raw_hdr.obsnchan-(schan+Nc)) * (ctx.Nbps/8) * ctx.Ntpb, SEEK_CUR);
+        lseek(fdin, (2 * ctx.Np * (raw_hdr.obsnchan-(schan+Nc)) * Nbps)/8 * ctx.Ntpb, SEEK_CUR);
 
         if(bytes_read == -1) {
           perror("read");
           next_stem = 1;
           break; // Goto next file
-        } else if(bytes_read < 2 * ctx.Np * ctx.Nc * (ctx.Nbps/8) * ctx.Ntpb) {
+        } else if(bytes_read < (expand4bps_to8bps ? block_byte_length/2 : block_byte_length)) {
           fprintf(stderr, "incomplete block at EOF\n");
           next_stem = 1;
           break; // Goto next file
@@ -742,7 +903,12 @@ char tmp[16];
           fprintf(stderr, "\n");
 #endif // VERBOSE
           rawspec_wait_for_completion(&ctx);
-          rawspec_copy_blocks_to_gpu(&ctx, 0, 0, ctx.Nb);
+          if(expand4bps_to8bps){
+            rawspec_copy_blocks_to_gpu_expanding_complex4(&ctx, 0, 0, ctx.Nb);
+          }
+          else{
+            rawspec_copy_blocks_to_gpu(&ctx, 0, 0, ctx.Nb);
+          }
           rawspec_start_processing(&ctx, RAWSPEC_FORWARD_FFT);
         }
 
@@ -782,9 +948,15 @@ char tmp[16];
     // Close output files
     if(output_mode == RAWSPEC_FILE) {
       for(i=0; i<ctx.No; i++) {
-        if(cb_data[i].fd != -1) {
-          close(cb_data[i].fd);
-          cb_data[i].fd = -1;
+        for(j=0; j < (cb_data[i].per_ant_out ? cb_data[i].Nant : 1); j++) {
+          if(cb_data[i].fd[j] != -1) {
+            close(cb_data[i].fd[j]);
+            cb_data[i].fd[j] = -1;
+          }
+        }
+        if(cb_data[i].fd_ics != -1) {
+          close(cb_data[i].fd_ics);
+          cb_data[i].fd_ics = -1;
         }
       }
     }
@@ -792,13 +964,17 @@ char tmp[16];
 
   // Final cleanup
   rawspec_cleanup(&ctx);
+  if(ics_output_stem){
+    free(ics_output_stem);
+  }
 
   // Close sockets (or should-"never"-happen unclosed files)
   for(i=0; i<ctx.No; i++) {
-    if(cb_data[i].fd != -1) {
-      close(cb_data[i].fd);
-      cb_data[i].fd = -1;
+    if(cb_data[i].fd[0] != -1) {
+      close(cb_data[i].fd[0]);
+      cb_data[i].fd[0] = -1;
     }
+    free(cb_data[i].fd);
   }
 
   // Print stats

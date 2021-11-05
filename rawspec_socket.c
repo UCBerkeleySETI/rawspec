@@ -239,14 +239,14 @@ void * dump_net_thread_func(void *arg)
       total_packets++;
       pkt_size = ppkt - pkt;
       total_bytes += pkt_size;
-      if(send(cb_data->fd, pkt, pkt_size, 0) == -1) {
+      if(send(cb_data->fd[0], pkt, pkt_size, 0) == -1) {
         if(errno == ENOTCONN) {
           // ENOTCONN means that there is no listener on the receive side.
           // Eventually we might want to stop sending packets if there is
           // no remote listener, but for now we try to send packet again
           // in case the remote side is capturing packets with packet sockets
           // (e.g. hashpipe or libpcap/tcpdump).
-          if(send(cb_data->fd, pkt, pkt_size, 0) == -1) {
+          if(send(cb_data->fd[0], pkt, pkt_size, 0) == -1) {
             error_packets++;
           }
         }

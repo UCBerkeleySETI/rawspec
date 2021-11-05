@@ -11,11 +11,11 @@
 
 #define RAWSPEC_BLOCSIZE(pctx) \
 (                              \
-  (pctx)->Nc          *        \
+  ((pctx)->Nc         *        \
   (pctx)->Ntpb        *        \
   (pctx)->Np          *        \
   2 /* complex */     *        \
-  ((pctx)->Nbps / 8)           \
+  (pctx)->Nbps) / 8            \
 )
 
 #define RAWSPEC_CALLBACK_PRE_DUMP  (0)
@@ -30,13 +30,18 @@ typedef void (* rawspec_dump_callback_t)(rawspec_context * ctx,
 
 // Structure for holding the context.
 struct rawspec_context_s {
-  unsigned int No; // Number of output products (max MAX_OUTPUTS)
-  unsigned int Np; // Number of polarizations (in input data)
-  unsigned int Nc; // Number of coarse channels
-  unsigned int Ntpb; // Number of time samples per block
+  unsigned int No;    // Number of output products (max MAX_OUTPUTS)
+  unsigned int Np;    // Number of polarizations (in input data)
+  unsigned int Nant;  // Number of antenna (coarse channels is a multiple of this)
+  unsigned int Nc;    // Number of coarse channels
+  unsigned int Ntpb;  // Number of time samples per block
 
   // Nbps is the number of bits per sample (per component).  The only supported
-  // values are 8 or 16.  Illegal values will be treated as 8.
+  // values are 4* or 8 or 16.  Illegal values will be treated as 8.
+  // 4 bits per sample (assumed to be paired as an 8bit complex byte, the most
+  // significant 4 bits are the real bits, the least the imaginary)
+  // are expanded to 8 bits on device side, see 
+  // rawspec_copy_blocks_to_gpu_expanding_complex4.
   unsigned int Nbps; // Number of bits per sample (per component)
 
   // Npolout is the number of output polarization values per fine channel.
@@ -103,6 +108,12 @@ struct rawspec_context_s {
   // the next call to rawspec_initialize().
   int input_conjugated;
 
+  // Flag indicating the concurrent output of the output data's incoherent-sum.
+  int incoherently_sum;
+  int Naws;
+  // An array for the per-antenna weights to be used in the incoherent-sum.
+  float *Aws;
+
   // Fields above here should be specified by client.  Fields below here are
   // managed by library (but can be used by the caller as needed).
 
@@ -115,6 +126,11 @@ struct rawspec_context_s {
   // In full pol mode, the output buffer is [P00, P11, P01re, P01im].
   float * h_pwrbuf[MAX_OUTPUTS];
   size_t h_pwrbuf_size[MAX_OUTPUTS];
+
+  // Host pointers to the output incoherent-sum buffers.
+  // This is only assigned if the appropriate execution flag is set,
+  // and will have sizes equal to h_pwrbuf_size[i]/Nant
+  float * h_icsbuf[MAX_OUTPUTS];
 
   // Array of Nd values (number of spectra per dump)
   unsigned int Nds[MAX_OUTPUTS];
@@ -159,6 +175,13 @@ void rawspec_cleanup(rawspec_context * ctx);
 // Returns 0 on success, non-zero on error.
 int rawspec_copy_blocks_to_gpu(rawspec_context * ctx,
     off_t src_idx, off_t dst_idx, size_t num_blocks);
+
+// Copy `num_blocks` consecutive blocks from `ctx->h_blkbufs` to GPU input
+// buffer while expanding the assumed complex4 bytes in `ctx->h_blkbufs` to
+// a byte per component with a kernel on the GPU.
+// Returns 0 on success, non-zero on error.
+int rawspec_copy_blocks_to_gpu_expanding_complex4(
+        rawspec_context * ctx, off_t src_idx, off_t dst_idx, size_t num_blocks);
 
 // Sets `num_blocks` blocks to zero in GPU input buffer, starting with block at
 // `dst_idx`.  If `dst_idx + num_blocks > cts->Nb`, the zeroed blocks will wrap

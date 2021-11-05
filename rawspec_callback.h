@@ -5,7 +5,10 @@
 #include "rawspec_fbutils.h"
 
 typedef struct {
-  int fd; // Output file descriptor or socket
+  int *fd; // Output file descriptors (one for each antenna) or socket (at most 1)
+  int fd_ics; // Output file descriptor or socket
+  unsigned int Nant; // Number of antenna, splitting Nf per fd
+  char per_ant_out; // Flag to account for Nant
   unsigned int total_spectra;
   unsigned int total_packets;
   unsigned int total_bytes;
@@ -19,6 +22,7 @@ typedef struct {
   // (useful for output threads)
   float * h_pwrbuf;
   size_t h_pwrbuf_size;
+  float * h_icsbuf;
   unsigned int Nds;
   unsigned int Nf; // Number of fine channels (== Nc*Nts[i])
   // Filterbank header

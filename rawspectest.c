@@ -29,6 +29,9 @@ int main(int argc, char * argv[])
   int blocsize = 92274688;
   size_t nfine;
 
+  // Show librawspec version on startup
+  printf("using librawspec %s\n", rawspec_version_string());
+
   ctx.No = 4;
   ctx.Np = 2;
   ctx.Nc = 88;
@@ -82,7 +85,7 @@ int main(int argc, char * argv[])
   ctx.h_blkbufs[ctx.Nb_host-1][(8*ctx.Np*2/*complex*/)*(ctx.Nbps/8)] = 127;
   // Set sample 9 of pol 1 to (0+1j), in block Nb_host-1
   // Note that for 16-bit samples, this will really be (0 + 127j/32767)
-  ctx.h_blkbufs[ctx.Nb_host-1][(9*ctx.Np*2/*complex*/+3)*(ctx.Nbps/8)] = 127;
+  ctx.h_blkbufs[ctx.Nb_host-1][(9*ctx.Np*2/*complex*/+3)*(ctx.Nbps/8)] = 64;
 
   // Salt the output buffers (to detect whether they are not fully written)
   for(i=0; i<ctx.No; i++) {
