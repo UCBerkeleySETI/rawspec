@@ -542,7 +542,7 @@ char tmp[16];
             ctx.Np   = 0;
             ctx.Ntpb = 0;
             ctx.Nbps = 0;
-            break;
+            return 1; // fixes issue #23
           } else {
             //printf("initialization succeeded for new block dimensions\n");
 
