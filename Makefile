@@ -7,8 +7,9 @@ DATADIR = $(PREFIX)/share
 CUDA_DIR ?= /usr/local/cuda-8.0
 CUDA_PATH ?= $(CUDA_DIR)
 
-CC=gcc
-HOST_COMPILER ?= $(CC)
+CC            ?= gcc
+CXX           ?= g++
+HOST_COMPILER ?= $(CXX)
 NVCC          := $(CUDA_PATH)/bin/nvcc -ccbin $(HOST_COMPILER)
 
 CFLAGS = -ggdb -fPIC
@@ -85,7 +86,7 @@ fileiotest: fileiotest.o
 rawspec_fbutils: rawspec_fbutils.c rawspec_fbutils.h
 	$(CC) -o $@ -DFBUTILS_TEST -ggdb -O0 $< -lm
 
-install: rawspec.h librawspec.so
+install: rawspec rawspec.h librawspec.so
 	mkdir -p $(BINDIR)
 	cp -p rawspec $(BINDIR)
 	mkdir -p $(INCDIR)
