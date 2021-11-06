@@ -5,6 +5,9 @@
 #include <string.h>
 #include <time.h>
 
+#include <cuda.h>
+#include <cuda_runtime_api.h>
+
 #include "rawspec.h"
 
 #define ELAPSED_NS(start,stop) \
@@ -14,6 +17,20 @@ void
 dump_callback(rawspec_context * ctx, int output_product, int callback_type)
 {
   printf("cb %d\n", output_product);
+}
+
+void show_gpu_memory_usage(int gpu_id) {
+    size_t in_use, available, total;
+    int gpu_id_selected;
+    cudaSetDevice(gpu_id);
+    cudaGetDevice(&gpu_id_selected);
+    cudaMemGetInfo(&available, &total);
+    in_use = total - available;
+    printf("GPU %d memory, in use: %ld MiB, free: %ld MiB, total: %ld MiB\n", 
+          gpu_id_selected, 
+          (long) ((float) in_use / 1.0e6), 
+          (long) ((float) available / 1.0e6), 
+          (long) ((float) total / 1.0e6)); 
 }
 
 int main(int argc, char * argv[])
@@ -137,10 +154,12 @@ int main(int argc, char * argv[])
     }
   }
 
-  // For checking mempry usage with nvidia-smi
-  printf("sleeping for 10 seconds...");
+  // For checking mempry usage
+  //printf("sleeping for 10 seconds...");
+  printf("\nchecking GPU memory usage ...\n");
   fflush(stdout);
-  sleep(10);
+  //sleep(10);
+  show_gpu_memory_usage(ctx.gpu_index);
   printf("done\n");
 
   printf("cleaning up...");
