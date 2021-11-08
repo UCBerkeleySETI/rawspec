@@ -580,9 +580,18 @@ int rawspec_initialize(rawspec_context * ctx)
   }
   else{ // Enabled channel-chunking
     if(ctx->Ncc <= 1) { // Auto channel-chunking
-      ctx->Ncc = ctx->Nc/ctx->Nant;
+      if(ctx->Nant > 1){
+        ctx->Ncc = ctx->Nc/ctx->Nant;
+      }
+      else{ // find largest Nc factor <= 10
+        for(i = 1; i <= 10; i++){
+          if(ctx->Nc%i == 0){
+            ctx->Ncc = ctx->Nc/i;
+          }
+        }
+      }
     }//else manual channel-chunking
-    printf("Chunking %d channels into %d chunks of %d.\n", ctx->Nc, ctx->Nant, ctx->Ncc);
+    printf("Chunking %d channels into %d chunks of %d.\n", ctx->Nc, ctx->Nc/ctx->Ncc, ctx->Ncc);
   }
 
   // Null out all pointers
