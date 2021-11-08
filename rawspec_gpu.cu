@@ -573,14 +573,17 @@ int rawspec_initialize(rawspec_context * ctx)
     }
   }
 
+  ctx->Nant = ctx->Nant <= 0 ? 1 : ctx->Nant;
   // Setup channel-chunk parametners
   if(ctx->Ncc == 0) { // Disable channel-chunking
     ctx->Ncc = ctx->Nc;
   }
-  else if(ctx->Ncc <= 1) { // Auto channel-chunking
-    ctx->Ncc = ctx->Nc/ctx->Nant;
+  else{ // Enabled channel-chunking
+    if(ctx->Ncc <= 1) { // Auto channel-chunking
+      ctx->Ncc = ctx->Nc/ctx->Nant;
+    }//else manual channel-chunking
     printf("Chunking %d channels into %d chunks of %d.\n", ctx->Nc, ctx->Nant, ctx->Ncc);
-  }//else manual channel-chunking
+  }
 
   // Null out all pointers
   // TODO Add support for client managed host buffers
