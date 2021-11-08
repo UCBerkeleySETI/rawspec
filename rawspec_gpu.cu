@@ -574,31 +574,31 @@ int rawspec_initialize(rawspec_context * ctx)
   }
 
   ctx->Nant = ctx->Nant <= 0 ? 1 : ctx->Nant;
-  // Setup channel-chunk parametners
-  if(ctx->Ncc == 0) { // Disable channel-chunking
-    ctx->Ncc = ctx->Nc;
+  // Setup batched-channel parametners
+  if(ctx->Nbc == 0) { // Disable channel-batching
+    ctx->Nbc = ctx->Nc;
   }
-  else{ // Enabled channel-chunking
-    if(ctx->Ncc <= 1) { // Auto channel-chunking
+  else{ // Enabled channel-batching
+    if(ctx->Nbc <= 1) { // Auto channel-batching
       if(ctx->Nant > 1){
-        ctx->Ncc = ctx->Nc/ctx->Nant;
+        ctx->Nbc = ctx->Nc/ctx->Nant;
       }
       else{ // find largest Nc factor <= 10
         for(i = 1; i <= 10; i++){
           if(ctx->Nc%i == 0){
-            ctx->Ncc = ctx->Nc/i;
+            ctx->Nbc = ctx->Nc/i;
           }
         }
       }
     }
-    else if(ctx->Nc%ctx->Ncc != 0) { // Manual channel-chunking, but inappropriate chunks
-      fprintf(stderr, "%d channels cannot be factorised to chunks of %d\n",
-        ctx->Nc, ctx->Ncc
+    else if(ctx->Nc%ctx->Nbc != 0) { // Manual channel-batching, but inappropriate batches
+      fprintf(stderr, "%d channels cannot be factorised to batches of %d\n",
+        ctx->Nc, ctx->Nbc
       );
       return 1;
     }
 
-    printf("Chunking %d channels into %d chunks of %d.\n", ctx->Nc, ctx->Nc/ctx->Ncc, ctx->Ncc);
+    printf("Batching %d channels into %d batches of %d.\n", ctx->Nc, ctx->Nc/ctx->Nbc, ctx->Nbc);
   }
 
   // Null out all pointers
@@ -709,7 +709,7 @@ int rawspec_initialize(rawspec_context * ctx)
     // Calculate grid dimensions
     gpu_ctx->grid[i].x = (ctx->Nts[i] + MAX_THREADS - 1) / MAX_THREADS;
     gpu_ctx->grid[i].y = ctx->Nds[i];
-    gpu_ctx->grid[i].z = ctx->Ncc;
+    gpu_ctx->grid[i].z = ctx->Nbc;
 
     // Calculate number of threads per block
     gpu_ctx->nthreads[i] = MIN(ctx->Nts[i], MAX_THREADS);
@@ -888,7 +888,7 @@ int rawspec_initialize(rawspec_context * ctx)
   }
 
   // FFT output buffer
-  buf_size = ctx->Nb*ctx->Ntpb*ctx->Ncc*sizeof(cufftComplex);
+  buf_size = ctx->Nb*ctx->Ntpb*ctx->Nbc*sizeof(cufftComplex);
   // If any output product is full-pol then we need to double output buffer
   for(i=0; i < ctx->No; i++) {
     if(abs(ctx->Npolout[i]) == 4) {
@@ -911,11 +911,11 @@ int rawspec_initialize(rawspec_context * ctx)
     // Power output buffer
 #ifdef VERBOSE_ALLOC
     printf("Power output buffer size == %u * %lu == %lu\n",
-        abs(ctx->Npolout[i]),  ctx->Nb*ctx->Ntpb*ctx->Ncc*sizeof(float),
-        abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Ncc*sizeof(float));
+        abs(ctx->Npolout[i]),  ctx->Nb*ctx->Ntpb*ctx->Nbc*sizeof(float),
+        abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nbc*sizeof(float));
 #endif
     cuda_rc = cudaMalloc(&gpu_ctx->d_pwr_out[i],
-        abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Ncc*sizeof(float));
+        abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nbc*sizeof(float));
     if(cuda_rc != cudaSuccess) {
       PRINT_ERRMSG(cuda_rc);
       rawspec_cleanup(ctx);
@@ -923,7 +923,7 @@ int rawspec_initialize(rawspec_context * ctx)
     }
     // Clear power output buffer
     cuda_rc = cudaMemset(gpu_ctx->d_pwr_out[i], 0,
-        abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Ncc*sizeof(float));
+        abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nbc*sizeof(float));
     if(cuda_rc != cudaSuccess) {
       PRINT_ERRMSG(cuda_rc);
       rawspec_cleanup(ctx);
@@ -989,11 +989,11 @@ int rawspec_initialize(rawspec_context * ctx)
     // (because they will never be used). It might be slightly
     // safer to init them to the same as pwr_buf_p00_i if Npolout == 1.
     h_scb_data.pwr_buf_p11_q =
-        gpu_ctx->d_pwr_out[i] + 1*ctx->Nb*ctx->Ntpb*ctx->Ncc;
+        gpu_ctx->d_pwr_out[i] + 1*ctx->Nb*ctx->Ntpb*ctx->Nbc;
     h_scb_data.pwr_buf_p01_re_u =
-        gpu_ctx->d_pwr_out[i] + 2*ctx->Nb*ctx->Ntpb*ctx->Ncc;
+        gpu_ctx->d_pwr_out[i] + 2*ctx->Nb*ctx->Ntpb*ctx->Nbc;
     h_scb_data.pwr_buf_p01_im_v =
-        gpu_ctx->d_pwr_out[i] + 3*ctx->Nb*ctx->Ntpb*ctx->Ncc;
+        gpu_ctx->d_pwr_out[i] + 3*ctx->Nb*ctx->Ntpb*ctx->Nbc;
 
     // Allocate device memory for store_cb_data_t array
     cuda_rc = cudaMalloc(&gpu_ctx->d_scb_data[i], sizeof(store_cb_data_t));
@@ -1116,7 +1116,7 @@ int rawspec_initialize(rawspec_context * ctx)
                       1,                       // ostride
                       ctx->Nts[i],             // odist
                       CUFFT_C2C,               // type
-                      gpu_ctx->Nss[i]*ctx->Ncc,// batch
+                      gpu_ctx->Nss[i]*ctx->Nbc,// batch
                       &work_size               // work area size
                  );
 
@@ -1456,7 +1456,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
   size_t fft_outbuf_length;
   dim3 grid_ics;
   const size_t Nchan_per_antenna = ctx->Nc/ctx->Nant;
-  const size_t Nantenna_per_chunk = ctx->Ncc/Nchan_per_antenna;
+  const size_t Nantenna_per_batch = ctx->Nbc/Nchan_per_antenna;
 
   // Increment inbuf_count
   gpu_ctx->inbuf_count++;
@@ -1465,8 +1465,8 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
   for(i=0; i < ctx->No; i++) {
     // Length of an FFT output buffer when abs(Npotout)==4, must be 0 when
     // Npolout==1
-    fft_outbuf_length = ctx->Npolout[i] == 1 ? 0 : ctx->Nb*ctx->Ntpb*ctx->Ncc;
-    for(c=0; c < ctx->Nc; c += ctx->Ncc) {
+    fft_outbuf_length = ctx->Npolout[i] == 1 ? 0 : ctx->Nb*ctx->Ntpb*ctx->Nbc;
+    for(c=0; c < ctx->Nc; c += ctx->Nbc) {
 
       // For each input polarization
       for(p=0; p < ctx->Np; p++) {
@@ -1496,7 +1496,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
                         gpu_ctx->nthreads[i],
                         0, gpu_ctx->compute_stream>>>
                           (
-                            gpu_ctx->d_pwr_out[i] + p*ctx->Nb*ctx->Ntpb*ctx->Ncc,
+                            gpu_ctx->d_pwr_out[i] + p*ctx->Nb*ctx->Ntpb*ctx->Nbc,
                             MIN(ctx->Nas[i], gpu_ctx->Nss[i]), // Na
                             ctx->Nts[i],                       // xpitch
                             ctx->Nas[i]*ctx->Nts[i],           // ypitch
@@ -1506,16 +1506,16 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
         }
 
         if(ctx->incoherently_sum){
-          grid_ics.x = (ctx->Nts[i] * ctx->Ncc)/gpu_ctx->nthreads[i];
+          grid_ics.x = (ctx->Nts[i] * ctx->Nbc)/gpu_ctx->nthreads[i];
           grid_ics.y = abs(ctx->Npolout[i]);
           grid_ics.z = ctx->Nds[i];
           
           incoherent_sum<<<grid_ics, gpu_ctx->nthreads[i], 0, gpu_ctx->compute_stream>>>(
                                         gpu_ctx->d_pwr_out[i], gpu_ctx->d_ics_out[i] + (c%Nchan_per_antenna)*ctx->Nts[i], gpu_ctx->d_Aws + c/Nchan_per_antenna,
-                                        Nantenna_per_chunk, ctx->Nts[i],
+                                        Nantenna_per_batch, ctx->Nts[i],
                                         ctx->Nb*ctx->Ntpb*ctx->Nc/ctx->Nant, // Antenna pitch
                                         ctx->Nb*ctx->Ntpb, // Coarse Channel pitch
-                                        ctx->Nb*ctx->Ntpb*ctx->Ncc, // Polarisation pitch
+                                        ctx->Nb*ctx->Ntpb*ctx->Nbc, // Polarisation pitch
                                         ctx->Nts[i]*ctx->Nas[i], // Spectra pitch
                                         
                                         ctx->Nts[i], // Coarse Channel pitch for ics
@@ -1523,7 +1523,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
                                         abs(ctx->Npolout[i]) * ctx->Nts[i] * ctx->Nc/ctx->Nant // Spectra pitch for ics
                                         );
         
-          if(c + ctx->Ncc >= ctx->Nc){
+          if(c + ctx->Nbc >= ctx->Nc){
             // Copy store_cb_data_t array from host to device
             cuda_rc = cudaMemcpyAsync(ctx->h_icsbuf[i],
               gpu_ctx->d_ics_out[i],
@@ -1537,7 +1537,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
           }
         }
 
-        if(c + ctx->Ncc >= ctx->Nc){
+        if(c + ctx->Nbc >= ctx->Nc){
           // Add pre-dump stream callback
           cuda_rc = cudaStreamAddCallback(gpu_ctx->compute_stream,
                                           pre_dump_stream_callback,
@@ -1553,11 +1553,11 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
           // Copy integrated power spectra (or spectrum) to host.  This is done as
           // two 2D copies to get channel 0 in the center of the spectrum.  Special
           // care is taken in the unlikely event that Nt is odd.
-          src    = gpu_ctx->d_pwr_out[i] + p*ctx->Nb*ctx->Ntpb*ctx->Ncc;
+          src    = gpu_ctx->d_pwr_out[i] + p*ctx->Nb*ctx->Ntpb*ctx->Nbc;
           dst    = ctx->h_pwrbuf[i] + (p*ctx->Nts[i]*ctx->Nc) + (c*ctx->Nts[i]);
           spitch = gpu_ctx->Nss[i] * ctx->Nts[i] * sizeof(float);
           dpitch = ctx->Nts[i] * sizeof(float);
-          height = ctx->Ncc;
+          height = ctx->Nbc;
 
           for(d=0; d < ctx->Nds[i]; d++) {
 
@@ -1601,7 +1601,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
           }
         }
 
-        if(c + ctx->Ncc >= ctx->Nc){
+        if(c + ctx->Nbc >= ctx->Nc){
           // Add post-dump stream callback
           cuda_rc = cudaStreamAddCallback(gpu_ctx->compute_stream,
                                           post_dump_stream_callback,
@@ -1615,14 +1615,14 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
 
         // Add power buffer clearing cudaMemset call to stream
         cuda_rc = cudaMemsetAsync(gpu_ctx->d_pwr_out[i], 0,
-                                  abs(ctx->Npolout[i])*ctx->Nb*ctx->Ntpb*ctx->Ncc*sizeof(float),
+                                  abs(ctx->Npolout[i])*ctx->Nb*ctx->Ntpb*ctx->Nbc*sizeof(float),
                                   gpu_ctx->compute_stream);
 
         if(cuda_rc != cudaSuccess) {
           PRINT_ERRMSG(cuda_rc);
           return 1;
         }
-        if(c + ctx->Ncc >= ctx->Nc && ctx->incoherently_sum){
+        if(c + ctx->Nbc >= ctx->Nc && ctx->incoherently_sum){
           // Add ics buffer clearing cudaMemset call to stream
           cuda_rc = cudaMemsetAsync(gpu_ctx->d_ics_out[i], 0,
                                     abs(ctx->Npolout[i])*ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float)/ctx->Nant,
@@ -1635,7 +1635,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
         }
 
       } // If time to dump
-    } // For each chunk of channels
+    } // For each batch of channels
   } // For each output product
 
   return 0;

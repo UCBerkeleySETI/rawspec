@@ -35,7 +35,7 @@ int main(int argc, char * argv[])
   ctx.No = 4;
   ctx.Np = 2;
   ctx.Nc = 88;
-  ctx.Ncc = 1;
+  ctx.Nbc = 1;
   ctx.Nbps = 8;
   if(argc > 1) {
     ctx.Nbps = strtoul(argv[1], NULL, 0);

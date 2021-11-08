@@ -39,7 +39,7 @@ struct rawspec_context_s {
   // In order to better manage device memory usage, chunks of channels are
   // processed at a time, instead of all channels. A value of 0 acts as a 
   // negative flag within the initialisation function.
-  unsigned int Ncc;  // Number of coarse channels in a chunk (Chunk-Channels)
+  unsigned int Nbc;  // Number of coarse channels per batch (Batched-Channels)
 
   // Nbps is the number of bits per sample (per component).  The only supported
   // values are 4* or 8 or 16.  Illegal values will be treated as 8.
