@@ -590,7 +590,14 @@ int rawspec_initialize(rawspec_context * ctx)
           }
         }
       }
-    }//else manual channel-chunking
+    }
+    else if(ctx->Nc%ctx->Ncc != 0) { // Manual channel-chunking, but inappropriate chunks
+      fprintf(stderr, "%d channels cannot be factorised to chunks of %d\n",
+        ctx->Nc, ctx->Ncc
+      );
+      return 1;
+    }
+
     printf("Chunking %d channels into %d chunks of %d.\n", ctx->Nc, ctx->Nc/ctx->Ncc, ctx->Ncc);
   }
 
