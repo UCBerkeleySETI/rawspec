@@ -5,8 +5,6 @@
 #include <cufftXt.h>
 #include <helper_cuda.h>
 
-#define VERBOSE_ALLOC
-
 #define NO_PLAN   ((cufftHandle)-1)
 #define NO_STREAM ((cudaStream_t)-1)
 
