@@ -8,12 +8,12 @@ DATADIR = $(PREFIX)/share
 CUDA_DIR ?= $(CUDA_ROOT)
 CUDA_PATH ?= $(CUDA_DIR)
 
-CC            ?= gcc
+CC            := gcc
 CXX           ?= g++
 HOST_COMPILER ?= $(CXX)
 NVCC          := $(CUDA_PATH)/bin/nvcc -ccbin $(HOST_COMPILER)
 
-CFLAGS = -ggdb -fPIC
+CFLAGS = -ggdb -fPIC -I$(CUDA_PATH)/include
 ifdef DEBUG_CALLBACKS
 CFLAGS += -DDEBUG_CALLBACKS=$(DEBUG_CALLBACKS)
 endif

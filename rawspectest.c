@@ -5,6 +5,9 @@
 #include <string.h>
 #include <time.h>
 
+#include <cuda.h>
+#include <cuda_runtime_api.h>
+
 #include "rawspec.h"
 
 #define ELAPSED_NS(start,stop) \
@@ -14,6 +17,20 @@ void
 dump_callback(rawspec_context * ctx, int output_product, int callback_type)
 {
   printf("cb %d\n", output_product);
+}
+
+void show_gpu_memory_usage(int gpu_id) {
+    size_t in_use, available, total;
+    int gpu_id_selected;
+    cudaSetDevice(gpu_id);
+    cudaGetDevice(&gpu_id_selected);
+    cudaMemGetInfo(&available, &total);
+    in_use = total - available;
+    printf("GPU %d memory, in use: %ld MiB, free: %ld MiB, total: %ld MiB\n", 
+          gpu_id_selected, 
+          (long) ((float) in_use / 1.0e6), 
+          (long) ((float) available / 1.0e6), 
+          (long) ((float) total / 1.0e6)); 
 }
 
 int main(int argc, char * argv[])
@@ -44,7 +61,7 @@ int main(int argc, char * argv[])
     }
   }
   printf("using %u bits per sample\n", ctx.Nbps);
-  ctx.Ntpb = blocsize / (2 * ctx.Np * ctx.Nc * (ctx.Nbps/8));
+  ctx.Ntpb = blocsize / (2 * ctx.Np * ctx.Nc * ctx.Nbps/8);
   ctx.Nts[0] = (1<<20);
   ctx.Nts[1] = (1<<3);
   ctx.Nts[2] = (1<<10);
@@ -83,10 +100,10 @@ int main(int argc, char * argv[])
   }
   // Set sample 8 of pol 0 to (1+0j), in block Nb_host-1
   // Note that for 16-bit samples, this will really be (127/32767 + 0j)
-  ctx.h_blkbufs[ctx.Nb_host-1][(8*ctx.Np*2/*complex*/)*(ctx.Nbps/8)] = 127;
+  ctx.h_blkbufs[ctx.Nb_host-1][(8*ctx.Np*2/*complex*/)*ctx.Nbps/8] = 127;
   // Set sample 9 of pol 1 to (0+1j), in block Nb_host-1
   // Note that for 16-bit samples, this will really be (0 + 127j/32767)
-  ctx.h_blkbufs[ctx.Nb_host-1][(9*ctx.Np*2/*complex*/+3)*(ctx.Nbps/8)] = 64;
+  ctx.h_blkbufs[ctx.Nb_host-1][(9*ctx.Np*2/*complex*/+3)*ctx.Nbps/8] = 64;
 
   // Salt the output buffers (to detect whether they are not fully written)
   for(i=0; i<ctx.No; i++) {
@@ -138,10 +155,12 @@ int main(int argc, char * argv[])
     }
   }
 
-  // For checking mempry usage with nvidia-smi
-  printf("sleeping for 10 seconds...");
+  // For checking mempry usage
+  //printf("sleeping for 10 seconds...");
+  printf("\nchecking GPU memory usage ...\n");
   fflush(stdout);
-  sleep(10);
+  //sleep(10);
+  show_gpu_memory_usage(ctx.gpu_index);
   printf("done\n");
 
   printf("cleaning up...");
