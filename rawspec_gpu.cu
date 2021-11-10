@@ -946,7 +946,7 @@ int rawspec_initialize(rawspec_context * ctx)
       rawspec_cleanup(ctx);
       return 1;
     }
-    if(gpu_ctx->Nis[i] > 1){
+    if(gpu_ctx->Nis[i] > 1 && ctx->Nbc < ctx->Nc){
       // Full power output buffer
 #ifdef VERBOSE_ALLOC
       printf("Full power output buffer cache size == %u * %lu == %lu\n",
@@ -1332,7 +1332,7 @@ void rawspec_cleanup(rawspec_context * ctx)
       if(gpu_ctx->d_pwr_out[i]) {
         cudaFree(gpu_ctx->d_pwr_out[i]);
       }
-      if(gpu_ctx->Nis[i] > 1) {
+      if(gpu_ctx->Nis[i] > 1 && ctx->Nbc < ctx->Nc) {
         cudaFree(gpu_ctx->d_prev_pwr_out_cache[i]);
       }
       if(gpu_ctx->d_ics_out[i]) {
@@ -1537,32 +1537,24 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
         }
       }
 
-      // If not time to dump
-      if(gpu_ctx->inbuf_count % gpu_ctx->Nis[i] != 0) {
-        // Cache d_pwr_buf to d_prev_pwr_out_cache for later
-        // mem2dAccumMoveFloat memset(0)s the source (d_pwr_buf)
-        mem2dAccumMoveFloat<<<grid_full_pwr, 1, 0, gpu_ctx->compute_stream
-          >>>(gpu_ctx->d_prev_pwr_out_cache[i] + (c * abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb),
-              ctx->Nb*ctx->Ntpb*ctx->Nc,
-              gpu_ctx->d_pwr_out[i],
-              ctx->Nb*ctx->Ntpb*ctx->Nbc
+      // If time to dump
+      if(gpu_ctx->inbuf_count % gpu_ctx->Nis[i] == 0){
+        // If previous d_pwr_buf were cached
+        if(gpu_ctx->Nis[i] > 1 && ctx->Nbc < ctx->Nc){
+          // Accumulate previously cached d_pwr_buf
+          // mem2dAccumMoveFloat memset(0)s the source (d_prev_pwr_out_cache)
+          mem2dAccumMoveFloat<<<grid_full_pwr, 1, 0, gpu_ctx->compute_stream
+          >>>(gpu_ctx->d_pwr_out[i],
+              ctx->Nb*ctx->Ntpb*ctx->Nbc,
+              gpu_ctx->d_prev_pwr_out_cache[i] + (c * abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb),
+              ctx->Nb*ctx->Ntpb*ctx->Nc
             );
-      }
-      else{ // gpu_ctx->inbuf_count % gpu_ctx->Nis[i] == 0 // time to dump
+        }
+
         // If the number of spectra to dump per input buffer is less than the
         // number of spectra per input buffer, then we need to accumulate the
         // sub-integrations together.
         if(ctx->Nds[i] < gpu_ctx->Nss[i]) {
-          if(gpu_ctx->Nis[i] > 1){
-            // Accumulate previously cached d_pwr_buf
-            // mem2dAccumMoveFloat memset(0)s the source (d_prev_pwr_out_cache)
-            mem2dAccumMoveFloat<<<grid_full_pwr, 1, 0, gpu_ctx->compute_stream
-            >>>(gpu_ctx->d_pwr_out[i],
-                ctx->Nb*ctx->Ntpb*ctx->Nbc,
-                gpu_ctx->d_prev_pwr_out_cache[i] + (c * abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb),
-                ctx->Nb*ctx->Ntpb*ctx->Nc
-              );
-          }
           for(p=0; p < abs(ctx->Npolout[i]); p++) {
             accumulate<<<gpu_ctx->grid[i],
                         gpu_ctx->nthreads[i],
@@ -1706,6 +1698,16 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
           }
         }
 
+      }
+      else if(ctx->Nbc < ctx->Nc) { // Not time to dump and need to cache batched d_pwr_out
+        // Cache d_pwr_buf to d_prev_pwr_out_cache for later
+        // mem2dAccumMoveFloat memset(0)s the source (d_pwr_buf)
+        mem2dAccumMoveFloat<<<grid_full_pwr, 1, 0, gpu_ctx->compute_stream
+          >>>(gpu_ctx->d_prev_pwr_out_cache[i] + (c * abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb),
+              ctx->Nb*ctx->Ntpb*ctx->Nc,
+              gpu_ctx->d_pwr_out[i],
+              ctx->Nb*ctx->Ntpb*ctx->Nbc
+            );
       } // If time to dump
     } // For each batch of channels
   } // For each output product
