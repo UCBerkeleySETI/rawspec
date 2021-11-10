@@ -607,7 +607,7 @@ int rawspec_initialize(rawspec_context * ctx)
         }
       }
     }
-    else if(ctx->Nc%ctx->Nbc != 0) { // Manual channel-batching, but inappropriate batches
+    if(ctx->Nc%ctx->Nbc != 0) { // inappropriate batches, probably Manual channel-batching
       fprintf(stderr, "%d channels cannot be factorised to batches of %d\n",
         ctx->Nc, ctx->Nbc
       );
