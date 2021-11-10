@@ -1506,6 +1506,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
   grid_full_pwr.z = 1;
   const size_t Nchan_per_antenna = ctx->Nc/ctx->Nant;
   const size_t Nantenna_per_batch = ctx->Nbc/Nchan_per_antenna;
+  bool is_last_channel_batch;
 
   // Increment inbuf_count
   gpu_ctx->inbuf_count++;
@@ -1516,6 +1517,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
     // Npolout==1
     fft_outbuf_length = ctx->Npolout[i] == 1 ? 0 : ctx->Nb*ctx->Ntpb*ctx->Nbc;
     for(c=0; c < ctx->Nc; c += ctx->Nbc) {
+      is_last_channel_batch = c + ctx->Nbc >= ctx->Nc;
       grid_full_pwr.y = abs(ctx->Npolout[i]);
 
       // For each input polarization
@@ -1593,7 +1595,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
                                         abs(ctx->Npolout[i]) * ctx->Nts[i] * ctx->Nc/ctx->Nant // Spectra pitch for ics
                                         );
         
-          if(c + ctx->Nbc >= ctx->Nc){
+          if(is_last_channel_batch){
             // Copy store_cb_data_t array from host to device
             cuda_rc = cudaMemcpyAsync(ctx->h_icsbuf[i],
               gpu_ctx->d_ics_out[i],
@@ -1607,7 +1609,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
           }
         }
 
-        if(c + ctx->Nbc >= ctx->Nc){
+        if(is_last_channel_batch){
           // Add pre-dump stream callback
           cuda_rc = cudaStreamAddCallback(gpu_ctx->compute_stream,
                                           pre_dump_stream_callback,
@@ -1671,7 +1673,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
           }
         }
 
-        if(c + ctx->Nbc >= ctx->Nc){
+        if(is_last_channel_batch){
           // Add post-dump stream callback
           cuda_rc = cudaStreamAddCallback(gpu_ctx->compute_stream,
                                           post_dump_stream_callback,
@@ -1692,7 +1694,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
           PRINT_ERRMSG(cuda_rc);
           return 1;
         }
-        if(c + ctx->Nbc >= ctx->Nc && ctx->incoherently_sum){
+        if(is_last_channel_batch && ctx->incoherently_sum){
           // Add ics buffer clearing cudaMemset call to stream
           cuda_rc = cudaMemsetAsync(gpu_ctx->d_ics_out[i], 0,
                                     abs(ctx->Npolout[i])*ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float)/ctx->Nant,
