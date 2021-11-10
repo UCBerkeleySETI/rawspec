@@ -71,8 +71,10 @@ typedef struct {
   char * d_blk_expansion_buf;
   // Device pointer to FFT output buffer
   cufftComplex * d_fft_out;
-  // Array of device pointers to power buffers
+  // Array of device pointers to power buffers (sized for Nbc)
   float * d_pwr_out[MAX_OUTPUTS];
+  // Array of device pointers to power buffers (sized for Nc if Ni > 1)
+  float * d_prev_pwr_out_cache[MAX_OUTPUTS];
   // Array of device pointers to incoherent-sum buffers
   float * d_ics_out[MAX_OUTPUTS];
   float * d_Aws;
@@ -266,6 +268,22 @@ __device__ cufftCallbackStoreC d_cufft_store_callback_pol1_iquv = store_callback
 __device__ cufftCallbackStoreC d_cufft_store_callback_pol1_iquv_conj = store_callback_pol1_iquv_conj;
 
 #define MAX_THREADS (1024)
+
+// mem2dAccumMoveFloat kernel
+// Adds the source float to the respective destination float,
+// then sets the source float 0.0.
+//
+// Expectation of blockDim, with 1 thread each:
+// grid.x = width;
+// grid.y = height;
+// grid.z = 1;
+// All pitches are in units of float
+__global__ void mem2dAccumMoveFloat(float* dst, size_t dpitch, float* src, size_t spitch)
+{
+  float* src_offst = src + blockDim.x*blockIdx.y*spitch + blockIdx.x;
+  dst[blockDim.x*blockIdx.y*dpitch + blockIdx.x] += *src_offst;
+  *src_offst = 0.0;
+}
 
 // Accumulate kernel
 __global__ void accumulate(float * pwr_buf, unsigned int Na, size_t xpitch, size_t ypitch, size_t zpitch)
@@ -639,6 +657,7 @@ int rawspec_initialize(rawspec_context * ctx)
   gpu_ctx->compute_stream = NO_STREAM;
   for(i=0; i<MAX_OUTPUTS; i++) {
     gpu_ctx->d_pwr_out[i] = NULL;
+    gpu_ctx->d_prev_pwr_out_cache[i] = NULL;
     gpu_ctx->d_scb_data[i] = NULL;
     gpu_ctx->plan[i][0] = NO_PLAN;
     gpu_ctx->plan[i][1] = NO_PLAN;
@@ -926,6 +945,32 @@ int rawspec_initialize(rawspec_context * ctx)
       PRINT_ERRMSG(cuda_rc);
       rawspec_cleanup(ctx);
       return 1;
+    }
+    if(gpu_ctx->Nis[i] > 1){
+      // Full power output buffer
+#ifdef VERBOSE_ALLOC
+      printf("Full power output buffer cache size == %u * %lu == %lu\n",
+          abs(ctx->Npolout[i]),  ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float),
+          abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
+#endif
+      cuda_rc = cudaMalloc(&gpu_ctx->d_prev_pwr_out_cache[i],
+          abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
+      if(cuda_rc != cudaSuccess) {
+        PRINT_ERRMSG(cuda_rc);
+        rawspec_cleanup(ctx);
+        return 1;
+      }
+      // Clear power output buffer
+      cuda_rc = cudaMemset(gpu_ctx->d_prev_pwr_out_cache[i], 0,
+          abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
+      if(cuda_rc != cudaSuccess) {
+        PRINT_ERRMSG(cuda_rc);
+        rawspec_cleanup(ctx);
+        return 1;
+      }
+    }
+    else{
+      gpu_ctx->d_prev_pwr_out_cache[i] = gpu_ctx->d_pwr_out[i];
     }
 
     if(ctx->incoherently_sum){
@@ -1287,6 +1332,9 @@ void rawspec_cleanup(rawspec_context * ctx)
       if(gpu_ctx->d_pwr_out[i]) {
         cudaFree(gpu_ctx->d_pwr_out[i]);
       }
+      if(gpu_ctx->Nis[i] > 1) {
+        cudaFree(gpu_ctx->d_prev_pwr_out_cache[i]);
+      }
       if(gpu_ctx->d_ics_out[i]) {
         cudaFree(gpu_ctx->d_ics_out[i]);
       }
@@ -1453,6 +1501,9 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
   rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
   size_t fft_outbuf_length;
   dim3 grid_ics;
+  dim3 grid_full_pwr;
+  grid_full_pwr.x = ctx->Nb*ctx->Ntpb*ctx->Nbc;
+  grid_full_pwr.z = 1;
   const size_t Nchan_per_antenna = ctx->Nc/ctx->Nant;
   const size_t Nantenna_per_batch = ctx->Nbc/Nchan_per_antenna;
 
@@ -1465,6 +1516,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
     // Npolout==1
     fft_outbuf_length = ctx->Npolout[i] == 1 ? 0 : ctx->Nb*ctx->Ntpb*ctx->Nbc;
     for(c=0; c < ctx->Nc; c += ctx->Nbc) {
+      grid_full_pwr.y = abs(ctx->Npolout[i]);
 
       // For each input polarization
       for(p=0; p < ctx->Np; p++) {
@@ -1483,12 +1535,32 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
         }
       }
 
-      // If time to dump
-      if(gpu_ctx->inbuf_count % gpu_ctx->Nis[i] == 0) {
+      // If not time to dump
+      if(gpu_ctx->inbuf_count % gpu_ctx->Nis[i] != 0) {
+        // Cache d_pwr_buf to d_prev_pwr_out_cache for later
+        // mem2dAccumMoveFloat memset(0)s the source (d_pwr_buf)
+        mem2dAccumMoveFloat<<<grid_full_pwr, 1, 0, gpu_ctx->compute_stream
+          >>>(gpu_ctx->d_prev_pwr_out_cache[i] + (c * abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb),
+              ctx->Nb*ctx->Ntpb*ctx->Nc,
+              gpu_ctx->d_pwr_out[i],
+              ctx->Nb*ctx->Ntpb*ctx->Nbc
+            );
+      }
+      else{ // gpu_ctx->inbuf_count % gpu_ctx->Nis[i] == 0 // time to dump
         // If the number of spectra to dump per input buffer is less than the
         // number of spectra per input buffer, then we need to accumulate the
         // sub-integrations together.
         if(ctx->Nds[i] < gpu_ctx->Nss[i]) {
+          if(gpu_ctx->Nis[i] > 1){
+            // Accumulate previously cached d_pwr_buf
+            // mem2dAccumMoveFloat memset(0)s the source (d_prev_pwr_out_cache)
+            mem2dAccumMoveFloat<<<grid_full_pwr, 1, 0, gpu_ctx->compute_stream
+            >>>(gpu_ctx->d_pwr_out[i],
+                ctx->Nb*ctx->Ntpb*ctx->Nbc,
+                gpu_ctx->d_prev_pwr_out_cache[i] + (c * abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb),
+                ctx->Nb*ctx->Ntpb*ctx->Nc
+              );
+          }
           for(p=0; p < abs(ctx->Npolout[i]); p++) {
             accumulate<<<gpu_ctx->grid[i],
                         gpu_ctx->nthreads[i],
