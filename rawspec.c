@@ -61,6 +61,7 @@ ssize_t read_fully(int fd, void * buf, size_t bytes_to_read)
 
 static struct option long_opts[] = {
   {"ant",     1, NULL, 'a'},
+  {"batch",   0, NULL, 'b'},
   {"dest",    1, NULL, 'd'},
   {"ffts",    1, NULL, 'f'},
   {"gpu",     1, NULL, 'g'},
@@ -90,6 +91,7 @@ void usage(const char *argv0) {
     "\n"
     "Options:\n"
     "  -a, --ant=ANT          The 0-indexed antenna to exclusively process [-1]\n"
+    "  -b, --batch=BC         Batch process BC coarse-channels at a time (1: auto, <1: disabled) [0]\n"
     "  -d, --dest=DEST        Destination directory or host:port\n"
     "  -f, --ffts=N1[,N2...]  FFT lengths [1048576, 8, 1024]\n"
     "  -g, --GPU=IDX          Select GPU device to use [0]\n"
@@ -203,7 +205,7 @@ char tmp[16];
 
   // Parse command line.
   argv0 = argv[0];
-  while((opt=getopt_long(argc,argv,"a:d:f:g:HI:i:n:o:p:r:Ss:t:hv",long_opts,NULL))!=-1) {
+  while((opt=getopt_long(argc,argv,"a:b:d:f:g:HI:i:n:o:p:r:Ss:t:hv",long_opts,NULL))!=-1) {
     switch (opt) {
       case 'h': // Help
         usage(argv0);
@@ -212,6 +214,10 @@ char tmp[16];
 
       case 'a': // Antenna selection to process
         ant = strtol(optarg, NULL, 0);
+        break;
+
+      case 'b': // Batch-channels
+        ctx.Nbc = strtol(optarg, NULL, 0);
         break;
 
       case 'd': // Output destination
@@ -853,13 +859,7 @@ char tmp[16];
               fprintf(stderr, "\n");
 #endif // VERBOSE
               rawspec_wait_for_completion(&ctx);
-              if(expand4bps_to8bps){
-                rawspec_copy_blocks_to_gpu_expanding_complex4(&ctx, 0, 0, ctx.Nb);
-              }
-              else{
-                rawspec_copy_blocks_to_gpu(&ctx, 0, 0, ctx.Nb);
-              }
-              rawspec_start_processing(&ctx, RAWSPEC_FORWARD_FFT);
+              rawspec_copy_blocks_to_gpu_and_start_processing(&ctx, ctx.Nb, expand4bps_to8bps, RAWSPEC_FORWARD_FFT);
             }
 
             // Increment block counter
@@ -907,13 +907,7 @@ char tmp[16];
           fprintf(stderr, "\n");
 #endif // VERBOSE
           rawspec_wait_for_completion(&ctx);
-          if(expand4bps_to8bps){
-            rawspec_copy_blocks_to_gpu_expanding_complex4(&ctx, 0, 0, ctx.Nb);
-          }
-          else{
-            rawspec_copy_blocks_to_gpu(&ctx, 0, 0, ctx.Nb);
-          }
-          rawspec_start_processing(&ctx, RAWSPEC_FORWARD_FFT);
+          rawspec_copy_blocks_to_gpu_and_start_processing(&ctx, ctx.Nb, expand4bps_to8bps, RAWSPEC_FORWARD_FFT);
         }
 
         // Remember pktidx

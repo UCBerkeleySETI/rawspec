@@ -71,8 +71,10 @@ typedef struct {
   char * d_blk_expansion_buf;
   // Device pointer to FFT output buffer
   cufftComplex * d_fft_out;
-  // Array of device pointers to power buffers
+  // Array of device pointers to power buffers (sized for Nbc)
   float * d_pwr_out[MAX_OUTPUTS];
+  // Array of device pointers to power buffers (sized for Nc if Ni > 1)
+  float * d_prev_pwr_out_cache[MAX_OUTPUTS];
   // Array of device pointers to incoherent-sum buffers
   float * d_ics_out[MAX_OUTPUTS];
   float * d_Aws;
@@ -108,6 +110,10 @@ typedef struct {
   // Non-zero when caller is managing (i.e. allocating and freeing) the
   // buffers; zero when we are.
   int caller_managed;
+  // This is a commonly used value to stride between channels within GUPPI input-buffers,
+  // the dimensionality of which is [channel (slowest), time, polarisation (fastest)]:
+  // (ctx->Ntpb * ctx->Np * 2 /*complex*/ * ctx->Nbps)/8
+  size_t guppi_channel_stride;
 } rawspec_gpu_context;
 
 // Device-side texture object declaration
@@ -262,6 +268,22 @@ __device__ cufftCallbackStoreC d_cufft_store_callback_pol1_iquv = store_callback
 __device__ cufftCallbackStoreC d_cufft_store_callback_pol1_iquv_conj = store_callback_pol1_iquv_conj;
 
 #define MAX_THREADS (1024)
+
+// mem2dAccumMoveFloat kernel
+// Adds the source float to the respective destination float,
+// then sets the source float 0.0.
+//
+// Expectation of blockDim, with 1 thread each:
+// grid.x = width;
+// grid.y = height;
+// grid.z = 1;
+// All pitches are in units of float
+__global__ void mem2dAccumMoveFloat(float* dst, size_t dpitch, float* src, size_t spitch)
+{
+  float* src_offst = src + blockDim.x*blockIdx.y*spitch + blockIdx.x;
+  dst[blockDim.x*blockIdx.y*dpitch + blockIdx.x] += *src_offst;
+  *src_offst = 0.0;
+}
 
 // Accumulate kernel
 __global__ void accumulate(float * pwr_buf, unsigned int Na, size_t xpitch, size_t ypitch, size_t zpitch)
@@ -567,6 +589,34 @@ int rawspec_initialize(rawspec_context * ctx)
     }
   }
 
+  ctx->Nant = ctx->Nant <= 0 ? 1 : ctx->Nant;
+  // Setup batched-channel parametners
+  if(ctx->Nbc == 0) { // Disable channel-batching
+    ctx->Nbc = ctx->Nc;
+  }
+  else{ // Enabled channel-batching
+    if(ctx->Nbc <= 1) { // Auto channel-batching
+      if(ctx->Nant > 1){
+        ctx->Nbc = ctx->Nc/ctx->Nant;
+      }
+      else{ // find largest Nc factor <= 10
+        for(i = 1; i <= 10; i++){
+          if(ctx->Nc%i == 0){
+            ctx->Nbc = ctx->Nc/i;
+          }
+        }
+      }
+    }
+    if(ctx->Nc%ctx->Nbc != 0) { // inappropriate batches, probably Manual channel-batching
+      fprintf(stderr, "%d channels cannot be factorised to batches of %d\n",
+        ctx->Nc, ctx->Nbc
+      );
+      return 1;
+    }
+
+    printf("Batching %d channels into %d batches of %d.\n", ctx->Nc, ctx->Nc/ctx->Nbc, ctx->Nbc);
+  }
+
   // Null out all pointers
   // TODO Add support for client managed host buffers
   for(i=0; i < MAX_OUTPUTS; i++) {
@@ -607,6 +657,7 @@ int rawspec_initialize(rawspec_context * ctx)
   gpu_ctx->compute_stream = NO_STREAM;
   for(i=0; i<MAX_OUTPUTS; i++) {
     gpu_ctx->d_pwr_out[i] = NULL;
+    gpu_ctx->d_prev_pwr_out_cache[i] = NULL;
     gpu_ctx->d_scb_data[i] = NULL;
     gpu_ctx->plan[i][0] = NO_PLAN;
     gpu_ctx->plan[i][1] = NO_PLAN;
@@ -675,7 +726,7 @@ int rawspec_initialize(rawspec_context * ctx)
     // Calculate grid dimensions
     gpu_ctx->grid[i].x = (ctx->Nts[i] + MAX_THREADS - 1) / MAX_THREADS;
     gpu_ctx->grid[i].y = ctx->Nds[i];
-    gpu_ctx->grid[i].z = ctx->Nc;
+    gpu_ctx->grid[i].z = ctx->Nbc;
 
     // Calculate number of threads per block
     gpu_ctx->nthreads[i] = MIN(ctx->Nts[i], MAX_THREADS);
@@ -684,6 +735,9 @@ int rawspec_initialize(rawspec_context * ctx)
     // dumped at one time (Nd).
     ctx->h_pwrbuf_size[i] = abs(ctx->Npolout[i]) *
                             ctx->Nds[i]*ctx->Nts[i]*ctx->Nc*sizeof(float);
+    #ifdef VERBOSE_ALLOC
+      printf("FFT Host dump buffer[%d] size == %lu\n", i, ctx->h_pwrbuf_size[i]);
+    #endif
     cuda_rc = cudaHostAlloc(&ctx->h_pwrbuf[i], ctx->h_pwrbuf_size[i],
                        cudaHostAllocDefault);
 
@@ -704,14 +758,15 @@ int rawspec_initialize(rawspec_context * ctx)
     }
   }
 
+  gpu_ctx->guppi_channel_stride = (ctx->Ntpb * ctx->Np * 2 /*complex*/ * ctx->Nbps)/8;
+
   // Allocate buffers
 
   // FFT input buffer
   // The input buffer is padded to the next multiple of 1<<LOAD_TEXTURE_WIDTH_POWER
   // to facilitate 2D texture lookups by treating the input buffer as a 2D array
   // that is 1<<LOAD_TEXTURE_WIDTH_POWER wide.
-  buf_size = ctx->Nb*ctx->Ntpb;
-  buf_size *= ctx->Np*ctx->Nc* 2/*complex*/ *(ctx->Nbps/8);
+  buf_size = ctx->Nb*ctx->Nc*gpu_ctx->guppi_channel_stride;
   if((buf_size & LOAD_TEXTURE_WIDTH_MASK) != 0) {
     // Round up to next multiple of 64KB
     buf_size = (buf_size & ~LOAD_TEXTURE_WIDTH_MASK) + 1<<LOAD_TEXTURE_WIDTH_POWER;
@@ -797,6 +852,9 @@ int rawspec_initialize(rawspec_context * ctx)
   }
 
   if(NbpsIsExpanded){
+#ifdef VERBOSE_ALLOC
+    printf("NBITS expansion buffer size == %lu\n", buf_size/2);
+#endif
     cuda_rc = cudaMalloc(&gpu_ctx->d_blk_expansion_buf, buf_size/2);
     if(cuda_rc != cudaSuccess) {
       PRINT_ERRMSG(cuda_rc);
@@ -804,6 +862,9 @@ int rawspec_initialize(rawspec_context * ctx)
       return 1;
     }
 
+#ifdef VERBOSE_ALLOC
+    printf("Complex4 expansion LUT size == %lu\n", 256*sizeof(char2));
+#endif
     cuda_rc = cudaMalloc(&gpu_ctx->d_comp4_exp_LUT, 256*sizeof(char2));
     if(cuda_rc != cudaSuccess) {
       PRINT_ERRMSG(cuda_rc);
@@ -844,7 +905,7 @@ int rawspec_initialize(rawspec_context * ctx)
   }
 
   // FFT output buffer
-  buf_size = ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(cufftComplex);
+  buf_size = ctx->Nb*ctx->Ntpb*ctx->Nbc*sizeof(cufftComplex);
   // If any output product is full-pol then we need to double output buffer
   for(i=0; i < ctx->No; i++) {
     if(abs(ctx->Npolout[i]) == 4) {
@@ -867,11 +928,11 @@ int rawspec_initialize(rawspec_context * ctx)
     // Power output buffer
 #ifdef VERBOSE_ALLOC
     printf("Power output buffer size == %u * %lu == %lu\n",
-        abs(ctx->Npolout[i]),  ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float),
-        abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
+        abs(ctx->Npolout[i]),  ctx->Nb*ctx->Ntpb*ctx->Nbc*sizeof(float),
+        abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nbc*sizeof(float));
 #endif
     cuda_rc = cudaMalloc(&gpu_ctx->d_pwr_out[i],
-        abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
+        abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nbc*sizeof(float));
     if(cuda_rc != cudaSuccess) {
       PRINT_ERRMSG(cuda_rc);
       rawspec_cleanup(ctx);
@@ -879,14 +940,45 @@ int rawspec_initialize(rawspec_context * ctx)
     }
     // Clear power output buffer
     cuda_rc = cudaMemset(gpu_ctx->d_pwr_out[i], 0,
-        abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
+        abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nbc*sizeof(float));
     if(cuda_rc != cudaSuccess) {
       PRINT_ERRMSG(cuda_rc);
       rawspec_cleanup(ctx);
       return 1;
     }
+    if(gpu_ctx->Nis[i] > 1 && ctx->Nbc < ctx->Nc){
+      // Full power output buffer
+#ifdef VERBOSE_ALLOC
+      printf("Full power output buffer cache size == %u * %lu == %lu\n",
+          abs(ctx->Npolout[i]),  ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float),
+          abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
+#endif
+      cuda_rc = cudaMalloc(&gpu_ctx->d_prev_pwr_out_cache[i],
+          abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
+      if(cuda_rc != cudaSuccess) {
+        PRINT_ERRMSG(cuda_rc);
+        rawspec_cleanup(ctx);
+        return 1;
+      }
+      // Clear power output buffer
+      cuda_rc = cudaMemset(gpu_ctx->d_prev_pwr_out_cache[i], 0,
+          abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
+      if(cuda_rc != cudaSuccess) {
+        PRINT_ERRMSG(cuda_rc);
+        rawspec_cleanup(ctx);
+        return 1;
+      }
+    }
+    else{
+      gpu_ctx->d_prev_pwr_out_cache[i] = gpu_ctx->d_pwr_out[i];
+    }
 
     if(ctx->incoherently_sum){
+#ifdef VERBOSE_ALLOC
+      printf("ICS output buffer size == %u * %lu / %u == %lu\n",
+          abs(ctx->Npolout[i]),  ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float), ctx->Nant,
+          abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float)/ctx->Nant);
+#endif
       cuda_rc = cudaMalloc(&gpu_ctx->d_ics_out[i],
           abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float)/ctx->Nant);
       if(cuda_rc != cudaSuccess) {
@@ -904,6 +996,9 @@ int rawspec_initialize(rawspec_context * ctx)
       }
 
       // Setup device antenna-weight buffer
+#ifdef VERBOSE_ALLOC
+      printf("ICS antenna-weight buffer size == %lu\n", ctx->Nant*sizeof(float));
+#endif
       cuda_rc = cudaMalloc(&gpu_ctx->d_Aws, ctx->Nant*sizeof(float));
       if(cuda_rc != cudaSuccess) {
         PRINT_ERRMSG(cuda_rc);
@@ -937,11 +1032,11 @@ int rawspec_initialize(rawspec_context * ctx)
     // (because they will never be used). It might be slightly
     // safer to init them to the same as pwr_buf_p00_i if Npolout == 1.
     h_scb_data.pwr_buf_p11_q =
-        gpu_ctx->d_pwr_out[i] + 1*ctx->Nb*ctx->Ntpb*ctx->Nc;
+        gpu_ctx->d_pwr_out[i] + 1*ctx->Nb*ctx->Ntpb*ctx->Nbc;
     h_scb_data.pwr_buf_p01_re_u =
-        gpu_ctx->d_pwr_out[i] + 2*ctx->Nb*ctx->Ntpb*ctx->Nc;
+        gpu_ctx->d_pwr_out[i] + 2*ctx->Nb*ctx->Ntpb*ctx->Nbc;
     h_scb_data.pwr_buf_p01_im_v =
-        gpu_ctx->d_pwr_out[i] + 3*ctx->Nb*ctx->Ntpb*ctx->Nc;
+        gpu_ctx->d_pwr_out[i] + 3*ctx->Nb*ctx->Ntpb*ctx->Nbc;
 
     // Allocate device memory for store_cb_data_t array
     cuda_rc = cudaMalloc(&gpu_ctx->d_scb_data[i], sizeof(store_cb_data_t));
@@ -1064,7 +1159,7 @@ int rawspec_initialize(rawspec_context * ctx)
                       1,                       // ostride
                       ctx->Nts[i],             // odist
                       CUFFT_C2C,               // type
-                      gpu_ctx->Nss[i]*ctx->Nc, // batch
+                      gpu_ctx->Nss[i]*ctx->Nbc,// batch
                       &work_size               // work area size
                  );
 
@@ -1237,6 +1332,9 @@ void rawspec_cleanup(rawspec_context * ctx)
       if(gpu_ctx->d_pwr_out[i]) {
         cudaFree(gpu_ctx->d_pwr_out[i]);
       }
+      if(gpu_ctx->Nis[i] > 1 && ctx->Nbc < ctx->Nc) {
+        cudaFree(gpu_ctx->d_prev_pwr_out_cache[i]);
+      }
       if(gpu_ctx->d_ics_out[i]) {
         cudaFree(gpu_ctx->d_ics_out[i]);
       }
@@ -1279,8 +1377,7 @@ int rawspec_copy_blocks_to_gpu_expanding_complex4(rawspec_context * ctx,
   rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
 
   // Calculated for complex4 samples
-  const size_t width = ctx->Ntpb * ctx->Np; // * 2 /*complex*/ * (4/8)
-  const size_t block_size = width * ctx->Nc;
+  const size_t block_size = (gpu_ctx->guppi_channel_stride * ctx->Nc)/2;
 
   for(b=0; b < num_blocks; b++) {
     sblk = (src_idx + b) % ctx->Nb_host;
@@ -1303,7 +1400,7 @@ int rawspec_copy_blocks_to_gpu_expanding_complex4(rawspec_context * ctx,
   
   copy_expand_complex4<<<grid, thread_count, 0, gpu_ctx->compute_stream>>>(
                                               gpu_ctx->d_fft_in, gpu_ctx->d_blk_expansion_buf, 
-                                              num_blocks, block_size, width);
+                                              num_blocks, block_size, gpu_ctx->guppi_channel_stride/2);
 
   return 0;
 }
@@ -1319,19 +1416,16 @@ int rawspec_copy_blocks_to_gpu(rawspec_context * ctx,
   cudaError_t rc;
   rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
 
-  // TODO Store in GPU context?
-  size_t width = ctx->Ntpb * ctx->Np * 2 /*complex*/ * (ctx->Nbps/8);
-
   for(b=0; b < num_blocks; b++) {
     sblk = (src_idx + b) % ctx->Nb_host;
     dblk = (dst_idx + b) % ctx->Nb;
 
-    rc = cudaMemcpy2D(gpu_ctx->d_fft_in + dblk * width,
-                      ctx->Nb * width,      // dpitch
-                      ctx->h_blkbufs[sblk], // *src
-                      width,                // spitch
-                      width,                // width
-                      ctx->Nc,              // height
+    rc = cudaMemcpy2D(gpu_ctx->d_fft_in + dblk * gpu_ctx->guppi_channel_stride,
+                      ctx->Nb * gpu_ctx->guppi_channel_stride,  // dpitch
+                      ctx->h_blkbufs[sblk],                     // *src
+                      gpu_ctx->guppi_channel_stride,            // spitch
+                      gpu_ctx->guppi_channel_stride,            // width
+                      ctx->Nc,                                  // height
                       cudaMemcpyHostToDevice);
 
     if(rc != cudaSuccess) {
@@ -1356,17 +1450,14 @@ int rawspec_zero_blocks_to_gpu(rawspec_context * ctx,
   cudaError_t rc;
   rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
 
-  // TODO Store in GPU context?
-  size_t width = ctx->Ntpb * ctx->Np * 2 /*complex*/ * (ctx->Nbps/8);
-
   for(b=0; b < num_blocks; b++) {
     dblk = (dst_idx + b) % ctx->Nb;
 
-    rc = cudaMemset2D(gpu_ctx->d_fft_in + dblk * width,
-                      ctx->Nb * width,      // pitch
-                      0,                    // value
-                      width,                // width
-                      ctx->Nc);             // height
+    rc = cudaMemset2D(gpu_ctx->d_fft_in + dblk * gpu_ctx->guppi_channel_stride,
+                      ctx->Nb * gpu_ctx->guppi_channel_stride,  // pitch
+                      0,                                        // value
+                      gpu_ctx->guppi_channel_stride,            // width
+                      ctx->Nc);                                 // height
 
     if(rc != cudaSuccess) {
       PRINT_ERRMSG(rc);
@@ -1400,6 +1491,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
   float * dst;
   size_t dpitch;
   float * src;
+  size_t c;
   size_t spitch;
   size_t width;
   size_t height;
@@ -1409,6 +1501,12 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
   rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
   size_t fft_outbuf_length;
   dim3 grid_ics;
+  dim3 grid_full_pwr;
+  grid_full_pwr.x = ctx->Nb*ctx->Ntpb*ctx->Nbc;
+  grid_full_pwr.z = 1;
+  const size_t Nchan_per_antenna = ctx->Nc/ctx->Nant;
+  const size_t Nantenna_per_batch = ctx->Nbc/Nchan_per_antenna;
+  bool is_last_channel_batch;
 
   // Increment inbuf_count
   gpu_ctx->inbuf_count++;
@@ -1417,172 +1515,215 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
   for(i=0; i < ctx->No; i++) {
     // Length of an FFT output buffer when abs(Npotout)==4, must be 0 when
     // Npolout==1
-    fft_outbuf_length = ctx->Npolout[i] == 1 ? 0 : ctx->Nb*ctx->Ntpb*ctx->Nc;
+    fft_outbuf_length = ctx->Npolout[i] == 1 ? 0 : ctx->Nb*ctx->Ntpb*ctx->Nbc;
+    for(c=0; c < ctx->Nc; c += ctx->Nbc) {
+      is_last_channel_batch = c + ctx->Nbc >= ctx->Nc;
+      grid_full_pwr.y = abs(ctx->Npolout[i]);
 
-    // For each input polarization
-    for(p=0; p < ctx->Np; p++) {
-      // Get plan
-      plan = gpu_ctx->plan[i][p];
+      // For each input polarization
+      for(p=0; p < ctx->Np; p++) {
+        // Get plan
+        plan = gpu_ctx->plan[i][p];
 
-      // Add FFT to stream
-      cufft_rc = cufftExecC2C(plan,
-                              ((cufftComplex *)gpu_ctx->d_fft_in) + p,
-                              gpu_ctx->d_fft_out + p * fft_outbuf_length,
-                              fft_dir <= 0 ? CUFFT_INVERSE : CUFFT_FORWARD);
+        // Add FFT to stream
+        cufft_rc = cufftExecC2C(plan,
+                                ((cufftComplex *)gpu_ctx->d_fft_in) + p + (c * ctx->Nb * ctx->Ntpb * ctx->Np),
+                                gpu_ctx->d_fft_out + p * fft_outbuf_length,
+                                fft_dir <= 0 ? CUFFT_INVERSE : CUFFT_FORWARD);
 
-      if(cufft_rc != CUFFT_SUCCESS) {
-        PRINT_ERRMSG(cufft_rc);
-        return 1;
-      }
-    }
-
-    // If time to dump
-    if(gpu_ctx->inbuf_count % gpu_ctx->Nis[i] == 0) {
-      // If the number of spectra to dump per input buffer is less than the
-      // number of spectra per input buffer, then we need to accumulate the
-      // sub-integrations together.
-      if(ctx->Nds[i] < gpu_ctx->Nss[i]) {
-        for(p=0; p < abs(ctx->Npolout[i]); p++) {
-          accumulate<<<gpu_ctx->grid[i],
-                       gpu_ctx->nthreads[i],
-                       0, gpu_ctx->compute_stream>>>
-                         (
-                           gpu_ctx->d_pwr_out[i] + p*ctx->Nb*ctx->Ntpb*ctx->Nc,
-                           MIN(ctx->Nas[i], gpu_ctx->Nss[i]), // Na
-                           ctx->Nts[i],                       // xpitch
-                           ctx->Nas[i]*ctx->Nts[i],           // ypitch
-                           ctx->Nb*ctx->Ntpb                  // zpitch
-                         );
+        if(cufft_rc != CUFFT_SUCCESS) {
+          PRINT_ERRMSG(cufft_rc);
+          return 1;
         }
       }
 
-      if(ctx->incoherently_sum){
-        grid_ics.x = (ctx->Nts[i] * ctx->Nc/ctx->Nant)/gpu_ctx->nthreads[i];
-        grid_ics.y = abs(ctx->Npolout[i]);
-        grid_ics.z = ctx->Nds[i];
+      // If time to dump
+      if(gpu_ctx->inbuf_count % gpu_ctx->Nis[i] == 0){
+        // If previous d_pwr_buf were cached
+        if(gpu_ctx->Nis[i] > 1 && ctx->Nbc < ctx->Nc){
+          // Accumulate previously cached d_pwr_buf
+          // mem2dAccumMoveFloat memset(0)s the source (d_prev_pwr_out_cache)
+          mem2dAccumMoveFloat<<<grid_full_pwr, 1, 0, gpu_ctx->compute_stream
+          >>>(gpu_ctx->d_pwr_out[i],
+              ctx->Nb*ctx->Ntpb*ctx->Nbc,
+              gpu_ctx->d_prev_pwr_out_cache[i] + (c * abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb),
+              ctx->Nb*ctx->Ntpb*ctx->Nc
+            );
+        }
+
+        // If the number of spectra to dump per input buffer is less than the
+        // number of spectra per input buffer, then we need to accumulate the
+        // sub-integrations together.
+        if(ctx->Nds[i] < gpu_ctx->Nss[i]) {
+          for(p=0; p < abs(ctx->Npolout[i]); p++) {
+            accumulate<<<gpu_ctx->grid[i],
+                        gpu_ctx->nthreads[i],
+                        0, gpu_ctx->compute_stream>>>
+                          (
+                            gpu_ctx->d_pwr_out[i] + p*ctx->Nb*ctx->Ntpb*ctx->Nbc,
+                            MIN(ctx->Nas[i], gpu_ctx->Nss[i]), // Na
+                            ctx->Nts[i],                       // xpitch
+                            ctx->Nas[i]*ctx->Nts[i],           // ypitch
+                            ctx->Nb*ctx->Ntpb                  // zpitch
+                          );
+          }
+        }
+
+        if(ctx->incoherently_sum){
+          grid_ics.x = (ctx->Nts[i] * ctx->Nbc)/gpu_ctx->nthreads[i];
+          grid_ics.y = abs(ctx->Npolout[i]);
+          grid_ics.z = ctx->Nds[i];
+          
+          incoherent_sum<<<grid_ics, gpu_ctx->nthreads[i], 0, gpu_ctx->compute_stream>>>(
+                                        gpu_ctx->d_pwr_out[i], gpu_ctx->d_ics_out[i] + (c%Nchan_per_antenna)*ctx->Nts[i], gpu_ctx->d_Aws + c/Nchan_per_antenna,
+                                        Nantenna_per_batch, ctx->Nts[i],
+                                        ctx->Nb*ctx->Ntpb*ctx->Nc/ctx->Nant, // Antenna pitch
+                                        ctx->Nb*ctx->Ntpb, // Coarse Channel pitch
+                                        ctx->Nb*ctx->Ntpb*ctx->Nbc, // Polarisation pitch
+                                        ctx->Nts[i]*ctx->Nas[i], // Spectra pitch
+                                        
+                                        ctx->Nts[i], // Coarse Channel pitch for ics
+                                        ctx->Nts[i]*ctx->Nc/ctx->Nant, // Polarisation pitch for ics
+                                        abs(ctx->Npolout[i]) * ctx->Nts[i] * ctx->Nc/ctx->Nant // Spectra pitch for ics
+                                        );
         
-        incoherent_sum<<<grid_ics, gpu_ctx->nthreads[i], 0, gpu_ctx->compute_stream>>>(
-                                      gpu_ctx->d_pwr_out[i], gpu_ctx->d_ics_out[i], gpu_ctx->d_Aws,
-                                      ctx->Nant, ctx->Nts[i],
-                                      ctx->Nb*ctx->Ntpb*ctx->Nc/ctx->Nant, // Antenna pitch
-                                      ctx->Nb*ctx->Ntpb, // Coarse Channel pitch
-                                      ctx->Nb*ctx->Ntpb*ctx->Nc, // Polarisation pitch
-                                      ctx->Nts[i]*ctx->Nas[i], // Spectra pitch
-                                      
-                                      ctx->Nts[i], // Coarse Channel pitch for ics
-                                      ctx->Nts[i]*ctx->Nc/ctx->Nant, // Polarisation pitch for ics
-                                      abs(ctx->Npolout[i]) * ctx->Nts[i] * ctx->Nc/ctx->Nant // Spectra pitch for ics
-                                      );
-      
-        // Copy store_cb_data_t array from host to device
-        cuda_rc = cudaMemcpyAsync(ctx->h_icsbuf[i],
-          gpu_ctx->d_ics_out[i],
-          ctx->h_pwrbuf_size[i]/ctx->Nant,
-          cudaMemcpyDeviceToHost,
-          gpu_ctx->compute_stream);
-        if(cuda_rc != cudaSuccess) {
-          PRINT_ERRMSG(cuda_rc);
-          return 1;
+          if(is_last_channel_batch){
+            // Copy store_cb_data_t array from host to device
+            cuda_rc = cudaMemcpyAsync(ctx->h_icsbuf[i],
+              gpu_ctx->d_ics_out[i],
+              ctx->h_pwrbuf_size[i]/ctx->Nant,
+              cudaMemcpyDeviceToHost,
+              gpu_ctx->compute_stream);
+            if(cuda_rc != cudaSuccess) {
+              PRINT_ERRMSG(cuda_rc);
+              return 1;
+            }
+          }
         }
-      }
 
-      // Add pre-dump stream callback
-      cuda_rc = cudaStreamAddCallback(gpu_ctx->compute_stream,
-                                      pre_dump_stream_callback,
-                                      (void *)&gpu_ctx->dump_cb_data[i], 0);
-
-      if(cuda_rc != cudaSuccess) {
-        PRINT_ERRMSG(cuda_rc);
-        return 1;
-      }
-
-      for(p=0; p < abs(ctx->Npolout[i]); p++) {
-        // Copy integrated power spectra (or spectrum) to host.  This is done as
-        // two 2D copies to get channel 0 in the center of the spectrum.  Special
-        // care is taken in the unlikely event that Nt is odd.
-        src    = gpu_ctx->d_pwr_out[i] + p*ctx->Nb*ctx->Ntpb*ctx->Nc;
-        dst    = ctx->h_pwrbuf[i] + p*ctx->Nts[i]*ctx->Nc;
-        spitch = gpu_ctx->Nss[i] * ctx->Nts[i] * sizeof(float);
-        dpitch = ctx->Nts[i] * sizeof(float);
-        height = ctx->Nc;
-
-        for(d=0; d < ctx->Nds[i]; d++) {
-
-          // Lo to hi
-          width  = ((ctx->Nts[i]+1) / 2) * sizeof(float);
-          cuda_rc = cudaMemcpy2DAsync(dst + ctx->Nts[i]/2,
-                                      dpitch,
-                                      src,
-                                      spitch,
-                                      width,
-                                      height,
-                                      cudaMemcpyDeviceToHost,
-                                      gpu_ctx->compute_stream);
+        if(is_last_channel_batch){
+          // Add pre-dump stream callback
+          cuda_rc = cudaStreamAddCallback(gpu_ctx->compute_stream,
+                                          pre_dump_stream_callback,
+                                          (void *)&gpu_ctx->dump_cb_data[i], 0);
 
           if(cuda_rc != cudaSuccess) {
             PRINT_ERRMSG(cuda_rc);
-            rawspec_cleanup(ctx);
             return 1;
           }
+        }
 
-          // Hi to lo
-          width  = (ctx->Nts[i] / 2) * sizeof(float);
-          cuda_rc = cudaMemcpy2DAsync(dst,
-                                      dpitch,
-                                      src + (ctx->Nts[i]+1) / 2,
-                                      spitch,
-                                      width,
-                                      height,
-                                      cudaMemcpyDeviceToHost,
-                                      gpu_ctx->compute_stream);
+        for(p=0; p < abs(ctx->Npolout[i]); p++) {
+          // Copy integrated power spectra (or spectrum) to host.  This is done as
+          // two 2D copies to get channel 0 in the center of the spectrum.  Special
+          // care is taken in the unlikely event that Nt is odd.
+          src    = gpu_ctx->d_pwr_out[i] + p*ctx->Nb*ctx->Ntpb*ctx->Nbc;
+          dst    = ctx->h_pwrbuf[i] + (p*ctx->Nts[i]*ctx->Nc) + (c*ctx->Nts[i]);
+          spitch = gpu_ctx->Nss[i] * ctx->Nts[i] * sizeof(float);
+          dpitch = ctx->Nts[i] * sizeof(float);
+          height = ctx->Nbc;
+
+          for(d=0; d < ctx->Nds[i]; d++) {
+
+            // Lo to hi
+            width  = ((ctx->Nts[i]+1) / 2) * sizeof(float);
+            cuda_rc = cudaMemcpy2DAsync(dst + ctx->Nts[i]/2,
+                                        dpitch,
+                                        src,
+                                        spitch,
+                                        width,
+                                        height,
+                                        cudaMemcpyDeviceToHost,
+                                        gpu_ctx->compute_stream);
+
+            if(cuda_rc != cudaSuccess) {
+              PRINT_ERRMSG(cuda_rc);
+              rawspec_cleanup(ctx);
+              return 1;
+            }
+
+            // Hi to lo
+            width  = (ctx->Nts[i] / 2) * sizeof(float);
+            cuda_rc = cudaMemcpy2DAsync(dst,
+                                        dpitch,
+                                        src + (ctx->Nts[i]+1) / 2,
+                                        spitch,
+                                        width,
+                                        height,
+                                        cudaMemcpyDeviceToHost,
+                                        gpu_ctx->compute_stream);
+
+            if(cuda_rc != cudaSuccess) {
+              PRINT_ERRMSG(cuda_rc);
+              rawspec_cleanup(ctx);
+              return 1;
+            }
+
+            // Increment src and dst pointers
+            src += ctx->Nts[i] * ctx->Nas[i];
+            dst += abs(ctx->Npolout[i]) * ctx->Nts[i] * ctx->Nc;
+          }
+        }
+
+        if(is_last_channel_batch){
+          // Add post-dump stream callback
+          cuda_rc = cudaStreamAddCallback(gpu_ctx->compute_stream,
+                                          post_dump_stream_callback,
+                                          (void *)&gpu_ctx->dump_cb_data[i], 0);
 
           if(cuda_rc != cudaSuccess) {
             PRINT_ERRMSG(cuda_rc);
-            rawspec_cleanup(ctx);
             return 1;
           }
-
-          // Increment src and dst pointers
-          src += ctx->Nts[i] * ctx->Nas[i];
-          dst += abs(ctx->Npolout[i]) * ctx->Nts[i] * ctx->Nc;
         }
-      }
 
-      // Add post-dump stream callback
-      cuda_rc = cudaStreamAddCallback(gpu_ctx->compute_stream,
-                                      post_dump_stream_callback,
-                                      (void *)&gpu_ctx->dump_cb_data[i], 0);
-
-      if(cuda_rc != cudaSuccess) {
-        PRINT_ERRMSG(cuda_rc);
-        return 1;
-      }
-
-      // Add power buffer clearing cudaMemset call to stream
-      cuda_rc = cudaMemsetAsync(gpu_ctx->d_pwr_out[i], 0,
-                                abs(ctx->Npolout[i])*ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float),
-                                gpu_ctx->compute_stream);
-
-      if(cuda_rc != cudaSuccess) {
-        PRINT_ERRMSG(cuda_rc);
-        return 1;
-      }
-      if(ctx->incoherently_sum){
-        // Add ics buffer clearing cudaMemset call to stream
-        cuda_rc = cudaMemsetAsync(gpu_ctx->d_ics_out[i], 0,
-                                  abs(ctx->Npolout[i])*ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float)/ctx->Nant,
+        // Add power buffer clearing cudaMemset call to stream
+        cuda_rc = cudaMemsetAsync(gpu_ctx->d_pwr_out[i], 0,
+                                  abs(ctx->Npolout[i])*ctx->Nb*ctx->Ntpb*ctx->Nbc*sizeof(float),
                                   gpu_ctx->compute_stream);
-  
+
         if(cuda_rc != cudaSuccess) {
           PRINT_ERRMSG(cuda_rc);
           return 1;
         }
-      }
+        if(is_last_channel_batch && ctx->incoherently_sum){
+          // Add ics buffer clearing cudaMemset call to stream
+          cuda_rc = cudaMemsetAsync(gpu_ctx->d_ics_out[i], 0,
+                                    abs(ctx->Npolout[i])*ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float)/ctx->Nant,
+                                    gpu_ctx->compute_stream);
+    
+          if(cuda_rc != cudaSuccess) {
+            PRINT_ERRMSG(cuda_rc);
+            return 1;
+          }
+        }
 
-    } // If time to dump
+      }
+      else if(ctx->Nbc < ctx->Nc) { // Not time to dump and need to cache batched d_pwr_out
+        // Cache d_pwr_buf to d_prev_pwr_out_cache for later
+        // mem2dAccumMoveFloat memset(0)s the source (d_pwr_buf)
+        mem2dAccumMoveFloat<<<grid_full_pwr, 1, 0, gpu_ctx->compute_stream
+          >>>(gpu_ctx->d_prev_pwr_out_cache[i] + (c * abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb),
+              ctx->Nb*ctx->Ntpb*ctx->Nc,
+              gpu_ctx->d_pwr_out[i],
+              ctx->Nb*ctx->Ntpb*ctx->Nbc
+            );
+      } // If time to dump
+    } // For each batch of channels
   } // For each output product
 
   return 0;
+}
+
+int rawspec_copy_blocks_to_gpu_and_start_processing(rawspec_context * ctx, size_t num_blocks, char expand4bps_to8bps, int fft_dir)
+{
+  if(expand4bps_to8bps){
+    rawspec_copy_blocks_to_gpu_expanding_complex4(ctx, 0, 0, num_blocks);
+  }
+  else{
+    rawspec_copy_blocks_to_gpu(ctx, 0, 0, num_blocks);
+  }
+  return rawspec_start_processing(ctx, fft_dir);
 }
 
 // Waits for any processing to finish, then clears output power buffers and
@@ -1638,7 +1779,7 @@ unsigned int rawspec_check_for_completion(rawspec_context * ctx)
 // input buffer.  Returns zero when complete, non-zero on error.
 int rawspec_wait_for_completion(rawspec_context * ctx)
 {
-  int i;
+  int i = 0;
   cudaError_t rc;
   rawspec_gpu_context * gpu_ctx = (rawspec_gpu_context *)ctx->gpu_ctx;
 
