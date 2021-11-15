@@ -66,7 +66,6 @@ static struct option long_opts[] = {
   {"ffts",    1, NULL, 'f'},
   {"gpu",     1, NULL, 'g'},
   {"hdrs",    0, NULL, 'H'},
-  {"ics",     1, NULL, 'i'},
   {"ICS",     1, NULL, 'I'},
   {"nchan",   1, NULL, 'n'},
   {"outidx",  1, NULL, 'o'},
@@ -97,7 +96,7 @@ void usage(const char *argv0) {
     "  -f, --ffts=N1[,N2...]  FFT lengths [1048576, 8, 1024]\n"
     "  -g, --GPU=IDX          Select GPU device to use [0]\n"
     "  -H, --hdrs             Save headers to separate file\n"
-    "  -i, --ics=W1[,W2...]   Output incoherent-sum concurrently (capitilise for exclusively),\n"
+    "  -i, --ics=W1[,W2...]   Output incoherent-sum (exclusively, unless with -S)\n"
     "                         specifying per antenna-weights or a singular, uniform weight\n"
     "  -n, --nchan=N          Number of coarse channels to process [all]\n"
     "  -o, --outidx=N         First index number for output files [0]\n"
@@ -259,9 +258,8 @@ char tmp[16];
         save_headers = 1;
         break;
 
-      case 'I': // Incoherently sum exclusively
+      case 'i': // Incoherently sum exclusively
         only_output_ics = 1;
-      case 'i': // Incoherently sum
         ctx.incoherently_sum = 1;
         ctx.Naws = 1;
         // Count number of 
@@ -338,6 +336,8 @@ char tmp[16];
 
       case '?': // Command line parsing error
       default:
+        printf("Unknown CLI option '%c'\n", opt);
+        usage(argv0);
         return 1;
         break;
     }
@@ -558,6 +558,10 @@ char tmp[16];
         fprintf(stderr, "OBSBW    = %g\n",  raw_hdr.obsbw);
         fprintf(stderr, "TBIN     = %g\n",  raw_hdr.tbin);
 #endif // VERBOSE
+        if(raw_hdr.nants > 1 && !(per_ant_out || ctx.incoherently_sum)){
+          printf("NANTS = %d >1: Enabling --split-ant in lieu of neither --split-ant nor --ics flags.\n", raw_hdr.nants);
+          per_ant_out = 1;
+        }
 
         // If splitting output per antenna, re-alloc the fd array.
         if(per_ant_out) {
@@ -592,7 +596,7 @@ char tmp[16];
             printf("Ignoring --splitant flag in network mode\n");
           }
           if(only_output_ics){
-            printf("Cancelling exclusive ICS output due to --splitant.\n");
+            printf("Cancelling exclusivity of ICS output due to --splitant.\n");
             only_output_ics = 0;
           }
         }
