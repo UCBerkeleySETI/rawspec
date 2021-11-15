@@ -5,6 +5,14 @@ INCDIR = $(PREFIX)/include
 LIBDIR = $(PREFIX)/lib
 DATADIR = $(PREFIX)/share
 
+# Begin HDF5 definitions
+INCDIR_H5= /usr/include/hdf5/serial/
+LIBDIR_h5= /usr/lib/x86_64-linux-gnu/hdf5/serial/
+LIBHDF5= :libhdf5.so
+LIBHDF5_HL= :libhdf5_hl.so
+LINKH5:= -L$(LIBDIR) -l $(LIBHDF5) -l $(LIBHDF5_HL)
+# End HDF5 definitions
+
 CUDA_DIR ?= $(CUDA_ROOT)
 CUDA_PATH ?= $(CUDA_DIR)
 
@@ -13,7 +21,7 @@ CXX           ?= g++
 HOST_COMPILER ?= $(CXX)
 NVCC          := $(CUDA_PATH)/bin/nvcc -ccbin $(HOST_COMPILER)
 
-CFLAGS = -ggdb -fPIC -I$(CUDA_PATH)/include
+CFLAGS = -ggdb -fPIC -I$(CUDA_PATH)/include -I$(INCDIR_H5)
 ifdef DEBUG_CALLBACKS
 CFLAGS += -DDEBUG_CALLBACKS=$(DEBUG_CALLBACKS)
 endif
@@ -66,14 +74,21 @@ rawspec_socket.o: rawspec_socket.h rawspec.h \
 rawspectest.o: rawspec.h
 rawspec_rawutils.o: rawspec_rawutils.h hget.h
 
+# Begin fbh5 objects
+fbh5_open.o: fbh5_defs.h rawspec_callback.h rawspec_fbutils.h
+fbh5_close.o: fbh5_defs.h rawspec_callback.h rawspec_fbutils.h
+fbh5_write.o: fbh5_defs.h rawspec_callback.h rawspec_fbutils.h 
+fbh5_util.o: fbh5_defs.h rawspec_callback.h rawspec_fbutils.h
+# End fbh5 objects
+
 %.o: %.cu
 	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) -dc $(GENCODE_FLAGS) -o $@ -c $<
 	
-librawspec.so: rawspec_gpu.o rawspec_fbutils.o rawspec_rawutils.o
-	$(VERBOSE) $(NVCC) -shared $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ $(CUDA_STATIC_LIBS)
+librawspec.so: rawspec_gpu.o rawspec_fbutils.o rawspec_rawutils.o fbh5_open.o fbh5_close.o fbh5_write.o fbh5_util.o
+	$(VERBOSE) $(NVCC) -shared $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ $(CUDA_STATIC_LIBS) $(LINKH5)
 
 rawspec: librawspec.so
-rawspec: rawspec.o rawspec_file.o rawspec_socket.o
+rawspec: rawspec.o rawspec_file.o rawspec_socket.o 
 	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ -L. -lrawspec
 
 rawspectest: librawspec.so
