@@ -2,6 +2,7 @@
 #define _RAWSPEC_CALLBACK_H_
 
 #include <pthread.h>
+#include <hdf5/serial/hdf5.h>
 #include "rawspec_fbutils.h"
 
 typedef struct {
