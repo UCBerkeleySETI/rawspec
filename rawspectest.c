@@ -60,7 +60,7 @@ int main(int argc, char * argv[])
     }
   }
   printf("using %u bits per sample\n", ctx.Nbps);
-  ctx.Ntpb = blocsize / (2 * ctx.Np * ctx.Nc * (ctx.Nbps/8));
+  ctx.Ntpb = blocsize / (2 * ctx.Np * ctx.Nc * ctx.Nbps/8);
   ctx.Nts[0] = (1<<20);
   ctx.Nts[1] = (1<<3);
   ctx.Nts[2] = (1<<10);
@@ -99,10 +99,10 @@ int main(int argc, char * argv[])
   }
   // Set sample 8 of pol 0 to (1+0j), in block Nb_host-1
   // Note that for 16-bit samples, this will really be (127/32767 + 0j)
-  ctx.h_blkbufs[ctx.Nb_host-1][(8*ctx.Np*2/*complex*/)*(ctx.Nbps/8)] = 127;
+  ctx.h_blkbufs[ctx.Nb_host-1][(8*ctx.Np*2/*complex*/)*ctx.Nbps/8] = 127;
   // Set sample 9 of pol 1 to (0+1j), in block Nb_host-1
   // Note that for 16-bit samples, this will really be (0 + 127j/32767)
-  ctx.h_blkbufs[ctx.Nb_host-1][(9*ctx.Np*2/*complex*/+3)*(ctx.Nbps/8)] = 64;
+  ctx.h_blkbufs[ctx.Nb_host-1][(9*ctx.Np*2/*complex*/+3)*ctx.Nbps/8] = 64;
 
   // Salt the output buffers (to detect whether they are not fully written)
   for(i=0; i<ctx.No; i++) {
