@@ -6,7 +6,7 @@
 #include "rawspec_fbutils.h"
 
 typedef struct {
-    int active                  // Still active? 1=yes, 0=no
+    int active;                 // Still active? 1=yes, 0=no
     hid_t file_id;              // File-level handle (similar to an fd)
     hid_t dataset_id;           // Dataset "data" handle
     hid_t dataspace_id;         // Dataspace handle for dataset "data"
