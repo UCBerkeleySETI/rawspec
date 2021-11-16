@@ -36,6 +36,7 @@
 #define NDIMS               3       // # of data matrix dimensions (rank)
 #define FILTERBANK_CLASS    "FILTERBANK"    // File-level attribute "CLASS"
 #define FILTERBANK_VERSION  "2.0"   // File-level attribute "VERSION"
+#define ENABLER_FD_FOR_FBH5 42      // Fake fd value to enable dump_file_thread_func()
 
 /*
  * fbh5 API functions
@@ -60,3 +61,4 @@ void    fbh5_set_ds_label(fbh5_context_t * p_fbh5_ctx, char * label, int dims_in
 void    hexdump(const char *label, const void *thingaddr, const int thingsz, int per_line);
 
 #endif
+

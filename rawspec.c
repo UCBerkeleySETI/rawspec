@@ -18,10 +18,10 @@
 #include "rawspec.h"
 #include "rawspec_file.h"
 #include "rawspec_socket.h"
-#include "rawspec_callback.h"
 #include "rawspec_version.h"
 #include "rawspec_rawutils.h"
 #include "rawspec_fbutils.h"
+#include "fbh5_defs.h"
 
 #define ELAPSED_NS(start,stop) \
   (((int64_t)stop.tv_sec-start.tv_sec)*1000*1000*1000+(stop.tv_nsec-start.tv_nsec))
@@ -450,7 +450,7 @@ char tmp[16];
     if(flag_fbh5_output) {
         cb_data[i].flag_fbh5_output = 1;
         cb_data[i].fbh5_ctx_ant = malloc(sizeof(fbh5_context_t));
-        cb_data[i].fbh5_ctx_ant.active = 0;
+        cb_data[i].fbh5_ctx_ant[0].active = 0;
     } else {
         cb_data[i].flag_fbh5_output = 0;
         cb_data[i].fd = malloc(sizeof(int));
@@ -790,19 +790,26 @@ char tmp[16];
             // Open one or more output files.
             // Handle both per-antenna output and single file output.
             if(!only_output_ics) {
-              if(open_output_file_per_antenna_and_write_header(&cb_data[i], dest, argv[si], outidx + i) != 0))
+              // Open nants=0 case or open all of the antennas.
+              int retcode = open_output_file_per_antenna_and_write_header(&cb_data[i], 
+                                                               dest, 
+                                                               argv[si], 
+                                                               outidx + i);
+              if(retcode != 0)
                 return 1; // give up
             }
             // Handle ICS.
-            if(ctx.incoherently_sum){
-              cb_data[i].fd_ics = open_ics_output_file(&cb_data[i], dest, ics_output_stem, outidx + i));
-              if(! flag_fbh5_output) {
-                  if(cb_data[i].fd_ics == -1) {
-                    // If we can't open this output file, we probably won't be able to
-                    // open any more output files, so print message and bail out.
-                    fprintf(stderr, "cannot open output file, giving up\n");
-                    return 1; // Give up
-                  }
+            if(ctx.incoherently_sum) {
+              cb_data[i].fd_ics = open_output_file(&cb_data[i], 
+                                                   dest, 
+                                                   ics_output_stem, 
+                                                   outidx + i,
+                                                   /* ICS */ -1);
+              if(cb_data[i].fd_ics == -1) {
+                // If we can't open this output file, we probably won't be able to
+                // open any more output files, so print message and bail out.
+                fprintf(stderr, "cannot open output file, giving up\n");
+                return 1; // Give up
               }
 
               // Write filterbank header to SIGPROC output ICS file.
@@ -810,9 +817,9 @@ char tmp[16];
               if(! flag_fbh5_output) {
                 fb_fd_write_header(cb_data[i].fd_ics, &cb_data[i].fb_hdr);
               }
-            }
-          }
-        }
+            } // if(ctx.incoherently_sum)
+          } // if(output_mode == RAWSPEC_FILE)
+        } // for(i=0; i<ctx.No; i++)
 
         // Save header information if requested.
         if(save_headers) {
@@ -1056,4 +1063,5 @@ char tmp[16];
 
   return 0;
 }
+
 

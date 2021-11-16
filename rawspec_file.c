@@ -6,9 +6,13 @@
 #include <fcntl.h>
 
 #include "rawspec_file.h"
+#include "fbh5_defs.h"
 
-// Open an output file used for ICS only.
-int open_ics_output_file(callback_data_t * cb_data, const char * dest, const char * stem, int output_idx)
+// Open a single Filterbank file for one of the following:
+//   * nants = 0
+//   * a single antenna of a set
+//   * ICS
+int open_output_file(callback_data_t *cb_data, const char * dest, const char *stem, int output_idx, int antenna_index)
 {
   int fd;
   const char * basename;
@@ -31,32 +35,42 @@ int open_ics_output_file(callback_data_t * cb_data, const char * dest, const cha
   }
   fname[PATH_MAX] = '\0';
   if(cb_data->flag_fbh5_output) {
-      fbh5_open(&(cb_data->fbh5_ctx), &(cb_data->fb_hdr), fname, cb_data->debug_callback);
-      fd = 0;
+      // Open an FBH5 output file.
+      // If antenna_index < 0, then use the ICS context;
+      // Else, use the indicated antenna context.
+      if(antenna_index < 0)
+          fbh5_open(&(cb_data->fbh5_ctx_ics), &(cb_data->fb_hdr), fname, cb_data->debug_callback);
+      else
+          fbh5_open(&(cb_data->fbh5_ctx_ant[antenna_index]), &(cb_data->fb_hdr), fname, cb_data->debug_callback);
+      return ENABLER_FD_FOR_FBH5;
+  }
+
+  // Open a SIGPROC Filterbank output file.
+  fd = open(fname, O_WRONLY | O_CREAT | O_TRUNC, 0664);
+  if(fd == -1) {
+    perror(fname);
   } else {
-      fd = open(fname, O_WRONLY | O_CREAT | O_TRUNC, 0664);
-      if(fd == -1) {
-        perror(fname);
-      } else {
-        posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
-      }
+    posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
   }
   return fd;
 }
 
-// Open an output file used for non-antenna output or for a single antenna.
-int open_output_file_per_antenna_and_write_header(callback_data_t * cb_data, const char * dest, const char * stem, int output_idx)
+// Open one or more output Filterbank files for the following cases:
+//   * nants = 0
+//   * the set of antennas when nants > 0
+int open_output_file_per_antenna_and_write_header(callback_data_t *cb_data, const char * dest, const char * stem, int output_idx)
 {
   char ant_stem[PATH_MAX+1];
-  for(int i = 0; i < (cb_data->per_ant_out ? cb_data->Nant : 1); i++){
-    if(cb_data->per_ant_out){
+    
+  for(int i = 0; i < (cb_data->per_ant_out ? cb_data->Nant : 1); i++) {
+    if(cb_data->per_ant_out) {
       snprintf(ant_stem, PATH_MAX, "%s-ant%03d", stem, i);
     }
-    else{
+    else {
       snprintf(ant_stem, PATH_MAX, "%s", stem);
     }
 
-    cb_data->fd[i] = open_output_file(cb_data, dest, ant_stem, output_idx);
+    cb_data->fd[i] = open_output_file(cb_data, dest, ant_stem, output_idx, i);
     if(cb_data->fd[i] == -1) {
       // If we can't open this output file, we probably won't be able to
       // open any more output files, so print message and bail out.
@@ -64,7 +78,7 @@ int open_output_file_per_antenna_and_write_header(callback_data_t * cb_data, con
       return 1; // Give up
     }
 
-    // Write filterbank header to output file
+    // Write filterbank header to output file if SIGPROC.
     if(! cb_data->flag_fbh5_output)
         fb_fd_write_header(cb_data->fd[i], &cb_data->fb_hdr);
   }
@@ -75,8 +89,8 @@ void * dump_file_thread_func(void *arg)
 {
   callback_data_t * cb_data = (callback_data_t *)arg;
 
-  if(cb_data->fd && cb_data->h_pwrbuf){
-    if(cb_data->per_ant_out){
+  if(cb_data->fd && cb_data->h_pwrbuf) {
+    if(cb_data->per_ant_out) {
       size_t spectra_stride = cb_data->h_pwrbuf_size / (cb_data->Nds * sizeof(float));
       size_t pol_stride = spectra_stride / cb_data->fb_hdr.nifs;
       size_t ant_stride = pol_stride / cb_data->Nant;
@@ -89,27 +103,47 @@ void * dump_file_thread_func(void *arg)
               break;
             }
             if(cb_data->flag_fbh5_output) {
-                fbh5_write(&(cb_data->fbh5_ctx),
-                           &(cb_data->fb_hdr),
-                           cb_data->h_pwrbuf + i * ant_stride + j * pol_stride + k * spectra_stride,
+                fbh5_write(&(cb_data->fbh5_ctx_ant[i]),
+                           &(cb_data->fb_hdr), 
+                           cb_data->h_pwrbuf + i * ant_stride + j * pol_stride + k * spectra_stride, 
                            ant_stride * sizeof(float),
                            cb_data->debug_callback);
             } else {
-                write(cb_data->fd[i],
-                      cb_data->h_pwrbuf + i * ant_stride + j * pol_stride + k * spectra_stride,
+                write(cb_data->fd[i], 
+                      cb_data->h_pwrbuf + i * ant_stride + j * pol_stride + k * spectra_stride, 
                       ant_stride * sizeof(float));
-            }
-          }
-        }
-      }
-    }
-    else{
-      write(cb_data->fd[0], cb_data->h_pwrbuf, cb_data->h_pwrbuf_size);
-    }
-  }
+            } // if(cb_data->flag_fbh5_output)
+          } // for(size_t i = 0; i < cb_data->Nant; i++)
+        } // for(size_t j = 0; j < cb_data->fb_hdr.nifs; j++)
+      } // for(size_t k = 0; k < cb_data->Nds; k++)
+    } // if(cb_data->per_ant_out)
+    else { // nants = 0; single output file
+      if(cb_data->flag_fbh5_output) {
+        fbh5_write(&(cb_data->fbh5_ctx_ant[0]),
+                   &(cb_data->fb_hdr), 
+                   cb_data->h_pwrbuf, 
+                   cb_data->h_pwrbuf_size,
+                   cb_data->debug_callback);
+      } else {
+        write(cb_data->fd[0], 
+              cb_data->h_pwrbuf, 
+              cb_data->h_pwrbuf_size);
+      } // if(cb_data->flag_fbh5_output) 
+    } // if(cb_data->per_ant_out) ... else
+  } // if(cb_data->fd && cb_data->h_pwrbuf)
   
-  if(cb_data->fd_ics && cb_data->h_icsbuf){
-    write(cb_data->fd_ics, cb_data->h_icsbuf, cb_data->h_pwrbuf_size/cb_data->Nant);
+  if(cb_data->fd_ics && cb_data->h_icsbuf) {
+    if(cb_data->flag_fbh5_output) {
+        fbh5_write(&(cb_data->fbh5_ctx_ics),
+                   &(cb_data->fb_hdr), 
+                   cb_data->h_icsbuf,
+                   cb_data->h_pwrbuf_size/cb_data->Nant,
+                   cb_data->debug_callback);
+    } else {
+        write(cb_data->fd_ics, 
+              cb_data->h_icsbuf, 
+              cb_data->h_pwrbuf_size/cb_data->Nant);
+    }
   }
 
   // Increment total spectra counter for this output product
@@ -138,6 +172,7 @@ void dump_file_callback(
       cb_data->output_thread_valid = 0;
     }
   } else if(callback_type == RAWSPEC_CALLBACK_POST_DUMP) {
+      
 #ifdef VERBOSE
     fprintf(stderr, "cb %d writing %lu bytes:",
         output_product, ctx->h_pwrbuf_size[output_product]);
@@ -147,6 +182,7 @@ void dump_file_callback(
     }
     fprintf(stderr, "\n");
 #endif // VERBOSE
+      
     if((rc=pthread_create(&cb_data->output_thread, NULL,
                       dump_file_thread_func, cb_data))) {
       fprintf(stderr, "pthread_create: %s\n", strerror(rc));
