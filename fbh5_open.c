@@ -26,11 +26,13 @@ void fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_p
     int         deflate_level = 6;  // 0=no deflation, 9=highest, 6=recommended
     
     H5get_libversion(&hdf5_majnum, &hdf5_minnum, &hdf5_relnum);
-    printf("fbh5_open: FBH5 path: %s\n", output_path);
-    printf("fbh5_open: HDF5 library version: %d.%d.%d\n", hdf5_majnum, hdf5_minnum, hdf5_relnum);
-    printf("fbh5_open: Creating dataspace dimensions using nifs=%d and nchans=%d\n",
-           p_fb_hdr->nifs,
-           p_fb_hdr->nchans);
+    if(debug_callback) {
+        printf("fbh5_open: FBH5 path: %s\n", output_path);
+        printf("fbh5_open: HDF5 library version: %d.%d.%d\n", hdf5_majnum, hdf5_minnum, hdf5_relnum);
+        printf("fbh5_open: Creating dataspace dimensions using nifs=%d and nchans=%d\n",
+               p_fb_hdr->nifs,
+               p_fb_hdr->nchans);
+        }
     
     /*
      * Validate fb_hdr: nifs, nbits, nfpc, nchans.
@@ -61,9 +63,11 @@ void fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_p
     p_fbh5_ctx->offset_dims[0] = 0;
     p_fbh5_ctx->offset_dims[1] = 0;
     p_fbh5_ctx->offset_dims[2] = 0;
-    printf("fbh5_open: Data element byte size = %d.\n", p_fbh5_ctx->elem_size);
-    printf("fbh5_open: Time integration byte size = %ld.\n", p_fbh5_ctx->tint_size);
-
+    if(debug_callback) {
+        printf("fbh5_open: Data element byte size = %d.\n", p_fbh5_ctx->elem_size);
+        printf("fbh5_open: Time integration byte size = %ld.\n", p_fbh5_ctx->tint_size);
+    }
+    
     /*
      * Open HDF5 file.  Overwrite it if preexisting.
      */
@@ -120,10 +124,12 @@ void fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_p
             status = H5Pset_shuffle(dcpl);
             if(status < 0)
                 fbh5_oops(__FILE__, __LINE__, "fbh5_open: H5Pset_shuffle FAILED");
-            printf("fbh5_open: Using shuffle deflation.\n");
+            if(debug_callback)
+                printf("fbh5_open: Using shuffle deflation.\n");
         }
         else
-            printf("fbh5_open: Using gzip deflation.\n");
+            if(debug_callback)
+                printf("fbh5_open: Using gzip deflation.\n");
         status = H5Pset_deflate(dcpl, deflate_level);
         if(status < 0)
             fbh5_oops(__FILE__, __LINE__, "fbh5_open: H5Pset_deflate FAILED");
@@ -138,7 +144,8 @@ void fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_p
     status   = H5Pset_chunk(dcpl, NDIMS, cdims);
     if(status != 0)
         fbh5_oops(__FILE__, __LINE__, "fbh5_open: H5Pset_chunk FAILED");
-    printf("fbh5_open: Chunking (%lld, %lld, %lld) configured\n", cdims[0], cdims[1], cdims[2]);
+    if(debug_callback)
+        printf("fbh5_open: Chunking (%lld, %lld, %lld) configured\n", cdims[0], cdims[1], cdims[2]);
 
     /* 
      * Define datatype for the data in the file.
@@ -184,10 +191,13 @@ void fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_p
     fbh5_write_metadata(p_fbh5_ctx->dataset_id, // Dataset handle
                         p_fb_hdr,               // Metadata (SIGPROC header)
                         debug_callback);        // Tracing flag
-    printf("fbh5_open: Dataset metadata stored; done.\n");
+    if(debug_callback)
+        printf("fbh5_open: Dataset metadata stored; done.\n");
 
     /*
      * Bye-bye.
      */
+    p_fbh5_ctx->active = 1;
+
 }
 

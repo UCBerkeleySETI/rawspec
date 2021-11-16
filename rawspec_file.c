@@ -7,7 +7,8 @@
 
 #include "rawspec_file.h"
 
-int open_output_file(const char * dest, const char *stem, int output_idx)
+// Open an output file used for ICS only.
+int open_ics_output_file(callback_data_t * cb_data, const char * dest, const char * stem, int output_idx)
 {
   int fd;
   const char * basename;
@@ -29,21 +30,24 @@ int open_output_file(const char * dest, const char *stem, int output_idx)
     snprintf(fname, PATH_MAX, "%s.rawspec.%04d.fil", stem, output_idx);
   }
   fname[PATH_MAX] = '\0';
-  fd = open(fname, O_WRONLY | O_CREAT | O_TRUNC, 0664);
-  if(fd == -1) {
-    perror(fname);
+  if(cb_data->flag_fbh5_output) {
+      fbh5_open(&(cb_data->fbh5_ctx), &(cb_data->fb_hdr), fname, cb_data->debug_callback);
+      fd = 0;
   } else {
-    posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
+      fd = open(fname, O_WRONLY | O_CREAT | O_TRUNC, 0664);
+      if(fd == -1) {
+        perror(fname);
+      } else {
+        posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
+      }
   }
   return fd;
 }
 
-int open_output_file_per_antenna_and_write_header(callback_data_t *cb_data, const char * dest, const char *stem, int output_idx)
+// Open an output file used for non-antenna output or for a single antenna.
+int open_output_file_per_antenna_and_write_header(callback_data_t * cb_data, const char * dest, const char * stem, int output_idx)
 {
   char ant_stem[PATH_MAX+1];
-  if(cb_data->per_ant_out){
-    cb_data->fb_hdr.nchans /= cb_data->Nant;
-  }
   for(int i = 0; i < (cb_data->per_ant_out ? cb_data->Nant : 1); i++){
     if(cb_data->per_ant_out){
       snprintf(ant_stem, PATH_MAX, "%s-ant%03d", stem, i);
@@ -52,7 +56,7 @@ int open_output_file_per_antenna_and_write_header(callback_data_t *cb_data, cons
       snprintf(ant_stem, PATH_MAX, "%s", stem);
     }
 
-    cb_data->fd[i] = open_output_file(dest, ant_stem, output_idx);
+    cb_data->fd[i] = open_output_file(cb_data, dest, ant_stem, output_idx);
     if(cb_data->fd[i] == -1) {
       // If we can't open this output file, we probably won't be able to
       // open any more output files, so print message and bail out.
@@ -61,10 +65,8 @@ int open_output_file_per_antenna_and_write_header(callback_data_t *cb_data, cons
     }
 
     // Write filterbank header to output file
-    fb_fd_write_header(cb_data->fd[i], &cb_data->fb_hdr);
-  }
-  if(cb_data->per_ant_out){
-    cb_data->fb_hdr.nchans *= cb_data->Nant;
+    if(! cb_data->flag_fbh5_output)
+        fb_fd_write_header(cb_data->fd[i], &cb_data->fb_hdr);
   }
   return 0;
 }
@@ -86,7 +88,17 @@ void * dump_file_thread_func(void *arg)
               // Assume that the following file-descriptors aren't valid
               break;
             }
-            write(cb_data->fd[i], cb_data->h_pwrbuf + i * ant_stride + j * pol_stride + k * spectra_stride, ant_stride * sizeof(float));
+            if(cb_data->flag_fbh5_output) {
+                fbh5_write(&(cb_data->fbh5_ctx),
+                           &(cb_data->fb_hdr),
+                           cb_data->h_pwrbuf + i * ant_stride + j * pol_stride + k * spectra_stride,
+                           ant_stride * sizeof(float),
+                           cb_data->debug_callback);
+            } else {
+                write(cb_data->fd[i],
+                      cb_data->h_pwrbuf + i * ant_stride + j * pol_stride + k * spectra_stride,
+                      ant_stride * sizeof(float));
+            }
           }
         }
       }

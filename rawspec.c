@@ -60,6 +60,7 @@ ssize_t read_fully(int fd, void * buf, size_t bytes_to_read)
 }
 
 static struct option long_opts[] = {
+  {"fbh5",    0, NULL, '5'},
   {"ant",     1, NULL, 'a'},
   {"batch",   0, NULL, 'b'},
   {"dest",    1, NULL, 'd'},
@@ -90,6 +91,7 @@ void usage(const char *argv0) {
     "Usage: %s [options] STEM [...]\n"
     "\n"
     "Options:\n"
+    "  -5, --fbh5             Format output Filterbank files as FBH5 (.h5) instead of SIGPROC(.fil)\n"
     "  -a, --ant=ANT          The 0-indexed antenna to exclusively process [-1]\n"
     "  -b, --batch=BC         Batch process BC coarse-channels at a time (1: auto, <1: disabled) [0]\n"
     "  -d, --dest=DEST        Destination directory or host:port\n"
@@ -192,6 +194,9 @@ char tmp[16];
   int input_conjugated = -1;
   int only_output_ics = 0;
 
+  // FBH5 fields
+  int flag_fbh5_output = 0;
+
   // For net data rate rate calculations
   double rate = 6.0;
   double sum_inv_na;
@@ -210,6 +215,10 @@ char tmp[16];
       case 'h': // Help
         usage(argv0);
         return 0;
+        break;
+
+      case '5': // FBH5 output format requested
+        flag_fbh5_output = 1;
         break;
 
       case 'a': // Antenna selection to process
@@ -438,8 +447,15 @@ char tmp[16];
     cb_data[i].Nant          = 1;
 
     // Init callback file descriptors to sentinal values
-    cb_data[i].fd = malloc(sizeof(int)*1);
-    cb_data[i].fd[0] = -1;
+    if(flag_fbh5_output) {
+        cb_data[i].flag_fbh5_output = 1;
+        cb_data[i].fbh5_ctx_ant = malloc(sizeof(fbh5_context_t));
+        cb_data[i].fbh5_ctx_ant.active = 0;
+    } else {
+        cb_data[i].flag_fbh5_output = 0;
+        cb_data[i].fd = malloc(sizeof(int));
+        cb_data[i].fd[0] = -1;
+    }
   }
 
   // Set output mode specific callback function
@@ -574,20 +590,42 @@ char tmp[16];
             // close previous
             for(i=0; i<ctx.No; i++) {
               if (cb_data[i].Nant != raw_hdr.nants){
-
+                // For each antenna .....
                 for(j=0; j<cb_data[i].Nant; j++) {
-                  if(cb_data[i].fd[j] != -1) {
-                    close(cb_data[i].fd[j]);
-                    cb_data[i].fd[j] = -1;
+                  // If output file for antenna j is still open, close it.
+                  if(flag_fbh5_output) {
+                      if(cb_data[i].fbh5_ctx_ant[j].active) {
+                        fbh5_close(&(cb_data[i].fbh5_ctx_ant[j]), cb_data[i].debug_callback);
+                      }
+                  } else {
+                      if(cb_data[i].fd[j] != -1) {
+                        close(cb_data[i].fd[j]);
+                        cb_data[i].fd[j] = -1;
+                      }
                   }
                 }
-                free(cb_data[i].fd);
+                // Free all output file resources
+                if(flag_fbh5_output) {
+                    free(cb_data[i].fbh5_ctx_ant);
+                } else {
+                    free(cb_data[i].fd);
+                }
 
                 cb_data[i].per_ant_out = per_ant_out;
                 // Re-init callback file descriptors to sentinal values
-                cb_data[i].fd = malloc(sizeof(int)*raw_hdr.nants);
-                for(j=0; j<raw_hdr.nants; j++){
-                  cb_data[i].fd[j] = -1;
+                // Memory is allocated by the output files are not yet open.
+                if(flag_fbh5_output) {
+                    cb_data[i].flag_fbh5_output = 1;
+                    cb_data[i].fbh5_ctx_ant = malloc(sizeof(fbh5_context_t) * raw_hdr.nants);
+                    for(j=0; j<raw_hdr.nants; j++) {
+                        cb_data[i].fbh5_ctx_ant[j].active = 0;
+                    }
+                } else {
+                    cb_data[i].flag_fbh5_output = 0;
+                    cb_data[i].fd = malloc(sizeof(int)*raw_hdr.nants);
+                    for(j=0; j<raw_hdr.nants; j++){
+                      cb_data[i].fd[j] = -1;
+                    }
                 }
               }
             }
@@ -717,8 +755,9 @@ char tmp[16];
           rawspec_reset_integration(&ctx);
         }
 
-        // Update filterbank headers based on raw params and Nts etc.
+        // Open output filterbank files and write the header.
         for(i=0; i<ctx.No; i++) {
+          // Update callback data based on raw params and Nts etc.
           // Same for all products
           cb_data[i].fb_hdr.telescope_id = fb_telescope_id(raw_hdr.telescop);
           cb_data[i].fb_hdr.src_raj = raw_hdr.ra;
@@ -734,7 +773,7 @@ char tmp[16];
           // raw_hdr.obsnchan is total for all nants
           cb_data[i].fb_hdr.foff =
             raw_hdr.obsbw/(raw_hdr.obsnchan/raw_hdr.nants)/ctx.Nts[i];
-          // This computes correct fch1 for odd or even number of fine channels
+          // This computes correct first fine channel frequency (fch1) for odd or even number of fine channels.
           // raw_hdr.obsbw is always for single antenna
           // raw_hdr.obsnchan is total for all nants
           cb_data[i].fb_hdr.fch1 = raw_hdr.obsfreq
@@ -743,33 +782,39 @@ char tmp[16];
             - (ctx.Nts[i]/2) * cb_data[i].fb_hdr.foff
             + (schan % (raw_hdr.obsnchan/raw_hdr.nants)) * // Adjust for schan
                 raw_hdr.obsbw / (raw_hdr.obsnchan/raw_hdr.nants);
-          cb_data[i].fb_hdr.nchans = ctx.Nc * ctx.Nts[i];
-          cb_data[i].fb_hdr.tsamp = raw_hdr.tbin * ctx.Nts[i] * ctx.Nas[i];
+          cb_data[i].fb_hdr.nfpc = ctx.Nts[i];  // Number of fine channels per coarse channel.
+          cb_data[i].fb_hdr.nchans = ctx.Nc * ctx.Nts[i] / raw_hdr.nants; // Number of fine channels.
+          cb_data[i].fb_hdr.tsamp = raw_hdr.tbin * ctx.Nts[i] * ctx.Nas[i]; // Time integration sampling rate in seconds.
 
           if(output_mode == RAWSPEC_FILE) {
-            // Write filterbank header to output file (handles both per-antenna output and single file output)
-            if(!only_output_ics && 
-                open_output_file_per_antenna_and_write_header(&cb_data[i], dest, argv[si], outidx + i) != 0){
-              return 1; // give up
+            // Open one or more output files.
+            // Handle both per-antenna output and single file output.
+            if(!only_output_ics) {
+              if(open_output_file_per_antenna_and_write_header(&cb_data[i], dest, argv[si], outidx + i) != 0))
+                return 1; // give up
             }
-
+            // Handle ICS.
             if(ctx.incoherently_sum){
-              cb_data[i].fd_ics = open_output_file(dest, ics_output_stem, outidx + i);
-              if(cb_data[i].fd_ics == -1) {
-                // If we can't open this output file, we probably won't be able to
-                // open any more output files, so print message and bail out.
-                fprintf(stderr, "cannot open output file, giving up\n");
-                return 1; // Give up
+              cb_data[i].fd_ics = open_ics_output_file(&cb_data[i], dest, ics_output_stem, outidx + i));
+              if(! flag_fbh5_output) {
+                  if(cb_data[i].fd_ics == -1) {
+                    // If we can't open this output file, we probably won't be able to
+                    // open any more output files, so print message and bail out.
+                    fprintf(stderr, "cannot open output file, giving up\n");
+                    return 1; // Give up
+                  }
               }
 
-              cb_data[i].fb_hdr.nchans /= raw_hdr.nants;
-              // Write filterbank header to output file
-              fb_fd_write_header(cb_data[i].fd_ics, &cb_data[i].fb_hdr);
-              cb_data[i].fb_hdr.nchans *= raw_hdr.nants;
+              // Write filterbank header to SIGPROC output ICS file.
+              // If FBH5, the header was already written by fbh5_open().
+              if(! flag_fbh5_output) {
+                fb_fd_write_header(cb_data[i].fd_ics, &cb_data[i].fb_hdr);
+              }
             }
           }
         }
 
+        // Save header information if requested.
         if(save_headers) {
           // Open headers output file
           fdhdrs = open_headers_file(dest, argv[si]);
@@ -778,6 +823,7 @@ char tmp[16];
           }
         }
 
+        // Output to socket initialisation.
         if(output_mode == RAWSPEC_NET) {
           // Apportion net data rate to output products proportional to their
           // data volume.  Interestingly, data volume is proportional to the
@@ -946,15 +992,29 @@ char tmp[16];
     // Close output files
     if(output_mode == RAWSPEC_FILE) {
       for(i=0; i<ctx.No; i++) {
+        // Antennas
         for(j=0; j < (cb_data[i].per_ant_out ? cb_data[i].Nant : 1); j++) {
-          if(cb_data[i].fd[j] != -1) {
-            close(cb_data[i].fd[j]);
-            cb_data[i].fd[j] = -1;
-          }
+          if(flag_fbh5_output) {
+              if(cb_data[i].fbh5_ctx_ant[j].active) {
+                fbh5_close(&(cb_data[i].fbh5_ctx_ant[j]), cb_data[i].debug_callback);
+              }
+          } else {
+              if(cb_data[i].fd[j] != -1) {
+                close(cb_data[i].fd[j]);
+                cb_data[i].fd[j] = -1;
+              }
+           }
         }
-        if(cb_data[i].fd_ics != -1) {
-          close(cb_data[i].fd_ics);
-          cb_data[i].fd_ics = -1;
+        // ICS
+        if(flag_fbh5_output) {
+            if(cb_data[i].fbh5_ctx_ics.active) {
+                fbh5_close(&(cb_data[i].fbh5_ctx_ics), cb_data[i].debug_callback);
+            }
+        } else {
+            if(cb_data[i].fd_ics != -1) {
+              close(cb_data[i].fd_ics);
+              cb_data[i].fd_ics = -1;
+            }
         }
       }
     }
@@ -996,3 +1056,4 @@ char tmp[16];
 
   return 0;
 }
+

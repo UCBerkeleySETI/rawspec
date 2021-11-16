@@ -6,6 +6,7 @@
 #include "rawspec_fbutils.h"
 
 typedef struct {
+    int active                  // Still active? 1=yes, 0=no
     hid_t file_id;              // File-level handle (similar to an fd)
     hid_t dataset_id;           // Dataset "data" handle
     hid_t dataspace_id;         // Dataspace handle for dataset "data"
@@ -44,6 +45,7 @@ typedef struct {
   fb_hdr_t fb_hdr;
   
   // Added for FBH5 2021-11-15
+  int flag_fbh5_output;           // File output format: 1=FBH5, 0=SIGPROC
   fbh5_context_t fbh5_ctx_ics;    // Singleton fbh5 ctx for ics
   fbh5_context_t * fbh5_ctx_ant;  // Pointer to array of fbh5 ctx for individual antennas
 

@@ -49,15 +49,18 @@ void fbh5_close(fbh5_context_t * p_fbh5_ctx, int debug_callback) {
     status = H5Fclose(p_fbh5_ctx->file_id);
     if(status != 0)
         fbh5_oops(__FILE__, __LINE__, "fbh5_close H5Fclose FAILED\n");
+    p_fbh5_ctx->active = 0;
 
     /*
      * Closing statistics.
      */
-    printf("fbh5_close: Context closed.\n");
-    printf("fbh5_close: %ld dumps processed.\n", p_fbh5_ctx->dump_count);
-    printf("fbh5_close: %lld time integrations processed.\n", p_fbh5_ctx->offset_dims[0]);
-    MiBstore = (double) sz_store / MILLION;
-    printf("fbh5_close: Compressed %.2f MiB --> %.2f MiB\n", MiBlogical, MiBstore);
+    if(debug_callback) {
+        printf("fbh5_close: Context closed.\n");
+        printf("fbh5_close: %ld dumps processed.\n", p_fbh5_ctx->dump_count);
+        printf("fbh5_close: %lld time integrations processed.\n", p_fbh5_ctx->offset_dims[0]);
+        MiBstore = (double) sz_store / MILLION;
+        printf("fbh5_close: Compressed %.2f MiB --> %.2f MiB\n", MiBlogical, MiBstore);
+    }
 
     /*
      * Bye-bye.
