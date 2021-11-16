@@ -17,8 +17,13 @@ int open_output_file(callback_data_t *cb_data, const char * dest, const char *st
   int fd;
   const char * basename;
   char fname[PATH_MAX+1];
+  char fileext[3];
 
   // If dest is given and it's not empty
+  if(cb_data->flag_fbh5_output)
+      strcpy(fileext, ".h5");
+  else
+      strcpy(fileext, ".fil");
   if(dest && dest[0]) {
     // Look for last '/' in stem
     basename = strrchr(stem, '/');
@@ -29,9 +34,9 @@ int open_output_file(callback_data_t *cb_data, const char * dest, const char *st
       // If not found, use stem as basename
       basename = stem;
     }
-    snprintf(fname, PATH_MAX, "%s/%s.rawspec.%04d.fil", dest, basename, output_idx);
+    snprintf(fname, PATH_MAX, "%s/%s.rawspec.%04d.%s", dest, basename, output_idx, fileext);
   } else {
-    snprintf(fname, PATH_MAX, "%s.rawspec.%04d.fil", stem, output_idx);
+    snprintf(fname, PATH_MAX, "%s.rawspec.%04d.%s", stem, output_idx, fileext);
   }
   fname[PATH_MAX] = '\0';
   if(cb_data->flag_fbh5_output) {
@@ -42,6 +47,8 @@ int open_output_file(callback_data_t *cb_data, const char * dest, const char *st
           fbh5_open(&(cb_data->fbh5_ctx_ics), &(cb_data->fb_hdr), fname, cb_data->debug_callback);
       else
           fbh5_open(&(cb_data->fbh5_ctx_ant[antenna_index]), &(cb_data->fb_hdr), fname, cb_data->debug_callback);
+      if(cb_data->debug_callback)
+          printf("open_output_file: fbh5_open(%s) successful\n", fname);
       return ENABLER_FD_FOR_FBH5;
   }
 
