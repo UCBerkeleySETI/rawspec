@@ -60,14 +60,15 @@ ssize_t read_fully(int fd, void * buf, size_t bytes_to_read)
 }
 
 static struct option long_opts[] = {
-  {"fbh5",    0, NULL, '5'},
   {"ant",     1, NULL, 'a'},
   {"batch",   0, NULL, 'b'},
   {"dest",    1, NULL, 'd'},
   {"ffts",    1, NULL, 'f'},
   {"gpu",     1, NULL, 'g'},
+  {"help",    0, NULL, 'h'},
   {"hdrs",    0, NULL, 'H'},
   {"ICS",     1, NULL, 'I'},
+  {"fbh5",    0, NULL, 'j'},
   {"nchan",   1, NULL, 'n'},
   {"outidx",  1, NULL, 'o'},
   {"pols",    1, NULL, 'p'},
@@ -75,8 +76,8 @@ static struct option long_opts[] = {
   {"schan",   1, NULL, 's'},
   {"splitant",0, NULL, 'S'},
   {"ints",    1, NULL, 't'},
-  {"help",    0, NULL, 'h'},
   {"version", 0, NULL, 'v'},
+  {"debug",   0, NULL, 'z'},
   {0,0,0,0}
 };
 
@@ -91,7 +92,6 @@ void usage(const char *argv0) {
     "Usage: %s [options] STEM [...]\n"
     "\n"
     "Options:\n"
-    "  -5, --fbh5             Format output Filterbank files as FBH5 (.h5) instead of SIGPROC(.fil)\n"
     "  -a, --ant=ANT          The 0-indexed antenna to exclusively process [-1]\n"
     "  -b, --batch=BC         Batch process BC coarse-channels at a time (1: auto, <1: disabled) [0]\n"
     "  -d, --dest=DEST        Destination directory or host:port\n"
@@ -100,14 +100,16 @@ void usage(const char *argv0) {
     "  -H, --hdrs             Save headers to separate file\n"
     "  -i, --ics=W1[,W2...]   Output incoherent-sum (exclusively, unless with -S)\n"
     "                         specifying per antenna-weights or a singular, uniform weight\n"
+    "  -j, --fbh5             Format output Filterbank files as FBH5 (.h5) instead of SIGPROC(.fil)\n"
     "  -n, --nchan=N          Number of coarse channels to process [all]\n"
     "  -o, --outidx=N         First index number for output files [0]\n"
     "  -p  --pols={1|4}[,...] Number of output polarizations [1]\n"
     "                         1=total power, 4=cross pols, -4=full stokes\n"
     "  -r, --rate=GBPS        Desired net data rate in Gbps [6.0]\n"
     "  -s, --schan=C          First coarse channel to process [0]\n"
-    "  -t, --ints=N1[,N2...]  Spectra to integrate [51, 128, 3072]\n"
     "  -S, --splitant         Split output into per antenna files\n"
+    "  -t, --ints=N1[,N2...]  Spectra to integrate [51, 128, 3072]\n"
+    "  -z, --debug            Turn on selected debug output\n"
     "\n"
     "  -h, --help             Show this message\n"
     "  -v, --version          Show version and exit\n"
@@ -194,6 +196,9 @@ char tmp[16];
   int input_conjugated = -1;
   int only_output_ics = 0;
 
+  // Selected dynamic debugging
+  int flag_debugging = 0;
+
   // FBH5 fields
   int flag_fbh5_output = 0;
 
@@ -217,8 +222,12 @@ char tmp[16];
         return 0;
         break;
 
-      case '5': // FBH5 output format requested
+      case 'j': // FBH5 output format requested
         flag_fbh5_output = 1;
+        break;
+
+      case 'z': // Selected dynamic debugging
+        flag_debugging = 1;
         break;
 
       case 'a': // Antenna selection to process
@@ -429,9 +438,11 @@ char tmp[16];
   // Init user_data to be array of callback data structures
   ctx.user_data = &cb_data;
 
-  // Zero-out the callback data sructures
+  // Zero-out the callback data sructures.
+  // Turn on dynamic debugging if requested.
   for(i=0; i<ctx.No; i++) {
     memset(&cb_data[i], 0, sizeof(callback_data_t));
+    cb_data[i].debug_callback = flag_debugging;
   }
 
   // Init pre-defined filterbank headers and save rate
@@ -447,14 +458,14 @@ char tmp[16];
     cb_data[i].Nant          = 1;
 
     // Init callback file descriptors to sentinal values
+    cb_data[i].fd = malloc(sizeof(int));
+    cb_data[i].fd[0] = -1;
     if(flag_fbh5_output) {
         cb_data[i].flag_fbh5_output = 1;
         cb_data[i].fbh5_ctx_ant = malloc(sizeof(fbh5_context_t));
         cb_data[i].fbh5_ctx_ant[0].active = 0;
     } else {
         cb_data[i].flag_fbh5_output = 0;
-        cb_data[i].fd = malloc(sizeof(int));
-        cb_data[i].fd[0] = -1;
     }
   }
 
@@ -740,7 +751,8 @@ char tmp[16];
               cb_data[i].h_icsbuf = ctx.h_icsbuf[i];
               cb_data[i].Nds = ctx.Nds[i];
               cb_data[i].Nf  = ctx.Nts[i] * ctx.Nc;
-              cb_data[i].debug_callback = DEBUG_CALLBACKS;
+              if(! flag_debugging)
+                cb_data[i].debug_callback = DEBUG_CALLBACKS;
               cb_data[i].Nant = raw_hdr.nants;
             }
 #if 0
@@ -797,6 +809,8 @@ char tmp[16];
                                                                outidx + i);
               if(retcode != 0)
                 return 1; // give up
+              if(cb_data->debug_callback)
+                  printf("rawspec-main: open_output_file_per_antenna_and_write_header - successful\n");
             }
             // Handle ICS.
             if(ctx.incoherently_sum) {
@@ -810,6 +824,8 @@ char tmp[16];
                 // open any more output files, so print message and bail out.
                 fprintf(stderr, "cannot open output file, giving up\n");
                 return 1; // Give up
+              if(cb_data->debug_callback)
+                  printf("rawspec-main: open_output_file - successful\n");
               }
 
               // Write filterbank header to SIGPROC output ICS file.
