@@ -215,7 +215,7 @@ char tmp[16];
 
   // Parse command line.
   argv0 = argv[0];
-  while((opt=getopt_long(argc,argv,"a:b:d:f:g:HjzI:i:n:o:p:r:Ss:t:hv",long_opts,NULL))!=-1) {
+  while((opt=getopt_long(argc,argv,"a:b:d:f:g:Hjz:i:n:o:p:r:Ss:t:hv",long_opts,NULL))!=-1) {
     switch (opt) {
       case 'h': // Help
         usage(argv0);
