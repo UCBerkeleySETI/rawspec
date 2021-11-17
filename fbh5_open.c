@@ -63,10 +63,6 @@ void fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_p
     p_fbh5_ctx->offset_dims[0] = 0;
     p_fbh5_ctx->offset_dims[1] = 0;
     p_fbh5_ctx->offset_dims[2] = 0;
-    if(debug_callback) {
-        printf("fbh5_open: Data element byte size = %d.\n", p_fbh5_ctx->elem_size);
-        printf("fbh5_open: Time integration byte size = %ld.\n", p_fbh5_ctx->tint_size);
-    }
     
     /*
      * Open HDF5 file.  Overwrite it if preexisting.
@@ -198,6 +194,7 @@ void fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_p
      * Bye-bye.
      */
     p_fbh5_ctx->active = 1;
+    if(debug_callback)
+        fbh5_show_context("fbh5_open", p_fbh5_ctx);
 
 }
-
