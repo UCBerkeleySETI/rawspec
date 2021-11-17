@@ -109,6 +109,8 @@ void * dump_file_thread_func(void *arg)
               // Assume that the following file-descriptors aren't valid
               break;
             }
+            if(cb_data->debug_callback)
+                printf("dump_file_thread_func: write for antenna %ld-%ld-%ld\n", k, j, i);
             if(cb_data->flag_fbh5_output) {
                 fbh5_write(&(cb_data->fbh5_ctx_ant[i]),
                            &(cb_data->fb_hdr), 
@@ -125,6 +127,8 @@ void * dump_file_thread_func(void *arg)
       } // for(size_t k = 0; k < cb_data->Nds; k++)
     } // if(cb_data->per_ant_out)
     else { // nants = 0; single output file
+      if(cb_data->debug_callback)
+        printf("dump_file_thread_func: write for nants=0\n");
       if(cb_data->flag_fbh5_output) {
         fbh5_write(&(cb_data->fbh5_ctx_ant[0]),
                    &(cb_data->fb_hdr), 
@@ -140,6 +144,8 @@ void * dump_file_thread_func(void *arg)
   } // if(cb_data->fd && cb_data->h_pwrbuf)
   
   if(cb_data->fd_ics && cb_data->h_icsbuf) {
+    if(cb_data->debug_callback)
+        printf("dump_file_thread_func: write for ICS\n");
     if(cb_data->flag_fbh5_output) {
         fbh5_write(&(cb_data->fbh5_ctx_ics),
                    &(cb_data->fb_hdr), 
