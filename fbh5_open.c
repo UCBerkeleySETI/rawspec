@@ -23,7 +23,7 @@ void fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_p
     char        wstr[256];          // sprintf target
     unsigned    hdf5_majnum, hdf5_minnum, hdf5_relnum;  // Version/release info for the HDF5 library
     
-    int         deflate_level = 6;  // 0=no deflation, 9=highest, 6=recommended
+    int         deflate_level = 1;  // 0=no deflation, 9=highest, 6=recommended
     
     H5get_libversion(&hdf5_majnum, &hdf5_minnum, &hdf5_relnum);
     if(debug_callback) {
