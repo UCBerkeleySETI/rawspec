@@ -21,9 +21,9 @@ int open_output_file(callback_data_t *cb_data, const char * dest, const char *st
 
   // If dest is given and it's not empty
   if(cb_data->flag_fbh5_output)
-      strcpy(fileext, ".h5");
+      strcpy(fileext, "h5");
   else
-      strcpy(fileext, ".fil");
+      strcpy(fileext, "fil");
   if(dest && dest[0]) {
     // Look for last '/' in stem
     basename = strrchr(stem, '/');
