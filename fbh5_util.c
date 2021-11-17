@@ -134,3 +134,22 @@ void fbh5_set_ds_label(fbh5_context_t * p_fbh5_ctx, char * label, int dims_index
     }
 }
 
+
+/***
+	Display some of the fbh5_context values.
+***/
+void fbh5_show_context(char * caller, fbh5_context_t * p_fbh5_ctx) {
+    if(p_fbh5_ctx == NULL) {
+        printf("*** fbh5_show_context: p_fbh5_ctx = NULL !!!");
+        return;
+    }
+    printf("fbh5_show_context(%s): active = %d\n", caller, p_fbh5_ctx->active);
+    printf("fbh5_show_context(%s): elem_size = %d\n", caller, p_fbh5_ctx->elem_size);
+    printf("fbh5_show_context(%s): tint_size = %ld\n", caller, p_fbh5_ctx->tint_size);
+    printf("fbh5_show_context(%s): offset_dims = (%lld, %lld, %lld)\n",
+           caller, p_fbh5_ctx->offset_dims[0], p_fbh5_ctx->offset_dims[1], p_fbh5_ctx->offset_dims[2]);
+    printf("fbh5_show_context(%s): filesz_dims = (%lld, %lld, %lld)\n",
+           caller, p_fbh5_ctx->filesz_dims[0], p_fbh5_ctx->filesz_dims[1], p_fbh5_ctx->filesz_dims[2]);
+    printf("fbh5_show_context(%s): byte_count = %ld\n", caller, p_fbh5_ctx->byte_count);
+    printf("fbh5_show_context(%s): dump_count = %ld\n", caller, p_fbh5_ctx->dump_count);
+}
