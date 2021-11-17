@@ -54,11 +54,7 @@ void    fbh5_set_dataset_double_attr(hid_t dataset_id, char * tag, double * p_va
 void    fbh5_set_dataset_int_attr(hid_t dataset_id, char * tag, int * p_value, int debug_callback);
 void    fbh5_write_metadata(hid_t dataset_id, fb_hdr_t * p_metadata, int debug_callback);
 void    fbh5_set_ds_label(fbh5_context_t * p_fbh5_ctx, char * label, int dims_index, int debug_callback);
-
-/*
- * Debugging aid
- */
-void    hexdump(const char *label, const void *thingaddr, const int thingsz, int per_line);
+void    fbh5_show_context(char * caller, fbh5_context_t * p_fbh5_ctx);
 
 #endif
 
