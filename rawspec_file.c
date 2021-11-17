@@ -96,6 +96,24 @@ void * dump_file_thread_func(void *arg)
 {
   callback_data_t * cb_data = (callback_data_t *)arg;
 
+  // Single antenna case
+  if(cb_data->fd && cb_data->h_pwrbuf && (cb_data->Nant == 1)) {
+      if(cb_data->debug_callback)
+        printf("dump_file_thread_func: write for nants=0\n");
+      if(cb_data->flag_fbh5_output) {
+        fbh5_write(&(cb_data->fbh5_ctx_ant[0]),
+                   &(cb_data->fb_hdr), 
+                   cb_data->h_pwrbuf, 
+                   cb_data->h_pwrbuf_size,
+                   cb_data->debug_callback);
+      } else {
+        write(cb_data->fd[0], 
+              cb_data->h_pwrbuf, 
+              cb_data->h_pwrbuf_size);
+      } // if(cb_data->flag_fbh5_output) 
+  }
+
+  // Multiple antennas, split output
   if(cb_data->fd && cb_data->h_pwrbuf) {
     if(cb_data->per_ant_out) {
       size_t spectra_stride = cb_data->h_pwrbuf_size / (cb_data->Nds * sizeof(float));
@@ -126,23 +144,9 @@ void * dump_file_thread_func(void *arg)
         } // for(size_t j = 0; j < cb_data->fb_hdr.nifs; j++)
       } // for(size_t k = 0; k < cb_data->Nds; k++)
     } // if(cb_data->per_ant_out)
-    else { // nants = 0; single output file
-      if(cb_data->debug_callback)
-        printf("dump_file_thread_func: write for nants=0\n");
-      if(cb_data->flag_fbh5_output) {
-        fbh5_write(&(cb_data->fbh5_ctx_ant[0]),
-                   &(cb_data->fb_hdr), 
-                   cb_data->h_pwrbuf, 
-                   cb_data->h_pwrbuf_size,
-                   cb_data->debug_callback);
-      } else {
-        write(cb_data->fd[0], 
-              cb_data->h_pwrbuf, 
-              cb_data->h_pwrbuf_size);
-      } // if(cb_data->flag_fbh5_output) 
-    } // if(cb_data->per_ant_out) ... else
   } // if(cb_data->fd && cb_data->h_pwrbuf)
-  
+
+  // Multiple antennas, ICE output
   if(cb_data->fd_ics && cb_data->h_icsbuf) {
     if(cb_data->debug_callback)
         printf("dump_file_thread_func: write for ICS\n");
