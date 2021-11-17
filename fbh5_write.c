@@ -27,6 +27,8 @@ void fbh5_write(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, void * p_buffe
     /*
      * Initialise write loop.
      */
+    if(debug_callback)
+        fbh5_show_context("fbh5_write", p_fbh5_ctx);
     ntints = bufsize / p_fbh5_ctx->tint_size;  // Compute the number of time integrations in the current dump.
     p_fbh5_ctx->dump_count += 1;               // Bump the dump count.
     bufptr = p_buffer;                         // Point to the first time integration in the dump.
