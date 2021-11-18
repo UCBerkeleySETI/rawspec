@@ -114,7 +114,7 @@ void * dump_file_thread_func(void *arg)
   }
 
   // Multiple antennas, split output
-  if(cb_data->fd && cb_data->h_pwrbuf) {
+  if(cb_data->fd && cb_data->h_pwrbuf && (cb_data->Nant > 1)) {
     if(cb_data->per_ant_out) {
       size_t spectra_stride = cb_data->h_pwrbuf_size / (cb_data->Nds * sizeof(float));
       size_t pol_stride = spectra_stride / cb_data->fb_hdr.nifs;
