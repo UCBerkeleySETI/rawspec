@@ -484,10 +484,10 @@ int rawspec_initialize(rawspec_context * ctx)
   if(ctx->Nbps == 0) {
     ctx->Nbps = 8;
   } else if(ctx->Nbps != 8 && ctx->Nbps != 16) {
-    fprintf(stderr,
-        "number of bits per sample must be 8 or 16 (not %d), using 8 bps\n",
+    fprintf(stdout,
+        "WARNING: number of bits per sample = %d.  Using 8 bps to appease the kernel\n",
         ctx->Nbps);
-    fflush(stderr);
+    fflush(stdout);
     NbpsIsExpanded = ctx->Nbps == 4;
     ctx->Nbps = 8;
   }
