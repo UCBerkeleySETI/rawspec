@@ -67,7 +67,7 @@ static struct option long_opts[] = {
   {"gpu",     1, NULL, 'g'},
   {"help",    0, NULL, 'h'},
   {"hdrs",    0, NULL, 'H'},
-  {"ICS",     1, NULL, 'I'},
+  {"ics",     1, NULL, 'i'},
   {"fbh5",    0, NULL, 'j'},
   {"nchan",   1, NULL, 'n'},
   {"outidx",  1, NULL, 'o'},
@@ -153,9 +153,7 @@ int main(int argc, char *argv[])
   int si; // Indexes the stems
   int fi; // Indexes the files for a given stem
   int bi; // Counts the blocks processed for a given file
-  int i;
-int j, k;
-char tmp[16];
+  int i, j, k;
   void * pv;
   int fdin;
   int fdhdrs = -1;
@@ -209,13 +207,16 @@ char tmp[16];
   uint64_t total_bytes = 0;
   uint64_t total_ns = 0;
 
+  // Show librawspec version on startup
+  printf("rawspec using librawspec %s\n", rawspec_version_string());
+
   // Init rawspec context
   memset(&ctx, 0, sizeof(ctx));
   ctx.Npolout[0] = 1; // others will be set later
 
   // Parse command line.
   argv0 = argv[0];
-  while((opt=getopt_long(argc,argv,"a:b:d:f:g:Hjz:i:n:o:p:r:Ss:t:hv",long_opts,NULL))!=-1) {
+  while((opt=getopt_long(argc, argv, "a:b:d:f:g:HSjzs:i:n:o:p:r:t:hv", long_opts, NULL)) != -1) {
     switch (opt) {
       case 'h': // Help
         usage(argv0);
@@ -276,8 +277,9 @@ char tmp[16];
         save_headers = 1;
         break;
 
-      case 'i': // Incoherently sum exclusively
-        only_output_ics = 1;
+      case 'i': // Incoherent sum
+        printf("writing output for incoherent sum over all antennas\n");
+        only_output_ics = 1; // will get reset if also splitting antennas
         ctx.incoherently_sum = 1;
         ctx.Naws = 1;
         // Count number of 
@@ -367,12 +369,18 @@ char tmp[16];
 
   // If no stems given, print usage and exit
   if(argc == 0) {
+    fprintf(stderr, "error: a file stem must be specified\n");
     usage(argv0);
     return 1;
   }
 
-  // Show librawspec version on startup
-  printf("rawspec using librawspec %s\n", rawspec_version_string());
+  // If writing output files, show the format used
+  if(output_mode == RAWSPEC_FILE) {
+      if(flag_fbh5_output)
+          printf("writing output files in FBH5 format\n");
+      else
+          printf("writing output files in SIGPROC Filterbank format\n");
+  }
 
   // If schan is non-zero, nchan must be too
   if(schan != 0 && nchan == 0) {
@@ -645,7 +653,6 @@ char tmp[16];
             printf("Ignoring --splitant flag in network mode\n");
           }
           if(only_output_ics){
-            printf("Cancelling exclusivity of ICS output due to --splitant.\n");
             only_output_ics = 0;
           }
         }
@@ -1079,5 +1086,3 @@ char tmp[16];
 
   return 0;
 }
-
-
