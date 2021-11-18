@@ -90,7 +90,7 @@ typedef struct {
   double fch1;
   // filterbank channel bandwidth (MHz)
   double foff;
-  // number of filterbank channels
+  // number of fine filterbank channels (not coarse channels)
   int nchans;
   // total number of beams
   int nbeams;
