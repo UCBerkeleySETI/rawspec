@@ -1051,6 +1051,7 @@ int main(int argc, char *argv[])
   } // each stem
 
   // Final cleanup
+  rawspec_reset_integration(&ctx); // Needed for issue #39 ?
   rawspec_cleanup(&ctx);
   if(ics_output_stem){
     free(ics_output_stem);
