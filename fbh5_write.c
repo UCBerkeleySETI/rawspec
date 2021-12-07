@@ -23,6 +23,8 @@ void fbh5_write(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, void * p_buffe
     hid_t       filespace_id;   // Identifier for a copy of the dataspace 
     hsize_t     selection[3];   // Current selection
     void       *bufptr;         // Pointer into the current dump
+    clock_t     clock_1;        // Debug time measurement
+    double      cpu_time_used;  // Debug time measurement
 
     /*
      * Initialise write loop.
@@ -54,6 +56,7 @@ void fbh5_write(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, void * p_buffe
         selection[2] = p_fb_hdr->nchans;
 
         if(debug_callback) {
+            clock_1 = clock();
             printf("fbh5_write: dump %ld, dump-tint %d, offset=(%lld, %lld, %lld), selection=(%lld, %lld, %lld), filesize=(%lld, %lld, %lld)\n",
                    p_fbh5_ctx->dump_count,
                    ii + 1,
@@ -118,6 +121,11 @@ void fbh5_write(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, void * p_buffe
          * Bump the dump buffer pointer to the next time integration.
          */
         bufptr += p_fbh5_ctx->tint_size;
+
+        if(debug_callback) {
+            cpu_time_used = ((double) (clock() - clock_1)) / CLOCKS_PER_SEC;
+            printf("fbh5_write: dump %ld E.T. = %.3f s\n", p_fbh5_ctx->dump_count, cpu_time_used);
+        }
 
     /*
      * END write-loop for the current dump.

@@ -146,7 +146,7 @@ void * dump_file_thread_func(void *arg)
     } // if(cb_data->per_ant_out)
   } // if(cb_data->fd && cb_data->h_pwrbuf)
 
-  // Multiple antennas, ICE output
+  // Multiple antennas, ICS output
   if(cb_data->fd_ics && cb_data->h_icsbuf) {
     if(cb_data->debug_callback)
         printf("dump_file_thread_func: write for ICS\n");
