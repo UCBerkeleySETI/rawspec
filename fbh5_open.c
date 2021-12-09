@@ -8,10 +8,6 @@
 #include "fbh5_defs.h"
 
 
-unsigned COMPRESSION = 1;
-unsigned SHUFFLE = 1;
-
-
 /***
 	Main entry point.
 ***/
@@ -23,16 +19,49 @@ void fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_p
     char        wstr[256];          // sprintf target
     unsigned    hdf5_majnum, hdf5_minnum, hdf5_relnum;  // Version/release info for the HDF5 library
     
-    int         deflate_level = 1;  // 0=no deflation, 9=highest, 6=recommended
-    
+    // Filter data:
+    H5Z_filter_t filter_id_bitshuffle = 32008;
+    H5Z_filter_t filter_id_lz4 = 32004;
+    unsigned filter_flags = 0;
+
+
+    // Announce versions:   
     H5get_libversion(&hdf5_majnum, &hdf5_minnum, &hdf5_relnum);
-    if(debug_callback) {
-        printf("fbh5_open: FBH5 path: %s\n", output_path);
-        printf("fbh5_open: HDF5 library version: %d.%d.%d\n", hdf5_majnum, hdf5_minnum, hdf5_relnum);
-        printf("fbh5_open: Creating dataspace dimensions using nifs=%d and nchans=%d\n",
-               p_fb_hdr->nifs,
-               p_fb_hdr->nchans);
-        }
+    printf("fbh5_open: FBH5 path: %s\n", output_path);
+    printf("fbh5_open: HDF5 library version: %d.%d.%d\n", hdf5_majnum, hdf5_minnum, hdf5_relnum);
+    printf("fbh5_open: Creating dataspace dimensions using nifs=%d and nchans=%d\n",
+           p_fb_hdr->nifs,
+           p_fb_hdr->nchans);
+    
+    /*
+     * Make sure that the Bitshuffle filter is available.
+     */
+    if (H5Zfilter_avail(filter_id_bitshuffle) <= 0)
+        printf("*** fbhf_open: Filter bitshuffle is NOT available !!\n");
+    else {
+        printf("fbhf_open: Filter bitshuffle is available.\n");
+        if(H5Zget_filter_info(filter_id_bitshuffle, &filter_flags) < 0)
+            fbh5_oops(__FILE__, __LINE__, "fbh5_open: cannot fetch bitshuffle flags");
+        if(H5Z_FILTER_CONFIG_ENCODE_ENABLED & filter_flags)
+            printf("fbhf_open: Filter bitshuffle encoder enabled.\n");
+        else
+            printf("*** fbhf_open: Filter bitshuffle encoder disabled !!\n");
+    }
+    
+    /*
+     * Make sure that the LZ4 filter is available.
+     */
+    if (H5Zfilter_avail(filter_id_lz4) <= 0)
+       printf("*** fbhf_open: Filter LZF is NOT available !!\n");
+    else {
+        printf("fbhf_open: Filter LZF is available.\n");
+        if(H5Zget_filter_info(filter_id_lz4, &filter_flags) < 0)
+            fbh5_oops(__FILE__, __LINE__, "fbh5_open: cannot fetch LZ4 flags");
+        if(H5Z_FILTER_CONFIG_ENCODE_ENABLED & filter_flags)
+            printf("fbhf_open: Filter LZ4 encoder enabled.\n");
+        else
+            printf("*** fbhf_open: Filter LZ4 encoder disabled !!\n");
+    }
     
     /*
      * Validate fb_hdr: nifs, nbits, nfpc, nchans.
@@ -68,9 +97,9 @@ void fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_p
      * Open HDF5 file.  Overwrite it if preexisting.
      */
     p_fbh5_ctx->file_id = H5Fcreate(output_path,    // Full path of output file
-                                            H5F_ACC_TRUNC,  // Overwrite if preexisting.
-                                            H5P_DEFAULT,    // Default creation property list 
-                                            H5P_DEFAULT);   // Default access property list
+                                    H5F_ACC_TRUNC,  // Overwrite if preexisting.
+                                    H5P_DEFAULT,    // Default creation property list 
+                                    H5P_DEFAULT);   // Default access property list
     if(p_fbh5_ctx->file_id < 0) {
         sprintf(wstr, "fbh5_open: H5Fcreate of '%s' FAILED", output_path);
         fbh5_oops(__FILE__, __LINE__, wstr);
@@ -100,8 +129,8 @@ void fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_p
      * Create a dataspace which is extensible in the time dimension.
      */
     p_fbh5_ctx->dataspace_id = H5Screate_simple(NDIMS,                           // Rank
-                                                        p_fbh5_ctx->filesz_dims, // initial dimensions
-                                                        max_dims);               // maximum dimensions
+                                                p_fbh5_ctx->filesz_dims, // initial dimensions
+                                                max_dims);               // maximum dimensions
     if(p_fbh5_ctx->dataspace_id < 0)
         fbh5_oops(__FILE__, __LINE__, "fbh5_open: H5Screate_simple FAILED");
     
@@ -112,25 +141,6 @@ void fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_p
     if(dcpl < 0)
         fbh5_oops(__FILE__, __LINE__, "fbh5_open: H5Pcreate/dcpl FAILED");
          
-    /*
-     * Add deflating to the dataset creation property list.
-     */
-    if(COMPRESSION) {
-        if(SHUFFLE) {
-            status = H5Pset_shuffle(dcpl);
-            if(status < 0)
-                fbh5_oops(__FILE__, __LINE__, "fbh5_open: H5Pset_shuffle FAILED");
-            if(debug_callback)
-                printf("fbh5_open: Using shuffle deflation.\n");
-        }
-        else
-            if(debug_callback)
-                printf("fbh5_open: Using gzip deflation.\n");
-        status = H5Pset_deflate(dcpl, deflate_level);
-        if(status < 0)
-            fbh5_oops(__FILE__, __LINE__, "fbh5_open: H5Pset_deflate FAILED");
-    }
-    
     /*
      * Add chunking to the dataset creation property list.
      */
@@ -143,6 +153,18 @@ void fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_p
     if(debug_callback)
         printf("fbh5_open: Chunking (%lld, %lld, %lld) configured\n", cdims[0], cdims[1], cdims[2]);
 
+    /*
+     * Add the Bitshuffle filter and the LZF filter to the dataset creation property list.
+     */
+    status = H5Pset_filter(dcpl, filter_id_bitshuffle, H5Z_FLAG_OPTIONAL, 0, NULL); // Bitshuffle Filter
+    if(status < 0)
+        fbh5_oops(__FILE__, __LINE__, "fbh5_open: H5Pset_filter FAILED");
+    status = H5Pset_filter(dcpl, filter_id_lz4, H5Z_FLAG_OPTIONAL, 0, NULL); // LZF Filter
+    if(status < 0)
+        fbh5_oops(__FILE__, __LINE__, "fbh5_open: H5Pset_filter FAILED");
+    if(debug_callback)
+        printf("fbh5_open: Using shuffle + LZF filter deflation.\n");
+    
     /* 
      * Define datatype for the data in the file.
      * We will store little endian values.
@@ -164,13 +186,13 @@ void fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_p
     /*
      * Create the dataset.
      */
-    p_fbh5_ctx->dataset_id = H5Dcreate(p_fbh5_ctx->file_id,               // File handle
-                                               DATASETNAME,               // Dataset name
-                                               p_fbh5_ctx->elem_type,     // HDF5 data type
-                                               p_fbh5_ctx->dataspace_id,  // Dataspace handle
-                                               H5P_DEFAULT,               // 
-                                               dcpl,                      // Dataset creation property list
-                                               H5P_DEFAULT);              // Default access properties
+    p_fbh5_ctx->dataset_id = H5Dcreate(p_fbh5_ctx->file_id,       // File handle
+                                       DATASETNAME,               // Dataset name
+                                       p_fbh5_ctx->elem_type,     // HDF5 data type
+                                       p_fbh5_ctx->dataspace_id,  // Dataspace handle
+                                       H5P_DEFAULT,               // 
+                                       dcpl,                      // Dataset creation property list
+                                       H5P_DEFAULT);              // Default access properties
     if(p_fbh5_ctx->dataset_id < 0)
         fbh5_oops(__FILE__, __LINE__, "fbh5_open: H5Dcreate FAILED");
 
