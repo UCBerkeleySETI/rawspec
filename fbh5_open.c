@@ -19,11 +19,15 @@ void fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_p
     char        wstr[256];          // sprintf target
     unsigned    hdf5_majnum, hdf5_minnum, hdf5_relnum;  // Version/release info for the HDF5 library
     
-    // Filter data:
+    // Filter identities:
     H5Z_filter_t filter_id_bitshuffle = 32008;
     H5Z_filter_t filter_id_lz4 = 32004;
-    unsigned filter_flags = 0;
 
+    // Bitshuffle options:
+    unsigned bitshuffle_opts[] = {0, 2};
+    // Ref: def __init__ in class Bitshuffle in https://github.com/silx-kit/hdf5plugin/blob/main/src/hdf5plugin/__init__.py
+    // 0 = take default like blimpy
+    // 2 = use lz4 like blimpy
 
     // Announce versions:   
     H5get_libversion(&hdf5_majnum, &hdf5_minnum, &hdf5_relnum);
@@ -45,9 +49,9 @@ void fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_p
      * Make sure that the LZ4 filter is available.
      */
     if (H5Zfilter_avail(filter_id_lz4) <= 0)
-       printf("*** fbhf_open: Filter LZF is NOT available !!\n");
+       printf("*** fbhf_open: Filter LZ4 is NOT available !!\n");
     else
-        printf("fbhf_open: Filter LZF is available.\n");
+        printf("fbhf_open: Filter LZ4 is available.\n");
     
     /*
      * Validate fb_hdr: nifs, nbits, nfpc, nchans.
@@ -136,20 +140,17 @@ void fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_p
     status   = H5Pset_chunk(dcpl, NDIMS, cdims);
     if(status != 0)
         fbh5_oops(__FILE__, __LINE__, "fbh5_open: H5Pset_chunk FAILED");
-    if(debug_callback)
-        printf("fbh5_open: Chunking (%lld, %lld, %lld) configured\n", cdims[0], cdims[1], cdims[2]);
+    printf("fbh5_open: Chunk dimensions = (%lld, %lld, %lld)\n", cdims[0], cdims[1], cdims[2]);
 
     /*
-     * Add the Bitshuffle filter and the LZF filter to the dataset creation property list.
+     * Add the Bitshuffle and LZ4 filters to the dataset creation property list.
      */
-    status = H5Pset_filter(dcpl, filter_id_bitshuffle, H5Z_FLAG_MANDATORY, 0, NULL); // Bitshuffle Filter
+    status = H5Pset_filter(dcpl, filter_id_bitshuffle, H5Z_FLAG_MANDATORY, 0, bitshuffle_opts); // Bitshuffle Filter
     if(status < 0)
         fbh5_oops(__FILE__, __LINE__, "fbh5_open: H5Pset_filter FAILED");
-    status = H5Pset_filter(dcpl, filter_id_lz4, H5Z_FLAG_MANDATORY, 0, NULL); // LZF Filter
+    status = H5Pset_filter(dcpl, filter_id_lz4, H5Z_FLAG_MANDATORY, 0, NULL); // LZ4 Filter
     if(status < 0)
         fbh5_oops(__FILE__, __LINE__, "fbh5_open: H5Pset_filter FAILED");
-    if(debug_callback)
-        printf("fbh5_open: Using shuffle + LZF filter deflation.\n");
     
     /* 
      * Define datatype for the data in the file.
