@@ -38,30 +38,16 @@ void fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_p
      */
     if (H5Zfilter_avail(filter_id_bitshuffle) <= 0)
         printf("*** fbhf_open: Filter bitshuffle is NOT available !!\n");
-    else {
+    else
         printf("fbhf_open: Filter bitshuffle is available.\n");
-        if(H5Zget_filter_info(filter_id_bitshuffle, &filter_flags) < 0)
-            fbh5_oops(__FILE__, __LINE__, "fbh5_open: cannot fetch bitshuffle flags");
-        if(H5Z_FILTER_CONFIG_ENCODE_ENABLED & filter_flags)
-            printf("fbhf_open: Filter bitshuffle encoder enabled.\n");
-        else
-            printf("*** fbhf_open: Filter bitshuffle encoder disabled !!\n");
-    }
     
     /*
      * Make sure that the LZ4 filter is available.
      */
     if (H5Zfilter_avail(filter_id_lz4) <= 0)
        printf("*** fbhf_open: Filter LZF is NOT available !!\n");
-    else {
+    else
         printf("fbhf_open: Filter LZF is available.\n");
-        if(H5Zget_filter_info(filter_id_lz4, &filter_flags) < 0)
-            fbh5_oops(__FILE__, __LINE__, "fbh5_open: cannot fetch LZ4 flags");
-        if(H5Z_FILTER_CONFIG_ENCODE_ENABLED & filter_flags)
-            printf("fbhf_open: Filter LZ4 encoder enabled.\n");
-        else
-            printf("*** fbhf_open: Filter LZ4 encoder disabled !!\n");
-    }
     
     /*
      * Validate fb_hdr: nifs, nbits, nfpc, nchans.
@@ -156,10 +142,10 @@ void fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_p
     /*
      * Add the Bitshuffle filter and the LZF filter to the dataset creation property list.
      */
-    status = H5Pset_filter(dcpl, filter_id_bitshuffle, H5Z_FLAG_OPTIONAL, 0, NULL); // Bitshuffle Filter
+    status = H5Pset_filter(dcpl, filter_id_bitshuffle, H5Z_FLAG_MANDATORY, 0, NULL); // Bitshuffle Filter
     if(status < 0)
         fbh5_oops(__FILE__, __LINE__, "fbh5_open: H5Pset_filter FAILED");
-    status = H5Pset_filter(dcpl, filter_id_lz4, H5Z_FLAG_OPTIONAL, 0, NULL); // LZF Filter
+    status = H5Pset_filter(dcpl, filter_id_lz4, H5Z_FLAG_MANDATORY, 0, NULL); // LZF Filter
     if(status < 0)
         fbh5_oops(__FILE__, __LINE__, "fbh5_open: H5Pset_filter FAILED");
     if(debug_callback)

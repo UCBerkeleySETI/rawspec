@@ -374,6 +374,13 @@ int main(int argc, char *argv[])
     return 1;
   }
 
+  // Currently, there are potential conflicts in running -i and -S concurrently.
+  if(ctx.incoherently_sum == 1 && per_ant_out == 1) {
+    fprintf(stderr, "PLEASE NOTE: Currently, there are potential conflicts in running -i and -S concurrently.\n");
+    fprintf(stderr, "PLEASE NOTE: -S (split antennas) is being ignored.\n");
+    per_ant_out = 0;
+  }
+
   // If writing output files, show the format used
   if(output_mode == RAWSPEC_FILE) {
       if(flag_fbh5_output)

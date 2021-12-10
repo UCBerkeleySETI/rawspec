@@ -10,7 +10,11 @@ INCDIR_H5= /usr/include/hdf5/serial/
 LIBDIR_h5= /usr/lib/x86_64-linux-gnu/hdf5/serial/
 LIBHDF5= :libhdf5.so
 LIBHDF5_HL= :libhdf5_hl.so
-LINKH5:= -L$(LIBDIR) -l $(LIBHDF5) -l $(LIBHDF5_HL)
+PLUGIN_DIR= /usr/local/hdf5/lib/plugin
+PLUGIN_DIR= $(HOME)/.local/lib/python3.7/site-packages/hdf5plugin/plugins
+LIBBSHUF= :libh5bshuf.so
+LIBLZF= :libh5lz4.so
+LINKH5:= -L$(LIBDIR) -l $(LIBHDF5) -l $(LIBHDF5_HL) -L $(PLUGIN_DIR) -l $(LIBBSHUF) -l $(LIBLZF)
 # End HDF5 definitions
 
 CUDA_DIR ?= $(CUDA_ROOT)
