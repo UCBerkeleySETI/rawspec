@@ -8,6 +8,9 @@
 #include "fbh5_defs.h"
 
 
+int CACHE_SPECS = 0;
+
+
 /***
 	Main entry point.
 ***/
@@ -18,6 +21,11 @@ void fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_p
     herr_t      status;             // Status from HDF5 function call
     char        wstr[256];          // sprintf target
     unsigned    hdf5_majnum, hdf5_minnum, hdf5_relnum;  // Version/release info for the HDF5 library
+
+    // Caching
+    hid_t       fapl;                   // File access property list identifier
+    size_t      fcache_nslots = 521;    // Hash table number of slots.  Default value.
+    size_t      fcache_nbytes = 0;      // Cache size in bytes
     
     // Filter identities:
     H5Z_filter_t filter_id_bitshuffle = 32008;
@@ -86,6 +94,24 @@ void fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_p
         fbh5_oops(__FILE__, __LINE__, wstr);
     }
 
+    /*
+     * If specifying file-level caching specifications, do so now.
+     */
+
+    if(CACHE_SPECS == 1) {
+        fcache_nbytes = p_fbh5_ctx->tint_size + 42;
+        fapl = H5Fget_access_plist(p_fbh5_ctx->file_id);
+        if(fapl < 0)
+            fbh5_oops(__FILE__, __LINE__, "fbh5_open: H5Fget_access_plist FAILED");
+        status = H5Pset_cache(fapl, 
+                              0,                // ignored
+                              fcache_nslots,    // Hash table slot count
+                              fcache_nbytes,    // File cache size in bytes
+                              1.0);             // Rawspec writes data only once.  Never reads.
+        if(status < 0)
+            fbh5_oops(__FILE__, __LINE__, "fbh5_open: H5Pset_cache FAILED");
+    }
+ 
     /*
      * Write the file-level metadata attributes.
      */

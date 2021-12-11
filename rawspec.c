@@ -14,6 +14,7 @@
 #include <sys/mman.h>
 #include <getopt.h>
 #include <sys/sendfile.h>
+#include <hdf5/serial/H5pubconf.h>
 
 #include "rawspec.h"
 #include "rawspec_file.h"
@@ -33,6 +34,12 @@
 #ifndef DEBUG_CALLBACKS
 #define DEBUG_CALLBACKS (0)
 #endif
+
+void locplug() {
+    fprintf(stderr,"\nThe plugin directory is %s.\n", H5_DEFAULT_PLUGINDIR);
+    fprintf(stderr,"Found the name in the H5pubconf.h include file.\n");
+    fprintf(stderr,"Please copy the bitshuffle plugin to that directory if you haven't already done so.\n\n");
+}
 
 // Reads `bytes_to_read` bytes from `fd` into the buffer pointed to by `buf`.
 // Returns the total bytes read or -1 on error.  A non-negative return value
@@ -115,6 +122,7 @@ void usage(const char *argv0) {
     "  -v, --version          Show version and exit\n"
     , bname
   );
+  locplug();
 }
 
 int open_headers_file(const char * dest, const char *stem)
@@ -351,6 +359,7 @@ int main(int argc, char *argv[])
       case 'v': // Version
         printf("rawspec %s\n", STRINGIFY(RAWSPEC_VERSION));
         printf("librawspec %s\n", rawspec_version_string());
+        locplug();
         return 0;
         break;
 

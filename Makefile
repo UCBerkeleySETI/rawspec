@@ -59,7 +59,7 @@ endif
 # Possibly (re-)build rawspec_version.h
 $(shell $(SHELL) gen_version.sh)
 
-all: rawspec rawspectest fileiotest locplug
+all: rawspec rawspectest fileiotest
 
 # Dependencoes are simple enough to manage manually (for now)
 fileiotest.o: rawspec.h
@@ -103,12 +103,9 @@ fileiotest: fileiotest.o
 rawspec_fbutils: rawspec_fbutils.c rawspec_fbutils.h
 	$(CC) -o $@ -DFBUTILS_TEST -ggdb -O0 $< -lm
 
-locplug: locplug.c
-	$(CC) -o locplug locplug.c -lm
-
 install: rawspec rawspec.h librawspec.so
 	mkdir -p $(BINDIR)
-	cp -p rawspec locplug $(BINDIR)
+	cp -p rawspec $(BINDIR)
 	mkdir -p $(INCDIR)
 	cp -p rawspec.h $(INCDIR)
 	cp -p rawspec_fbutils.h $(INCDIR)
