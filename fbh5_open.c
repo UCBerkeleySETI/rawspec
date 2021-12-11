@@ -21,7 +21,6 @@ void fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_p
     
     // Filter identities:
     H5Z_filter_t filter_id_bitshuffle = 32008;
-    H5Z_filter_t filter_id_lz4 = 32004;
 
     // Bitshuffle options:
     unsigned bitshuffle_opts[] = {0, 2};
@@ -44,14 +43,6 @@ void fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_p
         printf("*** fbhf_open: Filter bitshuffle is NOT available !!\n");
     else
         printf("fbhf_open: Filter bitshuffle is available.\n");
-    
-    /*
-     * Make sure that the LZ4 filter is available.
-     */
-    if (H5Zfilter_avail(filter_id_lz4) <= 0)
-       printf("*** fbhf_open: Filter LZ4 is NOT available !!\n");
-    else
-        printf("fbhf_open: Filter LZ4 is available.\n");
     
     /*
      * Validate fb_hdr: nifs, nbits, nfpc, nchans.
@@ -145,10 +136,7 @@ void fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_p
     /*
      * Add the Bitshuffle and LZ4 filters to the dataset creation property list.
      */
-    status = H5Pset_filter(dcpl, filter_id_bitshuffle, H5Z_FLAG_MANDATORY, 0, bitshuffle_opts); // Bitshuffle Filter
-    if(status < 0)
-        fbh5_oops(__FILE__, __LINE__, "fbh5_open: H5Pset_filter FAILED");
-    status = H5Pset_filter(dcpl, filter_id_lz4, H5Z_FLAG_MANDATORY, 0, NULL); // LZ4 Filter
+    status = H5Pset_filter(dcpl, filter_id_bitshuffle, H5Z_FLAG_MANDATORY, 2, bitshuffle_opts); // Bitshuffle Filter
     if(status < 0)
         fbh5_oops(__FILE__, __LINE__, "fbh5_open: H5Pset_filter FAILED");
     
