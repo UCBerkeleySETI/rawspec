@@ -7,7 +7,8 @@ DATADIR = $(PREFIX)/share
 
 # Begin HDF5 definitions
 INCDIR_H5= /usr/include/hdf5/serial/
-LIBDIR_h5= /usr/lib/x86_64-linux-gnu/hdf5/serial/
+#LIBDIR_h5= /usr/lib/x86_64-linux-gnu/hdf5/serial/
+LIBDIR_h5= /usr/local/lib
 LIBHDF5= :libhdf5.so
 LIBHDF5_HL= :libhdf5_hl.so
 LINKH5:= -L$(LIBDIR) -l $(LIBHDF5) -l $(LIBHDF5_HL)
@@ -58,7 +59,7 @@ endif
 # Possibly (re-)build rawspec_version.h
 $(shell $(SHELL) gen_version.sh)
 
-all: rawspec rawspectest fileiotest
+all: rawspec rawspectest fileiotest locplug
 
 # Dependencoes are simple enough to manage manually (for now)
 fileiotest.o: rawspec.h
@@ -102,9 +103,12 @@ fileiotest: fileiotest.o
 rawspec_fbutils: rawspec_fbutils.c rawspec_fbutils.h
 	$(CC) -o $@ -DFBUTILS_TEST -ggdb -O0 $< -lm
 
+locplug: locplug.c
+	$(CC) -o locplug locplug.c -lm
+
 install: rawspec rawspec.h librawspec.so
 	mkdir -p $(BINDIR)
-	cp -p rawspec $(BINDIR)
+	cp -p rawspec locplug $(BINDIR)
 	mkdir -p $(INCDIR)
 	cp -p rawspec.h $(INCDIR)
 	cp -p rawspec_fbutils.h $(INCDIR)
