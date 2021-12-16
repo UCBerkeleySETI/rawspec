@@ -14,14 +14,15 @@
 #include <sys/mman.h>
 #include <getopt.h>
 #include <sys/sendfile.h>
+#include <hdf5/serial/H5pubconf.h>
 
 #include "rawspec.h"
 #include "rawspec_file.h"
 #include "rawspec_socket.h"
-#include "rawspec_callback.h"
 #include "rawspec_version.h"
 #include "rawspec_rawutils.h"
 #include "rawspec_fbutils.h"
+#include "fbh5_defs.h"
 
 #define ELAPSED_NS(start,stop) \
   (((int64_t)stop.tv_sec-start.tv_sec)*1000*1000*1000+(stop.tv_nsec-start.tv_nsec))
@@ -33,6 +34,11 @@
 #ifndef DEBUG_CALLBACKS
 #define DEBUG_CALLBACKS (0)
 #endif
+
+void locplug() {
+    fprintf(stderr,"\nThe plugin directory is %s.\n", H5_DEFAULT_PLUGINDIR);
+    fprintf(stderr,"Please copy the bitshuffle plugin to that directory if you haven't already done so.\n\n");
+}
 
 // Reads `bytes_to_read` bytes from `fd` into the buffer pointed to by `buf`.
 // Returns the total bytes read or -1 on error.  A non-negative return value
@@ -65,8 +71,10 @@ static struct option long_opts[] = {
   {"dest",    1, NULL, 'd'},
   {"ffts",    1, NULL, 'f'},
   {"gpu",     1, NULL, 'g'},
+  {"help",    0, NULL, 'h'},
   {"hdrs",    0, NULL, 'H'},
-  {"ICS",     1, NULL, 'I'},
+  {"ics",     1, NULL, 'i'},
+  {"fbh5",    0, NULL, 'j'},
   {"nchan",   1, NULL, 'n'},
   {"outidx",  1, NULL, 'o'},
   {"pols",    1, NULL, 'p'},
@@ -74,8 +82,8 @@ static struct option long_opts[] = {
   {"schan",   1, NULL, 's'},
   {"splitant",0, NULL, 'S'},
   {"ints",    1, NULL, 't'},
-  {"help",    0, NULL, 'h'},
   {"version", 0, NULL, 'v'},
+  {"debug",   0, NULL, 'z'},
   {0,0,0,0}
 };
 
@@ -98,19 +106,22 @@ void usage(const char *argv0) {
     "  -H, --hdrs             Save headers to separate file\n"
     "  -i, --ics=W1[,W2...]   Output incoherent-sum (exclusively, unless with -S)\n"
     "                         specifying per antenna-weights or a singular, uniform weight\n"
+    "  -j, --fbh5             Format output Filterbank files as FBH5 (.h5) instead of SIGPROC(.fil)\n"
     "  -n, --nchan=N          Number of coarse channels to process [all]\n"
     "  -o, --outidx=N         First index number for output files [0]\n"
     "  -p  --pols={1|4}[,...] Number of output polarizations [1]\n"
     "                         1=total power, 4=cross pols, -4=full stokes\n"
     "  -r, --rate=GBPS        Desired net data rate in Gbps [6.0]\n"
     "  -s, --schan=C          First coarse channel to process [0]\n"
-    "  -t, --ints=N1[,N2...]  Spectra to integrate [51, 128, 3072]\n"
     "  -S, --splitant         Split output into per antenna files\n"
+    "  -t, --ints=N1[,N2...]  Spectra to integrate [51, 128, 3072]\n"
+    "  -z, --debug            Turn on selected debug output\n"
     "\n"
     "  -h, --help             Show this message\n"
     "  -v, --version          Show version and exit\n"
     , bname
   );
+  locplug();
 }
 
 int open_headers_file(const char * dest, const char *stem)
@@ -149,9 +160,7 @@ int main(int argc, char *argv[])
   int si; // Indexes the stems
   int fi; // Indexes the files for a given stem
   int bi; // Counts the blocks processed for a given file
-  int i;
-int j, k;
-char tmp[16];
+  int i, j, k;
   void * pv;
   int fdin;
   int fdhdrs = -1;
@@ -192,6 +201,12 @@ char tmp[16];
   int input_conjugated = -1;
   int only_output_ics = 0;
 
+  // Selected dynamic debugging
+  int flag_debugging = 0;
+
+  // FBH5 fields
+  int flag_fbh5_output = 0;
+
   // For net data rate rate calculations
   double rate = 6.0;
   double sum_inv_na;
@@ -199,17 +214,28 @@ char tmp[16];
   uint64_t total_bytes = 0;
   uint64_t total_ns = 0;
 
+  // Show librawspec version on startup
+  printf("rawspec using librawspec %s\n", rawspec_version_string());
+
   // Init rawspec context
   memset(&ctx, 0, sizeof(ctx));
   ctx.Npolout[0] = 1; // others will be set later
 
   // Parse command line.
   argv0 = argv[0];
-  while((opt=getopt_long(argc,argv,"a:b:d:f:g:HI:i:n:o:p:r:Ss:t:hv",long_opts,NULL))!=-1) {
+  while((opt=getopt_long(argc, argv, "a:b:d:f:g:HSjzs:i:n:o:p:r:t:hv", long_opts, NULL)) != -1) {
     switch (opt) {
       case 'h': // Help
         usage(argv0);
         return 0;
+        break;
+
+      case 'j': // FBH5 output format requested
+        flag_fbh5_output = 1;
+        break;
+
+      case 'z': // Selected dynamic debugging
+        flag_debugging = 1;
         break;
 
       case 'a': // Antenna selection to process
@@ -258,8 +284,9 @@ char tmp[16];
         save_headers = 1;
         break;
 
-      case 'i': // Incoherently sum exclusively
-        only_output_ics = 1;
+      case 'i': // Incoherent sum
+        printf("writing output for incoherent sum over all antennas\n");
+        only_output_ics = 1; // will get reset if also splitting antennas
         ctx.incoherently_sum = 1;
         ctx.Naws = 1;
         // Count number of 
@@ -331,6 +358,7 @@ char tmp[16];
       case 'v': // Version
         printf("rawspec %s\n", STRINGIFY(RAWSPEC_VERSION));
         printf("librawspec %s\n", rawspec_version_string());
+        locplug();
         return 0;
         break;
 
@@ -349,12 +377,25 @@ char tmp[16];
 
   // If no stems given, print usage and exit
   if(argc == 0) {
+    fprintf(stderr, "error: a file stem must be specified\n");
     usage(argv0);
     return 1;
   }
 
-  // Show librawspec version on startup
-  printf("rawspec using librawspec %s\n", rawspec_version_string());
+  // Currently, there are potential conflicts in running -i and -S concurrently.
+  if(ctx.incoherently_sum == 1 && per_ant_out == 1) {
+    fprintf(stderr, "PLEASE NOTE: Currently, there are potential conflicts in running -i and -S concurrently.\n");
+    fprintf(stderr, "PLEASE NOTE: -S (split antennas) is being ignored.\n");
+    per_ant_out = 0;
+  }
+
+  // If writing output files, show the format used
+  if(output_mode == RAWSPEC_FILE) {
+      if(flag_fbh5_output)
+          printf("writing output files in FBH5 format\n");
+      else
+          printf("writing output files in SIGPROC Filterbank format\n");
+  }
 
   // If schan is non-zero, nchan must be too
   if(schan != 0 && nchan == 0) {
@@ -420,9 +461,11 @@ char tmp[16];
   // Init user_data to be array of callback data structures
   ctx.user_data = &cb_data;
 
-  // Zero-out the callback data sructures
+  // Zero-out the callback data sructures.
+  // Turn on dynamic debugging if requested.
   for(i=0; i<ctx.No; i++) {
     memset(&cb_data[i], 0, sizeof(callback_data_t));
+    cb_data[i].debug_callback = flag_debugging;
   }
 
   // Init pre-defined filterbank headers and save rate
@@ -438,8 +481,15 @@ char tmp[16];
     cb_data[i].Nant          = 1;
 
     // Init callback file descriptors to sentinal values
-    cb_data[i].fd = malloc(sizeof(int)*1);
+    cb_data[i].fd = malloc(sizeof(int));
     cb_data[i].fd[0] = -1;
+    if(flag_fbh5_output) {
+        cb_data[i].flag_fbh5_output = 1;
+        cb_data[i].fbh5_ctx_ant = malloc(sizeof(fbh5_context_t));
+        cb_data[i].fbh5_ctx_ant[0].active = 0;
+    } else {
+        cb_data[i].flag_fbh5_output = 0;
+    }
   }
 
   // Set output mode specific callback function
@@ -574,20 +624,42 @@ char tmp[16];
             // close previous
             for(i=0; i<ctx.No; i++) {
               if (cb_data[i].Nant != raw_hdr.nants){
-
+                // For each antenna .....
                 for(j=0; j<cb_data[i].Nant; j++) {
-                  if(cb_data[i].fd[j] != -1) {
-                    close(cb_data[i].fd[j]);
-                    cb_data[i].fd[j] = -1;
+                  // If output file for antenna j is still open, close it.
+                  if(flag_fbh5_output) {
+                      if(cb_data[i].fbh5_ctx_ant[j].active) {
+                        fbh5_close(&(cb_data[i].fbh5_ctx_ant[j]), cb_data[i].debug_callback);
+                      }
+                  } else {
+                      if(cb_data[i].fd[j] != -1) {
+                        close(cb_data[i].fd[j]);
+                        cb_data[i].fd[j] = -1;
+                      }
                   }
                 }
-                free(cb_data[i].fd);
+                // Free all output file resources
+                if(flag_fbh5_output) {
+                    free(cb_data[i].fbh5_ctx_ant);
+                } else {
+                    free(cb_data[i].fd);
+                }
 
                 cb_data[i].per_ant_out = per_ant_out;
                 // Re-init callback file descriptors to sentinal values
-                cb_data[i].fd = malloc(sizeof(int)*raw_hdr.nants);
-                for(j=0; j<raw_hdr.nants; j++){
-                  cb_data[i].fd[j] = -1;
+                // Memory is allocated by the output files are not yet open.
+                if(flag_fbh5_output) {
+                    cb_data[i].flag_fbh5_output = 1;
+                    cb_data[i].fbh5_ctx_ant = malloc(sizeof(fbh5_context_t) * raw_hdr.nants);
+                    for(j=0; j<raw_hdr.nants; j++) {
+                        cb_data[i].fbh5_ctx_ant[j].active = 0;
+                    }
+                } else {
+                    cb_data[i].flag_fbh5_output = 0;
+                    cb_data[i].fd = malloc(sizeof(int)*raw_hdr.nants);
+                    for(j=0; j<raw_hdr.nants; j++){
+                      cb_data[i].fd[j] = -1;
+                    }
                 }
               }
             }
@@ -596,7 +668,6 @@ char tmp[16];
             printf("Ignoring --splitant flag in network mode\n");
           }
           if(only_output_ics){
-            printf("Cancelling exclusivity of ICS output due to --splitant.\n");
             only_output_ics = 0;
           }
         }
@@ -702,7 +773,8 @@ char tmp[16];
               cb_data[i].h_icsbuf = ctx.h_icsbuf[i];
               cb_data[i].Nds = ctx.Nds[i];
               cb_data[i].Nf  = ctx.Nts[i] * ctx.Nc;
-              cb_data[i].debug_callback = DEBUG_CALLBACKS;
+              if(! flag_debugging)
+                cb_data[i].debug_callback = DEBUG_CALLBACKS;
               cb_data[i].Nant = raw_hdr.nants;
             }
 #if 0
@@ -717,8 +789,9 @@ char tmp[16];
           rawspec_reset_integration(&ctx);
         }
 
-        // Update filterbank headers based on raw params and Nts etc.
+        // Open output filterbank files and write the header.
         for(i=0; i<ctx.No; i++) {
+          // Update callback data based on raw params and Nts etc.
           // Same for all products
           cb_data[i].fb_hdr.telescope_id = fb_telescope_id(raw_hdr.telescop);
           cb_data[i].fb_hdr.src_raj = raw_hdr.ra;
@@ -734,7 +807,7 @@ char tmp[16];
           // raw_hdr.obsnchan is total for all nants
           cb_data[i].fb_hdr.foff =
             raw_hdr.obsbw/(raw_hdr.obsnchan/raw_hdr.nants)/ctx.Nts[i];
-          // This computes correct fch1 for odd or even number of fine channels
+          // This computes correct first fine channel frequency (fch1) for odd or even number of fine channels.
           // raw_hdr.obsbw is always for single antenna
           // raw_hdr.obsnchan is total for all nants
           cb_data[i].fb_hdr.fch1 = raw_hdr.obsfreq
@@ -743,33 +816,50 @@ char tmp[16];
             - (ctx.Nts[i]/2) * cb_data[i].fb_hdr.foff
             + (schan % (raw_hdr.obsnchan/raw_hdr.nants)) * // Adjust for schan
                 raw_hdr.obsbw / (raw_hdr.obsnchan/raw_hdr.nants);
-          cb_data[i].fb_hdr.nchans = ctx.Nc * ctx.Nts[i];
-          cb_data[i].fb_hdr.tsamp = raw_hdr.tbin * ctx.Nts[i] * ctx.Nas[i];
+          cb_data[i].fb_hdr.nfpc = ctx.Nts[i];  // Number of fine channels per coarse channel.
+          cb_data[i].fb_hdr.nchans = ctx.Nc * ctx.Nts[i] / raw_hdr.nants; // Number of fine channels.
+          cb_data[i].fb_hdr.tsamp = raw_hdr.tbin * ctx.Nts[i] * ctx.Nas[i]; // Time integration sampling rate in seconds.
 
           if(output_mode == RAWSPEC_FILE) {
-            // Write filterbank header to output file (handles both per-antenna output and single file output)
-            if(!only_output_ics && 
-                open_output_file_per_antenna_and_write_header(&cb_data[i], dest, argv[si], outidx + i) != 0){
-              return 1; // give up
+            // Open one or more output files.
+            // Handle both per-antenna output and single file output.
+            if(!only_output_ics) {
+              // Open nants=0 case or open all of the antennas.
+              int retcode = open_output_file_per_antenna_and_write_header(&cb_data[i], 
+                                                               dest, 
+                                                               argv[si], 
+                                                               outidx + i);
+              if(retcode != 0)
+                return 1; // give up
+              if(cb_data->debug_callback)
+                  printf("rawspec-main: open_output_file_per_antenna_and_write_header - successful\n");
             }
-
-            if(ctx.incoherently_sum){
-              cb_data[i].fd_ics = open_output_file(dest, ics_output_stem, outidx + i);
+            // Handle ICS.
+            if(ctx.incoherently_sum) {
+              cb_data[i].fd_ics = open_output_file(&cb_data[i], 
+                                                   dest, 
+                                                   ics_output_stem, 
+                                                   outidx + i,
+                                                   /* ICS */ -1);
               if(cb_data[i].fd_ics == -1) {
                 // If we can't open this output file, we probably won't be able to
                 // open any more output files, so print message and bail out.
                 fprintf(stderr, "cannot open output file, giving up\n");
                 return 1; // Give up
+              if(cb_data->debug_callback)
+                  printf("rawspec-main: open_output_file - successful\n");
               }
 
-              cb_data[i].fb_hdr.nchans /= raw_hdr.nants;
-              // Write filterbank header to output file
-              fb_fd_write_header(cb_data[i].fd_ics, &cb_data[i].fb_hdr);
-              cb_data[i].fb_hdr.nchans *= raw_hdr.nants;
-            }
-          }
-        }
+              // Write filterbank header to SIGPROC output ICS file.
+              // If FBH5, the header was already written by fbh5_open().
+              if(! flag_fbh5_output) {
+                fb_fd_write_header(cb_data[i].fd_ics, &cb_data[i].fb_hdr);
+              }
+            } // if(ctx.incoherently_sum)
+          } // if(output_mode == RAWSPEC_FILE)
+        } // for(i=0; i<ctx.No; i++)
 
+        // Save header information if requested.
         if(save_headers) {
           // Open headers output file
           fdhdrs = open_headers_file(dest, argv[si]);
@@ -778,6 +868,7 @@ char tmp[16];
           }
         }
 
+        // Output to socket initialisation.
         if(output_mode == RAWSPEC_NET) {
           // Apportion net data rate to output products proportional to their
           // data volume.  Interestingly, data volume is proportional to the
@@ -946,15 +1037,29 @@ char tmp[16];
     // Close output files
     if(output_mode == RAWSPEC_FILE) {
       for(i=0; i<ctx.No; i++) {
+        // Antennas
         for(j=0; j < (cb_data[i].per_ant_out ? cb_data[i].Nant : 1); j++) {
-          if(cb_data[i].fd[j] != -1) {
-            close(cb_data[i].fd[j]);
-            cb_data[i].fd[j] = -1;
-          }
+          if(flag_fbh5_output) {
+              if(cb_data[i].fbh5_ctx_ant[j].active) {
+                fbh5_close(&(cb_data[i].fbh5_ctx_ant[j]), cb_data[i].debug_callback);
+              }
+          } else {
+              if(cb_data[i].fd[j] != -1) {
+                close(cb_data[i].fd[j]);
+                cb_data[i].fd[j] = -1;
+              }
+           }
         }
-        if(cb_data[i].fd_ics != -1) {
-          close(cb_data[i].fd_ics);
-          cb_data[i].fd_ics = -1;
+        // ICS
+        if(flag_fbh5_output) {
+            if(cb_data[i].fbh5_ctx_ics.active) {
+                fbh5_close(&(cb_data[i].fbh5_ctx_ics), cb_data[i].debug_callback);
+            }
+        } else {
+            if(cb_data[i].fd_ics != -1) {
+              close(cb_data[i].fd_ics);
+              cb_data[i].fd_ics = -1;
+            }
         }
       }
     }

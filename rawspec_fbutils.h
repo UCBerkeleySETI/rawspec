@@ -90,7 +90,7 @@ typedef struct {
   double fch1;
   // filterbank channel bandwidth (MHz)
   double foff;
-  // number of filterbank channels
+  // number of fine filterbank channels (not coarse channels)
   int nchans;
   // total number of beams
   int nbeams;
@@ -108,6 +108,12 @@ typedef struct {
   char source_name[81];
   // the name of the original data file
   char rawdatafile[81];
+
+  // ------------------------ new for FBH5 ------------------------------------
+  // Number of fine channels per coarse channel
+  // E.g. turbo_seti will compute the number of coarse channels = nchans / nfpc
+  int nfpc;
+  
 } fb_hdr_t;
 
 #ifdef __cplusplus
