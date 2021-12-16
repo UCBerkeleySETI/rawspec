@@ -37,7 +37,6 @@
 
 void locplug() {
     fprintf(stderr,"\nThe plugin directory is %s.\n", H5_DEFAULT_PLUGINDIR);
-    fprintf(stderr,"Found the name in the H5pubconf.h include file.\n");
     fprintf(stderr,"Please copy the bitshuffle plugin to that directory if you haven't already done so.\n\n");
 }
 
