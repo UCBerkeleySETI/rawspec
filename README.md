@@ -12,21 +12,34 @@ packet is a small, self-contained Filterbank "file".
 
 ```
 $ rawspec -h
+rawspec using librawspec 3.0+14@g2383538 cuFFT 10.2.1.245
 Usage: rawspec [options] STEM [...]
 
 Options:
-  -d, --dest=DEST       Destination directory or host:port
-  -f, --ffts=N1[,N2...] FFT lengths
-  -H, --hdrs            Save headers to separate file
-  -n, --nchan=N         Number of coarse channels to process [all]
-  -p  --pols={1|4}      Number of output polarizations [1]
-                        1=total power, 4=cross pols
-  -r, --rate=GBPS       Desired net data rate in Gbps [6.0]
-  -s, --schan=C         First coarse channel to process [0]
-  -t, --ints=N1[,N2...] Spectra to integrate
+  -a, --ant=ANT          The 0-indexed antenna to exclusively process [-1]
+  -b, --batch=BC         Batch process BC coarse-channels at a time (1: auto, <1: disabled) [0]
+  -d, --dest=DEST        Destination directory or host:port
+  -f, --ffts=N1[,N2...]  FFT lengths [1048576, 8, 1024]
+  -g, --GPU=IDX          Select GPU device to use [0]
+  -H, --hdrs             Save headers to separate file
+  -i, --ics=W1[,W2...]   Output incoherent-sum (exclusively, unless with -S)
+                         specifying per antenna-weights or a singular, uniform weight
+  -j, --fbh5             Format output Filterbank files as FBH5 (.h5) instead of SIGPROC(.fil)
+  -n, --nchan=N          Number of coarse channels to process [all]
+  -o, --outidx=N         First index number for output files [0]
+  -p  --pols={1|4}[,...] Number of output polarizations [1]
+                         1=total power, 4=cross pols, -4=full stokes
+  -r, --rate=GBPS        Desired net data rate in Gbps [6.0]
+  -s, --schan=C          First coarse channel to process [0]
+  -S, --splitant         Split output into per antenna files
+  -t, --ints=N1[,N2...]  Spectra to integrate [51, 128, 3072]
+  -z, --debug            Turn on selected debug output
 
-  -h, --help            Show this message
-  -v, --version         Show version and exit
+  -h, --help             Show this message
+  -v, --version          Show version and exit
+
+The plugin directory is /usr/local/hdf5/lib/plugin.
+Please copy the bitshuffle plugin to that directory if you haven't already done so.
 ```
 
 # Example
@@ -120,7 +133,7 @@ user    1m29.260s
 sys     1m36.232s
 ```
 
-This produces the following outputs:
+This produces the following output files:
 
 ```
 $ ls -1sh *.fil
@@ -155,12 +168,4 @@ Fri May  4 15:57:16 2018
 
 # Installation
 
-```
-$ git clone https://github.com/UCBerkeleySETI/rawspec.git
-
-$ cd rawspec
-
-$ make
-
-$ sudo make install
-```
+The latest release notice for installation instructions.
