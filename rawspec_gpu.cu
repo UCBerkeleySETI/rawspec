@@ -1,6 +1,7 @@
 #include "rawspec.h"
 #include "rawspec_version.h"
 
+#include <stdint.h>
 #include <cufft.h>
 #include <cufftXt.h>
 #include <helper_cuda.h>

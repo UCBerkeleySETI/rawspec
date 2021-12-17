@@ -6,12 +6,38 @@ LIBDIR = $(PREFIX)/lib
 DATADIR = $(PREFIX)/share
 
 # Begin HDF5 definitions
-INCDIR_H5= /usr/include/hdf5/serial/
-#LIBDIR_h5= /usr/lib/x86_64-linux-gnu/hdf5/serial/
-LIBDIR_h5= /usr/local/lib
+
+# do we have pkg-config? And if so, do we have hdf5 libraries installed?
+HAVEPKG = $(shell which pkg-config > /dev/null && echo yes)
+ifeq ($(HAVEPKG),yes)
+  HAVEHDF5 = $(shell pkg-config --exists hdf5 && echo yes)
+endif
+
+# depending on the above questions use, in order of priority:
+# 1. User supplied values for INCDIR_H5 and LIBDIR_H5
+# 2. Whatever pkg-config supplies for those variables 
+# 3. Failing either the above, default values /usr/local/include and /usr/local/lib
+
+ifeq ($(INCDIR_H5),)
+  ifeq ($(HAVEHDF5),yes)
+    INCDIR_H5 = $(shell pkg-config --cflags hdf5)
+  else
+    INCDIR_H5 = -I/usr/local/include
+  endif
+endif
+    
+ifeq ($(LIBDIR_H5),)
+  ifeq ($(HAVEHDF5),yes)
+    LIBDIR_H5 = $(shell pkg-config --libs hdf5)
+  else
+    LIBDIR_H5 = -L/usr/local/lib
+  endif
+endif
+
 LIBHDF5= :libhdf5.so
 LIBHDF5_HL= :libhdf5_hl.so
-LINKH5:= -L$(LIBDIR) -l $(LIBHDF5) -l $(LIBHDF5_HL)
+LINKH5:= $(INCDIR_H5) $(LIBDIR_H5) -l $(LIBHDF5) -l $(LIBHDF5_HL)
+
 # End HDF5 definitions
 
 CUDA_DIR ?= $(CUDA_ROOT)
