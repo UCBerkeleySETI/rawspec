@@ -18,6 +18,7 @@ int open_output_file(callback_data_t *cb_data, const char * dest, const char *st
   const char * basename;
   char fname[PATH_MAX+1];
   char fileext[3];
+  int retcode;
 
   // If dest is given and it's not empty
   if(cb_data->flag_fbh5_output)
@@ -44,9 +45,11 @@ int open_output_file(callback_data_t *cb_data, const char * dest, const char *st
       // If antenna_index < 0, then use the ICS context;
       // Else, use the indicated antenna context.
       if(antenna_index < 0)
-          fbh5_open(&(cb_data->fbh5_ctx_ics), &(cb_data->fb_hdr), fname, cb_data->debug_callback);
+          retcode = fbh5_open(&(cb_data->fbh5_ctx_ics), &(cb_data->fb_hdr), fname, cb_data->debug_callback);
       else
-          fbh5_open(&(cb_data->fbh5_ctx_ant[antenna_index]), &(cb_data->fb_hdr), fname, cb_data->debug_callback);
+          retcode = fbh5_open(&(cb_data->fbh5_ctx_ant[antenna_index]), &(cb_data->fb_hdr), fname, cb_data->debug_callback);
+      if(retcode != 0)
+          return -1;  // Indicate that fbh5_open failed.
       if(cb_data->debug_callback)
           printf("open_output_file: fbh5_open(%s) successful\n", fname);
       return ENABLER_FD_FOR_FBH5;
@@ -95,17 +98,20 @@ int open_output_file_per_antenna_and_write_header(callback_data_t *cb_data, cons
 void * dump_file_thread_func(void *arg)
 {
   callback_data_t * cb_data = (callback_data_t *)arg;
+  int retcode;
 
   // Single antenna case
   if(cb_data->fd && cb_data->h_pwrbuf && (cb_data->Nant == 1)) {
       if(cb_data->debug_callback)
         printf("dump_file_thread_func: write for nants=0\n");
       if(cb_data->flag_fbh5_output) {
-        fbh5_write(&(cb_data->fbh5_ctx_ant[0]),
+        retcode = fbh5_write(&(cb_data->fbh5_ctx_ant[0]),
                    &(cb_data->fb_hdr), 
                    cb_data->h_pwrbuf, 
                    cb_data->h_pwrbuf_size,
                    cb_data->debug_callback);
+        if(retcode != 0)
+            cb_data->output_thread_valid = 0;
       } else {
         write(cb_data->fd[0], 
               cb_data->h_pwrbuf, 
@@ -130,11 +136,13 @@ void * dump_file_thread_func(void *arg)
             if(cb_data->debug_callback)
                 printf("dump_file_thread_func: write for antenna %ld-%ld-%ld\n", k, j, i);
             if(cb_data->flag_fbh5_output) {
-                fbh5_write(&(cb_data->fbh5_ctx_ant[i]),
+                retcode = fbh5_write(&(cb_data->fbh5_ctx_ant[i]),
                            &(cb_data->fb_hdr), 
                            cb_data->h_pwrbuf + i * ant_stride + j * pol_stride + k * spectra_stride, 
                            ant_stride * sizeof(float),
                            cb_data->debug_callback);
+                if(retcode != 0)
+                    cb_data->output_thread_valid = 0;
             } else {
                 write(cb_data->fd[i], 
                       cb_data->h_pwrbuf + i * ant_stride + j * pol_stride + k * spectra_stride, 
@@ -151,11 +159,13 @@ void * dump_file_thread_func(void *arg)
     if(cb_data->debug_callback)
         printf("dump_file_thread_func: write for ICS\n");
     if(cb_data->flag_fbh5_output) {
-        fbh5_write(&(cb_data->fbh5_ctx_ics),
+        retcode = fbh5_write(&(cb_data->fbh5_ctx_ics),
                    &(cb_data->fb_hdr), 
                    cb_data->h_icsbuf,
                    cb_data->h_pwrbuf_size/cb_data->Nant,
                    cb_data->debug_callback);
+        if(retcode != 0)
+            cb_data->output_thread_valid = 0;
     } else {
         write(cb_data->fd_ics, 
               cb_data->h_icsbuf, 

@@ -17,7 +17,7 @@
 /***
 	Main entry point.
 ***/
-void fbh5_write(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, void * p_buffer, size_t bufsize, int debug_callback) {
+int fbh5_write(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, void * p_buffer, size_t bufsize, int debug_callback) {
     herr_t      status;          // Status from HDF5 function call
     size_t      ntints;          // Number of time integrations in the current dump
     hid_t       filespace_id;    // Identifier for a copy of the dataspace 
@@ -53,7 +53,7 @@ void fbh5_write(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, void * p_buffe
     selection[2] = p_fb_hdr->nchans;
 
     if(debug_callback) {
-        printf("fbh5_write: dump %ld, offset=(%lld, %lld, %lld), selection=(%lld, %lld, %lld), filesize=(%lld, %lld, %lld)\n",
+        fbh5_info("fbh5_write: dump %ld, offset=(%lld, %lld, %lld), selection=(%lld, %lld, %lld), filesize=(%lld, %lld, %lld)\n",
                p_fbh5_ctx->dump_count,
                p_fbh5_ctx->offset_dims[0], 
                p_fbh5_ctx->offset_dims[1], 
@@ -72,8 +72,10 @@ void fbh5_write(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, void * p_buffe
      */
     status = H5Dset_extent(p_fbh5_ctx->dataset_id,    // Dataset handle
                            p_fbh5_ctx->filesz_dims);  // New dataset shape
-    if(status < 0)
-        fbh5_oops(__FILE__, __LINE__, "fbh5_write: H5Dset_extent/dataset_id FAILED");
+    if(status < 0) {
+        fbh5_error(__FILE__, __LINE__, "fbh5_write: H5Dset_extent/dataset_id FAILED");
+        return 1;
+    }
 
     /*
      * Reset dataspace extent to match current slab selection.
@@ -82,15 +84,19 @@ void fbh5_write(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, void * p_buffe
                                   NDIMS,                    // Repeat rank from previous API calls
                                   selection,                // New dataspace size shape
                                   p_fbh5_ctx->filesz_dims); // Max dataspace dimensions
-    if(status < 0)
-        fbh5_oops(__FILE__, __LINE__, "fbh5_write: H5Dset_extent/dataset_id FAILED");
+    if(status < 0) {
+        fbh5_error(__FILE__, __LINE__, "fbh5_write: H5Dset_extent/dataset_id FAILED");
+        return 1;
+    }
 
     /*
      * Get filespace.
      */
     filespace_id = H5Dget_space(p_fbh5_ctx->dataset_id);    // Dataset handle
-    if(filespace_id < 0)
-        fbh5_oops(__FILE__, __LINE__, "fbh5_write: H5Dget_space FAILED");
+    if(filespace_id < 0) {
+        fbh5_error(__FILE__, __LINE__, "fbh5_write: H5Dget_space FAILED");
+        return 1;
+    }
 
     /*
      * Select the filespace hyperslab.
@@ -101,8 +107,10 @@ void fbh5_write(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, void * p_buffe
                                  NULL,                      // Not "striding"
                                  selection,                 // Selection dimensions
                                  NULL);                     // Block parameter : default value
-    if(status < 0)
-        fbh5_oops(__FILE__, __LINE__, "fbh5_write: H5Sselect_hyperslab/filespace FAILED");
+    if(status < 0) {
+        fbh5_error(__FILE__, __LINE__, "fbh5_write: H5Sselect_hyperslab/filespace FAILED");
+        return 1;
+    }
 
     /*
      * Write out current time integration to the hyperslab.
@@ -113,8 +121,10 @@ void fbh5_write(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, void * p_buffe
                       filespace_id,             // Filespace_id
                       H5P_DEFAULT,              // Default data transfer properties
                       p_buffer);                // Buffer holding the data
-    if(status < 0)
-        fbh5_oops(__FILE__, __LINE__, "fbh5_write: H5Dwrite FAILED");
+    if(status < 0) {
+        fbh5_error(__FILE__, __LINE__, "fbh5_write: H5Dwrite FAILED");
+        return 1;
+    }
 
     /*
      * Point ahead for the next call to fbh5_write.
@@ -125,11 +135,13 @@ void fbh5_write(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, void * p_buffe
      * Close temporary filespace handle.
      */
     status = H5Sclose(filespace_id);
-    if(status < 0)
-        fbh5_oops(__FILE__, __LINE__, "fbh5_close H5Sclose/filespace_id FAILED\n");
+    if(status < 0) {
+        fbh5_error(__FILE__, __LINE__, "fbh5_close H5Sclose/filespace_id FAILED\n");
+        return 1;
+    }
     if(debug_callback) {
         cpu_time_used = ((double) (clock() - clock_1)) / CLOCKS_PER_SEC;
-        printf("fbh5_write: dump %ld E.T. = %.3f s\n", p_fbh5_ctx->dump_count, cpu_time_used);
+        fbh5_info("fbh5_write: dump %ld E.T. = %.3f s\n", p_fbh5_ctx->dump_count, cpu_time_used);
     }
 
     /*
@@ -140,5 +152,5 @@ void fbh5_write(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, void * p_buffe
     /*
      * Bye-bye.
      */
+    return 0;
 }
-

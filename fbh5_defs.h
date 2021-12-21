@@ -41,14 +41,16 @@
 /*
  * fbh5 API functions
  */
-void    fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_path, int debug_callback);
-void    fbh5_write(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, void * buffer, size_t bufsize, int debug_callback);
-void    fbh5_close(fbh5_context_t * p_fbh5_ctx, int debug_callback);
+int     fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_path, int debug_callback);
+int     fbh5_write(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, void * buffer, size_t bufsize, int debug_callback);
+int     fbh5_close(fbh5_context_t * p_fbh5_ctx, int debug_callback);
 
 /*
  * fbh5_util.c functions
  */
-void    fbh5_oops(char * srcfile, int linenum, char * msg);
+void    fbh5_info(const char * format, ...);
+void    fbh5_warning(char * srcfile, int linenum, char * msg);
+void    fbh5_error(char * srcfile, int linenum, char * msg);
 void    fbh5_set_str_attr(hid_t file_or_dataset_id, char * tag, char * value, int debug_callback);
 void    fbh5_set_dataset_double_attr(hid_t dataset_id, char * tag, double * p_value, int debug_callback);
 void    fbh5_set_dataset_int_attr(hid_t dataset_id, char * tag, int * p_value, int debug_callback);
@@ -57,4 +59,3 @@ void    fbh5_set_ds_label(fbh5_context_t * p_fbh5_ctx, char * label, int dims_in
 void    fbh5_show_context(char * caller, fbh5_context_t * p_fbh5_ctx);
 
 #endif
-
