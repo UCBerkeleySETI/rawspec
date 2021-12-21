@@ -7,7 +7,7 @@
 
 #include "fbh5_defs.h"
 
-#define LEN_TIMESTAMP 20
+#define LEN_TIMESTAMP 22
 
 
 /***
@@ -19,7 +19,7 @@ void get_timestamp(char * buffer) {
 
     time(&time_t_time);
     tm_struct = localtime(&time_t_time);
-    strftime(buffer, LEN_TIMESTAMP, "%Y-%m-%d_%H:%M:%S", tm_struct);
+    strftime(buffer, LEN_TIMESTAMP, "%Y-%m-%d_%H:%M:%S ", tm_struct);
 }
 
 
@@ -44,7 +44,7 @@ void fbh5_warning(char * srcfile, int linenum, char * msg) {
     char timestamp[LEN_TIMESTAMP];
     
     get_timestamp(timestamp);
-	fprintf(stderr, "%s FBH5-WARNING file %s line %d :: %s\n", timestamp, srcfile, linenum, msg);
+	fprintf(stderr, "%sFBH5-WARNING file %s line %d :: %s\n", timestamp, srcfile, linenum, msg);
 }
 
 
@@ -55,7 +55,7 @@ void fbh5_error(char * srcfile, int linenum, char * msg) {
     char timestamp[LEN_TIMESTAMP];
     
     get_timestamp(timestamp);
-	fprintf(stderr, "%s FBH5-ERROR file %s line %d :: %s\n", timestamp, srcfile, linenum, msg);
+	fprintf(stderr, "%sFBH5-ERROR file %s line %d :: %s\n", timestamp, srcfile, linenum, msg);
 }
 
 
