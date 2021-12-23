@@ -5,10 +5,10 @@ LFLAGS= -Wall
 OBJECTS= simon.o
 
 # FBH5 include directory:
-INCRAWSPEC= ../fbh5/
+INCRAWSPEC= ..
 
 # FBH5 library directory:
-FBH5_DIR= ../lib
+FBH5_DIR= ..
 FBH5_SO= :librawspec.so
 
 # --- All targets.

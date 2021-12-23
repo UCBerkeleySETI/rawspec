@@ -1,4 +1,3 @@
 
-export LD_LIBRARY_PATH=../lib
-simon
-
+export LD_LIBRARY_PATH=..
+./simon
