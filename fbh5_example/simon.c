@@ -2,7 +2,7 @@
  * simon.c                                                                     *
  * -------                                                                     *
  * Sample fbh5 application.                                .                   *
- *                                                                             *
+ * See Makefile for the integration with librawspec.so.                        *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 
