@@ -1,7 +1,7 @@
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
  * simon.c                                                                     *
  * -------                                                                     *
- * Write a Voyager 1 HDF5 file all in one go.              .                   *
+ * Sample fbh5 application.                                .                   *
  *                                                                             *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
