@@ -19,6 +19,10 @@ int fbh5_close(fbh5_context_t * p_fbh5_ctx, int debug_callback) {
     double      MiBstore;       // sz_store converted to MiB
     double      MiBlogical;     // sz_store converted to MiB
     
+    // Even if this function fails, mark the fbh5 context inactive.
+    p_fbh5_ctx->active = 0;
+
+    // Compute some stats while the dataset is still open.
     sz_store = H5Dget_storage_size(p_fbh5_ctx->dataset_id);
     MiBlogical = (double) p_fbh5_ctx->tint_size * (double) p_fbh5_ctx->offset_dims[0] / MILLION;
     
@@ -55,7 +59,6 @@ int fbh5_close(fbh5_context_t * p_fbh5_ctx, int debug_callback) {
         fbh5_error(__FILE__, __LINE__, "fbh5_close H5Fclose FAILED\n");
         return 1;
     }
-    p_fbh5_ctx->active = 0;
 
     /*
      * Closing statistics.

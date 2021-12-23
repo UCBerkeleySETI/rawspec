@@ -12,7 +12,7 @@ int CACHE_SPECS = 0;
 
 
 /***
-	Main entry point.
+	Open-file entry point.
 ***/
 int fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_path, int debug_callback) {
     hid_t       dcpl;               // Chunking handle - needed until dataset handle is produced
@@ -37,13 +37,18 @@ int fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_pa
     // 0 = take default like blimpy
     // 2 = use lz4 like blimpy
 
-    // Announce versions:   
-    H5get_libversion(&hdf5_majnum, &hdf5_minnum, &hdf5_relnum);
-    fbh5_info("fbh5_open: FBH5 path: %s\n", output_path);
-    fbh5_info("fbh5_open: HDF5 library version: %d.%d.%d\n", hdf5_majnum, hdf5_minnum, hdf5_relnum);
-    fbh5_info("fbh5_open: Creating dataspace dimensions using nifs=%d and nchans=%d\n",
-              p_fb_hdr->nifs,
-              p_fb_hdr->nchans);
+    // Default: Failed.
+    p_fbh5_ctx->active = 0;
+
+    // Announce versions:
+    if(debug_callback) {
+        fbh5_info("fbh5_open: FBH5 path: %s\n", output_path);
+        H5get_libversion(&hdf5_majnum, &hdf5_minnum, &hdf5_relnum);
+        fbh5_info("fbh5_open: HDF5 library version: %d.%d.%d\n", hdf5_majnum, hdf5_minnum, hdf5_relnum);
+        fbh5_info("fbh5_open: Creating dataspace dimensions using nifs=%d and nchans=%d\n",
+                p_fb_hdr->nifs,
+                p_fb_hdr->nchans);
+    }
     
     /*
      * Check whether or not the Bitshuffle filter is available.
@@ -52,7 +57,6 @@ int fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_pa
         fbh5_warning(__FILE__, __LINE__, "fbhf_open: Filter bitshuffle is NOT available\n");
     else {
         filter_available = 1;
-        fbh5_info("fbhf_open: Filter bitshuffle is available.\n");
     }
     
     /*
@@ -173,7 +177,8 @@ int fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_pa
         fbh5_error(__FILE__, __LINE__, "fbh5_open: H5Pset_chunk FAILED");
         return 1;
     }
-    fbh5_info("fbh5_open: Chunk dimensions = (%lld, %lld, %lld)\n", cdims[0], cdims[1], cdims[2]);
+    if(debug_callback)
+        fbh5_info("fbh5_open: Chunk dimensions = (%lld, %lld, %lld)\n", cdims[0], cdims[1], cdims[2]);
 
     /*
      * Add the Bitshuffle and LZ4 filters to the dataset creation property list.
