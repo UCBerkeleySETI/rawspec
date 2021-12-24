@@ -49,6 +49,9 @@ typedef struct {
   fbh5_context_t fbh5_ctx_ics;    // Singleton fbh5 ctx for ics
   fbh5_context_t * fbh5_ctx_ant;  // Pointer to array of fbh5 ctx for individual antennas
 
+  // Issue #47: need an operating status field.
+  int op_status;                  // 0=ok, 1=at least one error in output has occured.
+
 } callback_data_t;
 
 #endif // _RAWSPEC_CALLBACK_H_

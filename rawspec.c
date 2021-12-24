@@ -42,7 +42,7 @@ void show_more_info() {
     printf("HDF5 library version: %d.%d.%d\n", hdf5_majnum, hdf5_minnum, hdf5_relnum);
     printf("The HDF5 library plugin directory is %s.\n", H5_DEFAULT_PLUGINDIR);
     if (H5Zfilter_avail(FILTER_ID_BITSHUFFLE) <= 0) {
-        printf("WARNING: Plugin bitshuffle is NOT available\n");
+        printf("WARNING: Plugin bitshuffle is NOT available so compression is DISABLED!\n");
         printf("Please copy the bitshuffle plugin to the plugin directory.\n\n");
     } else
         printf("The bitshuffle plugin is available.\n\n");
@@ -229,6 +229,9 @@ int main(int argc, char *argv[])
   memset(&ctx, 0, sizeof(ctx));
   ctx.Npolout[0] = 1; // others will be set later
 
+  // Exit status after mallocs have occured.
+  int exit_status = 0;
+
   // Parse command line.
   argv0 = argv[0];
   while((opt=getopt_long(argc, argv, "a:b:d:f:g:HSjzs:i:n:o:p:r:t:hv", long_opts, NULL)) != -1) {
@@ -368,12 +371,14 @@ int main(int argc, char *argv[])
         printf("librawspec %s\n\n", rawspec_version_string());
         show_more_info();
         return 0;
+        break;
 
       case '?': // Command line parsing error
       default:
         printf("Unknown CLI option '%c'\n", opt);
         usage(argv0);
         return 1;
+        break;
     }
   }
 
@@ -635,11 +640,15 @@ int main(int argc, char *argv[])
                   // If output file for antenna j is still open, close it.
                   if(flag_fbh5_output) {
                       if(cb_data[i].fbh5_ctx_ant[j].active) {
-                        fbh5_close(&(cb_data[i].fbh5_ctx_ant[j]), cb_data[i].debug_callback);
+                        if(fbh5_close(&(cb_data[i].fbh5_ctx_ant[j]), cb_data[i].debug_callback) != 0)
+                          exit_status = 1;
                       }
                   } else {
                       if(cb_data[i].fd[j] != -1) {
-                        close(cb_data[i].fd[j]);
+                        if(close(cb_data[i].fd[j]) < 0) {
+                          fprintf(stderr, "SIGPROC-CLOSE-ERROR\n");
+                          exit_status = 1;
+                        }                      
                         cb_data[i].fd[j] = -1;
                       }
                   }
@@ -747,13 +756,6 @@ int main(int argc, char *argv[])
           ctx.h_blkbufs = NULL; // auto-allocate
           if(rawspec_initialize(&ctx)) {
             fprintf(stderr, "rawspec initialization failed\n");
-            close(fdin);
-            // Forget new dimensions
-            ctx.Nant = 0;
-            ctx.Nc   = 0;
-            ctx.Np   = 0;
-            ctx.Ntpb = 0;
-            ctx.Nbps = 0;
             return 1; // fixes issue #23
           } else {
             // printf("initialization succeeded for new block dimensions\n");
@@ -957,6 +959,8 @@ int main(int argc, char *argv[])
 #endif // VERBOSE
               rawspec_wait_for_completion(&ctx);
               rawspec_copy_blocks_to_gpu_and_start_processing(&ctx, ctx.Nb, expand4bps_to8bps, RAWSPEC_FORWARD_FFT);
+              if(cb_data->op_status != 0)
+                exit_status = 1;
             }
 
             // Increment block counter
@@ -1005,6 +1009,8 @@ int main(int argc, char *argv[])
 #endif // VERBOSE
           rawspec_wait_for_completion(&ctx);
           rawspec_copy_blocks_to_gpu_and_start_processing(&ctx, ctx.Nb, expand4bps_to8bps, RAWSPEC_FORWARD_FFT);
+          if(cb_data->op_status != 0)
+            exit_status = 1;
         }
 
         // Remember pktidx
@@ -1047,32 +1053,41 @@ int main(int argc, char *argv[])
         for(j=0; j < (cb_data[i].per_ant_out ? cb_data[i].Nant : 1); j++) {
           if(flag_fbh5_output) {
               if(cb_data[i].fbh5_ctx_ant[j].active) {
-                fbh5_close(&(cb_data[i].fbh5_ctx_ant[j]), cb_data[i].debug_callback);
+                if(fbh5_close(&(cb_data[i].fbh5_ctx_ant[j]), cb_data[i].debug_callback) != 0)
+                  exit_status = 1;
               }
           } else {
               if(cb_data[i].fd[j] != -1) {
-                close(cb_data[i].fd[j]);
+                if(close(cb_data[i].fd[j]) < 0) {
+                  fprintf(stderr, "SIGPROC-CLOSE-ERROR ant %d\n", j);
+                  exit_status = 1;
+                }
                 cb_data[i].fd[j] = -1;
               }
            }
         }
         // ICS
-        if(flag_fbh5_output) {
-            if(cb_data[i].fbh5_ctx_ics.active) {
-                fbh5_close(&(cb_data[i].fbh5_ctx_ics), cb_data[i].debug_callback);
-            }
-        } else {
-            if(cb_data[i].fd_ics != -1) {
-              close(cb_data[i].fd_ics);
-              cb_data[i].fd_ics = -1;
-            }
-        }
+        if(ctx.incoherently_sum) {
+          if(flag_fbh5_output) {
+              if(cb_data[i].fbh5_ctx_ics.active) {
+                  if(fbh5_close(&(cb_data[i].fbh5_ctx_ics), cb_data[i].debug_callback) != 0)
+                    exit_status = 1;
+              }
+          } else {
+              if(cb_data[i].fd_ics != -1) {
+                if(close(cb_data[i].fd_ics) < 0) {
+                  fprintf(stderr, "SIGPROC-CLOSE-ERROR cb %d ics\n", i);
+                  exit_status = 1;
+                }
+                cb_data[i].fd_ics = -1;
+              }
+          }
+        } // ctx.incoherently_sum
       }
     }
   } // each stem
 
   // Final cleanup
-  rawspec_reset_integration(&ctx); // Needed for issue #39 ?
   rawspec_cleanup(&ctx);
   if(ics_output_stem){
     free(ics_output_stem);
@@ -1106,5 +1121,7 @@ int main(int argc, char *argv[])
         total_packets, 8.0 * total_bytes / total_ns);
   }
 
-  return 0;
+  if(exit_status != 0)
+    fprintf(stderr, "*** At least one error occured during processing!\n");
+  return exit_status;
 }
