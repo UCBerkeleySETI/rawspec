@@ -957,10 +957,9 @@ int main(int argc, char *argv[])
               }
               fprintf(stderr, "\n");
 #endif // VERBOSE
-              rawspec_wait_for_completion(&ctx);
+              if(rawspec_wait_for_completion(&ctx) != 0)
+                return 1;
               rawspec_copy_blocks_to_gpu_and_start_processing(&ctx, ctx.Nb, expand4bps_to8bps, RAWSPEC_FORWARD_FFT);
-              if(cb_data->op_status != 0)
-                exit_status = 1;
             }
 
             // Increment block counter
@@ -1007,10 +1006,9 @@ int main(int argc, char *argv[])
           }
           fprintf(stderr, "\n");
 #endif // VERBOSE
-          rawspec_wait_for_completion(&ctx);
+          if(rawspec_wait_for_completion(&ctx) != 0)
+            return 1;
           rawspec_copy_blocks_to_gpu_and_start_processing(&ctx, ctx.Nb, expand4bps_to8bps, RAWSPEC_FORWARD_FFT);
-          if(cb_data->op_status != 0)
-            exit_status = 1;
         }
 
         // Remember pktidx

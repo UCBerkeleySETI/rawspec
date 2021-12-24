@@ -35,6 +35,7 @@ struct rawspec_context_s {
   unsigned int Nant;  // Number of antenna (coarse channels is a multiple of this)
   unsigned int Nc;    // Number of coarse channels
   unsigned int Ntpb;  // Number of time samples per block
+  unsigned int exit_soon; // 1:exit ASAP; 0:keep on going
 
   // In order to better manage device memory usage, chunks of channels are
   // processed at a time, instead of all channels. A value of 0 acts as a 

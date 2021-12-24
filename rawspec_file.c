@@ -45,10 +45,10 @@ int open_output_file(callback_data_t *cb_data, const char * dest, const char *st
       // If antenna_index < 0, then use the ICS context;
       // Else, use the indicated antenna context.
       if(antenna_index < 0)
-          cb_data->op_status = fbh5_open(&(cb_data->fbh5_ctx_ics), &(cb_data->fb_hdr), fname, cb_data->debug_callback);
+          cb_data->exit_soon = fbh5_open(&(cb_data->fbh5_ctx_ics), &(cb_data->fb_hdr), fname, cb_data->debug_callback);
       else
-          cb_data->op_status = fbh5_open(&(cb_data->fbh5_ctx_ant[antenna_index]), &(cb_data->fb_hdr), fname, cb_data->debug_callback);
-      if(cb_data->op_status != 0)
+          cb_data->exit_soon = fbh5_open(&(cb_data->fbh5_ctx_ant[antenna_index]), &(cb_data->fb_hdr), fname, cb_data->debug_callback);
+      if(cb_data->exit_soon != 0)
           return -1;  // Indicate that fbh5_open failed.
       if(cb_data->debug_callback)
           printf("open_output_file: fbh5_open(%s) successful\n", fname);
@@ -58,7 +58,7 @@ int open_output_file(callback_data_t *cb_data, const char * dest, const char *st
   // Open a SIGPROC Filterbank output file.
   fd = open(fname, O_WRONLY | O_CREAT | O_TRUNC, 0664);
   if(fd == -1) {
-    cb_data->op_status = 1;
+    cb_data->exit_soon = 1;
     perror(fname);
   } else {
     posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
@@ -86,7 +86,7 @@ int open_output_file_per_antenna_and_write_header(callback_data_t *cb_data, cons
       // If we can't open this output file, we probably won't be able to
       // open any more output files, so print message and bail out.
       fprintf(stderr, "cannot open output file, giving up\n");
-      cb_data->op_status = 1;
+      cb_data->exit_soon = 1;
       return 1; // Give up
     }
 
@@ -113,14 +113,14 @@ void * dump_file_thread_func(void *arg)
                    cb_data->h_pwrbuf_size,
                    cb_data->debug_callback);
         if(retcode != 0) {
-            cb_data->op_status = 1;
+            cb_data->exit_soon = 1;
             cb_data->output_thread_valid = 0;
         }
       } else { // SIGPROC Filterbank
         if(write(cb_data->fd[0], 
               cb_data->h_pwrbuf, 
               cb_data->h_pwrbuf_size) < 0) {
-            cb_data->op_status = 1;
+            cb_data->exit_soon = 1;
             cb_data->output_thread_valid = 0;
             fprintf(stderr, "SIGPROC-WRITE-ERROR\n");
         }
@@ -150,14 +150,14 @@ void * dump_file_thread_func(void *arg)
                            ant_stride * sizeof(float),
                            cb_data->debug_callback);
                 if(retcode != 0) {
-                    cb_data->op_status = 1;
+                    cb_data->exit_soon = 1;
                     cb_data->output_thread_valid = 0;
                 }
             } else { // SIGPROC Filterbank
                 if(write(cb_data->fd[i], 
                       cb_data->h_pwrbuf + i * ant_stride + j * pol_stride + k * spectra_stride, 
                       ant_stride * sizeof(float)) < 0) {
-                  cb_data->op_status = 1;
+                  cb_data->exit_soon = 1;
                   cb_data->output_thread_valid = 0;
                   fprintf(stderr, "SIGPROC-WRITE-ERROR\n");
                 }
@@ -179,14 +179,14 @@ void * dump_file_thread_func(void *arg)
                    cb_data->h_pwrbuf_size/cb_data->Nant,
                    cb_data->debug_callback);
         if(retcode != 0) {
-            cb_data->op_status = 1;
+            cb_data->exit_soon = 1;
             cb_data->output_thread_valid = 0;
         }
     } else { // SIGPROC Filterbank
         if(write(cb_data->fd_ics, 
               cb_data->h_icsbuf, 
               cb_data->h_pwrbuf_size/cb_data->Nant) < 0) {
-            cb_data->op_status = 1;
+            cb_data->exit_soon = 1;
             cb_data->output_thread_valid = 0;
             fprintf(stderr, "SIGPROC-WRITE-ERROR\n");
         }
@@ -208,6 +208,8 @@ void dump_file_callback(
   int rc;
   callback_data_t * cb_data =
     &((callback_data_t *)ctx->user_data)[output_product];
+  
+  ctx->exit_soon = cb_data->exit_soon;
 
   if(callback_type == RAWSPEC_CALLBACK_PRE_DUMP) {
     if(cb_data->output_thread_valid) {

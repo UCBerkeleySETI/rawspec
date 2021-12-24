@@ -1798,5 +1798,7 @@ int rawspec_wait_for_completion(rawspec_context * ctx)
     return 1;
   }
 
-  return 0;
+  if(ctx->exit_soon)
+    fprintf(stderr, "*** rawspec_wait_for_completion detected exit_soon enabled.\n*** Cannot continue!\n");
+  return ctx->exit_soon;
 }

@@ -74,6 +74,7 @@ int fbh5_write(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, void * p_buffer
                            p_fbh5_ctx->filesz_dims);  // New dataset shape
     if(status < 0) {
         fbh5_error(__FILE__, __LINE__, "fbh5_write: H5Dset_extent/dataset_id FAILED");
+        fbh5_show_context("fbh5_write", p_fbh5_ctx);
         p_fbh5_ctx->active = 0;
         return 1;
     }
@@ -87,6 +88,7 @@ int fbh5_write(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, void * p_buffer
                                   p_fbh5_ctx->filesz_dims); // Max dataspace dimensions
     if(status < 0) {
         fbh5_error(__FILE__, __LINE__, "fbh5_write: H5Dset_extent/dataset_id FAILED");
+        fbh5_show_context("fbh5_write", p_fbh5_ctx);
         p_fbh5_ctx->active = 0;
         return 1;
     }
@@ -97,6 +99,7 @@ int fbh5_write(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, void * p_buffer
     filespace_id = H5Dget_space(p_fbh5_ctx->dataset_id);    // Dataset handle
     if(filespace_id < 0) {
         fbh5_error(__FILE__, __LINE__, "fbh5_write: H5Dget_space FAILED");
+        fbh5_show_context("fbh5_write", p_fbh5_ctx);
         p_fbh5_ctx->active = 0;
         return 1;
     }
@@ -112,6 +115,7 @@ int fbh5_write(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, void * p_buffer
                                  NULL);                     // Block parameter : default value
     if(status < 0) {
         fbh5_error(__FILE__, __LINE__, "fbh5_write: H5Sselect_hyperslab/filespace FAILED");
+        fbh5_show_context("fbh5_write", p_fbh5_ctx);
         p_fbh5_ctx->active = 0;
         return 1;
     }
@@ -127,6 +131,7 @@ int fbh5_write(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, void * p_buffer
                       p_buffer);                // Buffer holding the data
     if(status < 0) {
         fbh5_error(__FILE__, __LINE__, "fbh5_write: H5Dwrite FAILED");
+        fbh5_show_context("fbh5_write", p_fbh5_ctx);
         p_fbh5_ctx->active = 0;
         return 1;
     }
@@ -142,6 +147,7 @@ int fbh5_write(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, void * p_buffer
     status = H5Sclose(filespace_id);
     if(status < 0) {
         fbh5_error(__FILE__, __LINE__, "fbh5_close H5Sclose/filespace_id FAILED\n");
+        fbh5_show_context("fbh5_write", p_fbh5_ctx);
         p_fbh5_ctx->active = 0;
         return 1;
     }

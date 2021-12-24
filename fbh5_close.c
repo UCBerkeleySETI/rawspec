@@ -39,6 +39,7 @@ int fbh5_close(fbh5_context_t * p_fbh5_ctx, int debug_callback) {
     status = H5Sclose(p_fbh5_ctx->dataspace_id);
     if(status != 0) {
         fbh5_error(__FILE__, __LINE__, "fbh5_close H5Sclose dataspace FAILED\n");
+        fbh5_show_context("fbh5_close", p_fbh5_ctx);
         return 1;
     }
         
@@ -48,7 +49,8 @@ int fbh5_close(fbh5_context_t * p_fbh5_ctx, int debug_callback) {
     status = H5Dclose(p_fbh5_ctx->dataset_id);
     if(status != 0) {
         fbh5_error(__FILE__, __LINE__, "fbh5_close H5Dclose dataset 'data' FAILED\n");
-        return 1;
+        fbh5_show_context("fbh5_close", p_fbh5_ctx);
+         return 1;
     }
         
     /*
@@ -57,6 +59,7 @@ int fbh5_close(fbh5_context_t * p_fbh5_ctx, int debug_callback) {
     status = H5Fclose(p_fbh5_ctx->file_id);
     if(status != 0) {
         fbh5_error(__FILE__, __LINE__, "fbh5_close H5Fclose FAILED\n");
+        fbh5_show_context("fbh5_close", p_fbh5_ctx);
         return 1;
     }
 
