@@ -116,7 +116,7 @@ librawspec.so: rawspec_gpu.o rawspec_fbutils.o rawspec_rawutils.o fbh5_open.o fb
 
 rawspec: librawspec.so
 rawspec: rawspec.o rawspec_file.o rawspec_socket.o 
-	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ -L. -lrawspec
+	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ -L. -lrawspec $(LINKH5)
 
 rawspectest: librawspec.so
 rawspectest: rawspectest.o

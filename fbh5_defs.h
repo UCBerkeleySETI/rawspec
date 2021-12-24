@@ -58,4 +58,9 @@ void    fbh5_write_metadata(hid_t dataset_id, fb_hdr_t * p_metadata, int debug_c
 void    fbh5_set_ds_label(fbh5_context_t * p_fbh5_ctx, char * label, int dims_index, int debug_callback);
 void    fbh5_show_context(char * caller, fbh5_context_t * p_fbh5_ctx);
 
+/*
+ * HDF5 library ID of the Bitshuffle filter.
+ */
+#define FILTER_ID_BITSHUFFLE 32008
+
 #endif

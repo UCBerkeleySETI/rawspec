@@ -27,9 +27,8 @@ int fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_pa
     size_t      fcache_nslots = 521;    // Hash table number of slots.  Default value.
     size_t      fcache_nbytes = 0;      // Cache size in bytes
     
-    // Filter identities:
-    H5Z_filter_t filter_id_bitshuffle = 32008;
-    int filter_available = 0;
+    // Bitshuffle plugin status:
+    int bitshuffle_available = 0;       // Bitshuffle availability: 1=yes, 0=no
 
     // Bitshuffle options:
     unsigned bitshuffle_opts[] = {0, 2};
@@ -53,10 +52,10 @@ int fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_pa
     /*
      * Check whether or not the Bitshuffle filter is available.
      */
-    if (H5Zfilter_avail(filter_id_bitshuffle) <= 0)
-        fbh5_warning(__FILE__, __LINE__, "fbhf_open: Filter bitshuffle is NOT available\n");
+    if (H5Zfilter_avail(FILTER_ID_BITSHUFFLE) <= 0)
+        fbh5_warning(__FILE__, __LINE__, "fbhf_open: Plugin bitshuffle is NOT available\n");
     else {
-        filter_available = 1;
+        bitshuffle_available = 1;
     }
     
     /*
@@ -183,8 +182,8 @@ int fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_pa
     /*
      * Add the Bitshuffle and LZ4 filters to the dataset creation property list.
      */
-    if(filter_available) {
-        status = H5Pset_filter(dcpl, filter_id_bitshuffle, H5Z_FLAG_MANDATORY, 2, bitshuffle_opts); // Bitshuffle Filter
+    if(bitshuffle_available) {
+        status = H5Pset_filter(dcpl, FILTER_ID_BITSHUFFLE, H5Z_FLAG_MANDATORY, 2, bitshuffle_opts); // Bitshuffle Filter
         if(status < 0)
             fbh5_warning(__FILE__, __LINE__, "fbh5_open: H5Pset_filter FAILED; data will not be compressed");
     }

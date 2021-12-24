@@ -35,9 +35,17 @@
 #define DEBUG_CALLBACKS (0)
 #endif
 
-void locplug() {
-    fprintf(stderr,"\nThe plugin directory is %s.\n", H5_DEFAULT_PLUGINDIR);
-    fprintf(stderr,"Please copy the bitshuffle plugin to that directory if you haven't already done so.\n\n");
+void show_more_info() {
+    unsigned    hdf5_majnum, hdf5_minnum, hdf5_relnum;  // Version/release info for the HDF5 library
+
+    H5get_libversion(&hdf5_majnum, &hdf5_minnum, &hdf5_relnum);
+    printf("HDF5 library version: %d.%d.%d\n", hdf5_majnum, hdf5_minnum, hdf5_relnum);
+    printf("The HDF5 library plugin directory is %s.\n", H5_DEFAULT_PLUGINDIR);
+    if (H5Zfilter_avail(FILTER_ID_BITSHUFFLE) <= 0) {
+        printf("WARNING: Plugin bitshuffle is NOT available\n");
+        printf("Please copy the bitshuffle plugin to the plugin directory.\n\n");
+    } else
+        printf("The bitshuffle plugin is available.\n\n");
 }
 
 // Reads `bytes_to_read` bytes from `fd` into the buffer pointed to by `buf`.
@@ -118,10 +126,10 @@ void usage(const char *argv0) {
     "  -z, --debug            Turn on selected debug output\n"
     "\n"
     "  -h, --help             Show this message\n"
-    "  -v, --version          Show version and exit\n"
+    "  -v, --version          Show version and exit\n\n"
     , bname
   );
-  locplug();
+  show_more_info();
 }
 
 int open_headers_file(const char * dest, const char *stem)
@@ -357,17 +365,15 @@ int main(int argc, char *argv[])
 
       case 'v': // Version
         printf("rawspec %s\n", STRINGIFY(RAWSPEC_VERSION));
-        printf("librawspec %s\n", rawspec_version_string());
-        locplug();
+        printf("librawspec %s\n\n", rawspec_version_string());
+        show_more_info();
         return 0;
-        break;
 
       case '?': // Command line parsing error
       default:
         printf("Unknown CLI option '%c'\n", opt);
         usage(argv0);
         return 1;
-        break;
     }
   }
 
