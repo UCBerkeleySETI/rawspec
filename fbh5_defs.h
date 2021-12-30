@@ -17,9 +17,9 @@
 /*
  * HDF5 library definitions
  */
-#include <hdf5/serial/hdf5.h>
-#include <hdf5/serial/H5pubconf.h>
-#include <hdf5/serial/H5DSpublic.h>
+#include "hdf5.h"
+#include "H5pubconf.h"
+#include "H5DSpublic.h"
 #ifndef H5_HAVE_THREADSAFE
 #error The installed HDF5 run-time is not thread-safe!
 #endif

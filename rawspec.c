@@ -14,7 +14,6 @@
 #include <sys/mman.h>
 #include <getopt.h>
 #include <sys/sendfile.h>
-#include <hdf5/serial/H5pubconf.h>
 
 #include "rawspec.h"
 #include "rawspec_file.h"

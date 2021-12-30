@@ -36,7 +36,7 @@ endif
 
 LIBHDF5= :libhdf5.so
 LIBHDF5_HL= :libhdf5_hl.so
-LINKH5:= $(INCDIR_H5) $(LIBDIR_H5) -l $(LIBHDF5) -l $(LIBHDF5_HL)
+LINKH5:= $(LIBDIR_H5) -l $(LIBHDF5) -l $(LIBHDF5_HL)
 
 # End HDF5 definitions
 
@@ -48,7 +48,7 @@ CXX           ?= g++
 HOST_COMPILER ?= $(CXX)
 NVCC          := $(CUDA_PATH)/bin/nvcc -ccbin $(HOST_COMPILER)
 
-CFLAGS = -ggdb -fPIC -I$(CUDA_PATH)/include -I$(INCDIR_H5)
+CFLAGS = -ggdb -fPIC -I$(CUDA_PATH)/include $(INCDIR_H5)
 ifdef DEBUG_CALLBACKS
 CFLAGS += -DDEBUG_CALLBACKS=$(DEBUG_CALLBACKS)
 endif
