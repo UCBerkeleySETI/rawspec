@@ -2,7 +2,7 @@
 #define _RAWSPEC_CALLBACK_H_
 
 #include <pthread.h>
-#include <hdf5/serial/hdf5.h>
+#include "hdf5.h"
 #include "rawspec_fbutils.h"
 
 typedef struct {
@@ -49,8 +49,10 @@ typedef struct {
   fbh5_context_t fbh5_ctx_ics;    // Singleton fbh5 ctx for ics
   fbh5_context_t * fbh5_ctx_ant;  // Pointer to array of fbh5 ctx for individual antennas
 
-  // Issue #47: need an exit soon flag.
-  unsigned int exit_soon;         // 0=ok, 1=at least one error in output has occured.
+  // Exit soon flag.
+  // 0 : No output errors have occurred so far.
+  // 1 : At least one output error has occured.
+  unsigned int exit_soon;
 
 } callback_data_t;
 

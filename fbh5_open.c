@@ -6,6 +6,10 @@
 
 
 #include "fbh5_defs.h"
+#include "rawspec_version.h"
+
+// Returns a pointer to a string containing the rawspec version
+const char * rawspec_version_string();
 
 
 int CACHE_SPECS = 0;
@@ -21,7 +25,7 @@ int fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_pa
     herr_t      status;             // Status from HDF5 function call
     char        wstr[256];          // sprintf target
     unsigned    hdf5_majnum, hdf5_minnum, hdf5_relnum;  // Version/release info for the HDF5 library
-
+ 
     // Caching
     hid_t       fapl;                   // File access property list identifier
     size_t      fcache_nslots = 521;    // Hash table number of slots.  Default value.
@@ -39,16 +43,6 @@ int fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_pa
     // Default: Failed.
     p_fbh5_ctx->active = 0;
 
-    // Announce versions:
-    if(debug_callback) {
-        fbh5_info("fbh5_open: FBH5 path: %s\n", output_path);
-        H5get_libversion(&hdf5_majnum, &hdf5_minnum, &hdf5_relnum);
-        fbh5_info("fbh5_open: HDF5 library version: %d.%d.%d\n", hdf5_majnum, hdf5_minnum, hdf5_relnum);
-        fbh5_info("fbh5_open: Creating dataspace dimensions using nifs=%d and nchans=%d\n",
-                p_fb_hdr->nifs,
-                p_fb_hdr->nchans);
-    }
-    
     /*
      * Check whether or not the Bitshuffle filter is available.
      */
@@ -130,6 +124,45 @@ int fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_pa
      */
     fbh5_set_str_attr(p_fbh5_ctx->file_id, "CLASS", FILTERBANK_CLASS, debug_callback);
     fbh5_set_str_attr(p_fbh5_ctx->file_id, "VERSION", FILTERBANK_VERSION, debug_callback);
+
+    // Get software versions:
+    strcpy(wstr, STRINGIFY(RAWSPEC_VERSION));
+    fbh5_set_str_attr(p_fbh5_ctx->file_id, 
+                      "VERSION_RAWSPEC", 
+                      wstr, 
+                      debug_callback);
+    char ver_librawspec[30], ver_cufft[30];
+    int nitems = sscanf(rawspec_version_string(), "%s %s %s", ver_librawspec, wstr, ver_cufft);
+    if(nitems == 3) {
+        fbh5_set_str_attr(p_fbh5_ctx->file_id, 
+                        "VERSION_LIBRAWSPEC", 
+                        ver_librawspec, 
+                        debug_callback);
+        fbh5_set_str_attr(p_fbh5_ctx->file_id, 
+                        "VERSION_CUFFT", 
+                        ver_cufft, 
+                        debug_callback);
+    } else {
+        strcpy(wstr, rawspec_version_string());
+        fbh5_set_str_attr(p_fbh5_ctx->file_id, 
+                        "VERSION_LIBRAWSPEC_CUFFT", 
+                        wstr, 
+                        debug_callback);
+    }
+    H5get_libversion(&hdf5_majnum, &hdf5_minnum, &hdf5_relnum);
+    sprintf(wstr, "%d.%d.%d", hdf5_majnum, hdf5_minnum, hdf5_relnum);
+    fbh5_set_str_attr(p_fbh5_ctx->file_id, 
+                      "VERSION_HDF", 
+                      wstr, 
+                      debug_callback);
+    if(bitshuffle_available > 0)
+        strcpy(wstr, "ENABLED");
+    else
+        strcpy(wstr, "DISABLED");
+    fbh5_set_str_attr(p_fbh5_ctx->file_id, 
+                      "BITSHUFFLE", 
+                      wstr, 
+                      debug_callback);
 
     /*
      * Initialise the total file size in terms of its shape.

@@ -24,6 +24,10 @@
 #error The installed HDF5 run-time is not thread-safe!
 #endif
 
+// This stringification trick is from "info cpp"
+#define STRINGIFY1(s) #s
+#define STRINGIFY(s) STRINGIFY1(s)
+
 /*
  * Rawspec callback definitions
  */

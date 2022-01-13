@@ -26,10 +26,6 @@
 #define ELAPSED_NS(start,stop) \
   (((int64_t)stop.tv_sec-start.tv_sec)*1000*1000*1000+(stop.tv_nsec-start.tv_nsec))
 
-// This stringification trick is from "info cpp"
-#define STRINGIFY1(s) #s
-#define STRINGIFY(s) STRINGIFY1(s)
-
 #ifndef DEBUG_CALLBACKS
 #define DEBUG_CALLBACKS (0)
 #endif
