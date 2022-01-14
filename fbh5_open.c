@@ -152,7 +152,7 @@ int fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_pa
     H5get_libversion(&hdf5_majnum, &hdf5_minnum, &hdf5_relnum);
     sprintf(wstr, "%d.%d.%d", hdf5_majnum, hdf5_minnum, hdf5_relnum);
     fbh5_set_str_attr(p_fbh5_ctx->file_id, 
-                      "VERSION_HDF", 
+                      "VERSION_HDF5", 
                       wstr, 
                       debug_callback);
     
