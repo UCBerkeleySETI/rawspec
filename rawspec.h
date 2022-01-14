@@ -157,8 +157,10 @@ typedef enum {
 extern "C" {
 #endif
 
-// Returns a pointer to a string containing the rawspec version
-const char * rawspec_version_string();
+// Returns a pointer to a string containing the librawspec version
+const char * get_librawspec_version();
+// Returns a pointer to a string containing the cuFFT version
+const char * get_cufft_version();
 
 // Sets ctx->Ntmax.
 // Allocates host and device buffers based on the ctx->N values.

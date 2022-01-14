@@ -218,7 +218,10 @@ int main(int argc, char *argv[])
   uint64_t total_ns = 0;
 
   // Show librawspec version on startup
-  printf("rawspec using librawspec %s\n", rawspec_version_string());
+  printf("rawspec %s using librawspec %s and cuFFT %s\n", 
+         STRINGIFY(RAWSPEC_VERSION), 
+         get_librawspec_version(), 
+         get_cufft_version());
 
   // Init rawspec context
   memset(&ctx, 0, sizeof(ctx));
@@ -362,8 +365,6 @@ int main(int argc, char *argv[])
         break;
 
       case 'v': // Version
-        printf("rawspec %s\n", STRINGIFY(RAWSPEC_VERSION));
-        printf("librawspec %s\n\n", rawspec_version_string());
         show_more_info();
         return 0;
         break;

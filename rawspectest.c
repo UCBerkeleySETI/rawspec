@@ -46,9 +46,6 @@ int main(int argc, char * argv[])
   int blocsize = 92274688;
   size_t nfine;
 
-  // Show librawspec version on startup
-  printf("using librawspec %s\n", rawspec_version_string());
-
   ctx.No = 4;
   ctx.Np = 2;
   ctx.Nc = 88;

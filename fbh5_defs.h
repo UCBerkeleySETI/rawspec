@@ -25,6 +25,7 @@
 #endif
 
 // This stringification trick is from "info cpp"
+// See https://gcc.gnu.org/onlinedocs/gcc-4.8.5/cpp/Stringification.html
 #define STRINGIFY1(s) #s
 #define STRINGIFY(s) STRINGIFY1(s)
 

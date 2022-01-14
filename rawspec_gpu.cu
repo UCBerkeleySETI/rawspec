@@ -397,11 +397,17 @@ static void CUDART_CB post_dump_stream_callback(cudaStream_t stream,
 }
 
 // This stringification trick is from "info cpp"
+// See https://gcc.gnu.org/onlinedocs/gcc-4.8.5/cpp/Stringification.html
 #define STRINGIFY1(s) #s
 #define STRINGIFY(s) STRINGIFY1(s)
-static const char rawspec_version[] = STRINGIFY(RAWSPEC_VERSION) " cuFFT"
+
+// librawspec version string
+static const char librawspec_version[] = STRINGIFY(RAWSPEC_VERSION);
+
+// cuFFT version string
+static const char cufft_version[] =
 #ifdef CUFFT_VER_MAJOR
-  " " STRINGIFY(CUFFT_VER_MAJOR)
+  STRINGIFY(CUFFT_VER_MAJOR)
 #ifdef CUFFT_VER_MINOR
   "." STRINGIFY(CUFFT_VER_MINOR)
 #ifdef CUFFT_VER_PATCH
@@ -416,10 +422,16 @@ static const char rawspec_version[] = STRINGIFY(RAWSPEC_VERSION) " cuFFT"
 #endif // CUFFT_VER_MAJOR
 ;
 
-// Returns a pointer to a string containing the rawspec version
-const char * rawspec_version_string()
+// Returns a pointer to a string containing the librawspec version
+const char * get_librawspec_version()
 {
-  return rawspec_version;
+  return librawspec_version;
+}
+
+// Returns a pointer to a string containing the cuFFT version
+const char * get_cufft_version()
+{
+  return cufft_version;
 }
 
 // Sets ctx->Ntmax.

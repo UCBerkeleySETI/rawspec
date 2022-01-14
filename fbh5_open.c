@@ -8,10 +8,12 @@
 #include "fbh5_defs.h"
 #include "rawspec_version.h"
 
-// Returns a pointer to a string containing the rawspec version
-const char * rawspec_version_string();
+// Returns a pointer to a string containing the librawspec version
+const char * get_librawspec_version();
+// Returns a pointer to a string containing the cuFFT version
+const char * get_cufft_version();
 
-
+// 1 : specifying file-level caching specifications; 0 : take the default actions
 int CACHE_SPECS = 0;
 
 
@@ -120,41 +122,43 @@ int fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_pa
     }
  
     /*
-     * Write the file-level metadata attributes.
+     * Write blimpy-required file-level metadata attributes.
      */
-    fbh5_set_str_attr(p_fbh5_ctx->file_id, "CLASS", FILTERBANK_CLASS, debug_callback);
-    fbh5_set_str_attr(p_fbh5_ctx->file_id, "VERSION", FILTERBANK_VERSION, debug_callback);
+    fbh5_set_str_attr(p_fbh5_ctx->file_id, 
+                      "CLASS", 
+                      FILTERBANK_CLASS, 
+                      debug_callback);
+    fbh5_set_str_attr(p_fbh5_ctx->file_id, 
+                      "VERSION", 
+                      FILTERBANK_VERSION, 
+                      debug_callback);
 
-    // Get software versions:
+    /*
+     * Get software versions and store them as file-level attributes.
+     */
     strcpy(wstr, STRINGIFY(RAWSPEC_VERSION));
     fbh5_set_str_attr(p_fbh5_ctx->file_id, 
                       "VERSION_RAWSPEC", 
                       wstr, 
                       debug_callback);
-    char ver_librawspec[30], ver_cufft[30];
-    int nitems = sscanf(rawspec_version_string(), "%s %s %s", ver_librawspec, wstr, ver_cufft);
-    if(nitems == 3) {
-        fbh5_set_str_attr(p_fbh5_ctx->file_id, 
-                        "VERSION_LIBRAWSPEC", 
-                        ver_librawspec, 
-                        debug_callback);
-        fbh5_set_str_attr(p_fbh5_ctx->file_id, 
-                        "VERSION_CUFFT", 
-                        ver_cufft, 
-                        debug_callback);
-    } else {
-        strcpy(wstr, rawspec_version_string());
-        fbh5_set_str_attr(p_fbh5_ctx->file_id, 
-                        "VERSION_LIBRAWSPEC_CUFFT", 
-                        wstr, 
-                        debug_callback);
-    }
+    fbh5_set_str_attr(p_fbh5_ctx->file_id, 
+                      "VERSION_LIBRAWSPEC", 
+                      (char *) get_librawspec_version(), 
+                      debug_callback);
+    fbh5_set_str_attr(p_fbh5_ctx->file_id, 
+                      "VERSION_CUFFT", 
+                      (char *) get_cufft_version(), 
+                      debug_callback);
     H5get_libversion(&hdf5_majnum, &hdf5_minnum, &hdf5_relnum);
     sprintf(wstr, "%d.%d.%d", hdf5_majnum, hdf5_minnum, hdf5_relnum);
     fbh5_set_str_attr(p_fbh5_ctx->file_id, 
                       "VERSION_HDF", 
                       wstr, 
                       debug_callback);
+    
+    /*
+     * Store bitshuffle availability as a file-level attribute.
+     */
     if(bitshuffle_available > 0)
         strcpy(wstr, "ENABLED");
     else
