@@ -652,9 +652,8 @@ int main(int argc, char *argv[])
                 // Free all output file resources
                 if(flag_fbh5_output) {
                     free(cb_data[i].fbh5_ctx_ant);
-                } else {
-                    free(cb_data[i].fd);
                 }
+                free(cb_data[i].fd);
 
                 cb_data[i].per_ant_out = per_ant_out;
                 // Re-init callback file descriptors to sentinal values
@@ -667,10 +666,10 @@ int main(int argc, char *argv[])
                     }
                 } else {
                     cb_data[i].flag_fbh5_output = 0;
-                    cb_data[i].fd = malloc(sizeof(int)*raw_hdr.nants);
-                    for(j=0; j<raw_hdr.nants; j++){
-                      cb_data[i].fd[j] = -1;
-                    }
+                }
+                cb_data[i].fd = malloc(sizeof(int)*raw_hdr.nants);
+                for(j=0; j<raw_hdr.nants; j++){
+                  cb_data[i].fd[j] = -1;
                 }
               }
             }
