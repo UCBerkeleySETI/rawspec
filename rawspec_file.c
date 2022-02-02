@@ -45,9 +45,11 @@ int open_output_file(callback_data_t *cb_data, const char * dest, const char *st
       // If antenna_index < 0, then use the ICS context;
       // Else, use the indicated antenna context.
       if(antenna_index < 0)
-          cb_data->exit_soon = fbh5_open(&(cb_data->fbh5_ctx_ics), &(cb_data->fb_hdr), fname, cb_data->debug_callback);
+          cb_data->exit_soon = fbh5_open(&(cb_data->fbh5_ctx_ics), &(cb_data->fb_hdr), 
+                                         cb_data->Nds, fname, cb_data->debug_callback);
       else
-          cb_data->exit_soon = fbh5_open(&(cb_data->fbh5_ctx_ant[antenna_index]), &(cb_data->fb_hdr), fname, cb_data->debug_callback);
+          cb_data->exit_soon = fbh5_open(&(cb_data->fbh5_ctx_ant[antenna_index]), &(cb_data->fb_hdr),
+                                         cb_data->Nds, fname, cb_data->debug_callback);
       if(cb_data->exit_soon != 0)
           return -1;  // Indicate that fbh5_open failed.
       if(cb_data->debug_callback)

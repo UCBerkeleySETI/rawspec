@@ -776,8 +776,9 @@ int main(int argc, char *argv[])
               cb_data[i].h_icsbuf = ctx.h_icsbuf[i];
               cb_data[i].Nds = ctx.Nds[i];
               cb_data[i].Nf  = ctx.Nts[i] * ctx.Nc;
-              if(! flag_debugging)
-                cb_data[i].debug_callback = DEBUG_CALLBACKS;
+              if(flag_debugging > 0) {
+                printf("output %d Nds = %u, Nf = %u\n", i, cb_data[i].Nds, cb_data[i].Nf);
+              }
               cb_data[i].Nant = raw_hdr.nants;
             }
 #if 0

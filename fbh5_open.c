@@ -20,7 +20,7 @@ int CACHE_SPECS = 0;
 /***
 	Open-file entry point.
 ***/
-int fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_path, int debug_callback) {
+int fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, unsigned int Nds, char * output_path, int debug_callback) {
     hid_t       dcpl;               // Chunking handle - needed until dataset handle is produced
     hsize_t     max_dims[NDIMS];    // Maximum dataset allocation dimensions
     hsize_t     cdims[NDIMS];       // Chunking dimensions
@@ -205,7 +205,7 @@ int fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_pa
     /*
      * Add chunking to the dataset creation property list.
      */
-    cdims[0] = 1;
+    cdims[0] = Nds;
     cdims[1] = 1;
     cdims[2] = p_fb_hdr->nfpc;
     status   = H5Pset_chunk(dcpl, NDIMS, cdims);
