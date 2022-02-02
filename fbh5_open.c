@@ -207,7 +207,7 @@ int fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, char * output_pa
      */
     cdims[0] = 1;
     cdims[1] = 1;
-    cdims[2] = p_fb_hdr->nchans;
+    cdims[2] = p_fb_hdr->nfpc;
     status   = H5Pset_chunk(dcpl, NDIMS, cdims);
     if(status != 0) {
         fbh5_error(__FILE__, __LINE__, "fbh5_open: H5Pset_chunk FAILED");
