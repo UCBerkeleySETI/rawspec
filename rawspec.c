@@ -32,10 +32,15 @@
 
 void show_more_info() {
     unsigned    hdf5_majnum, hdf5_minnum, hdf5_relnum;  // Version/release info for the HDF5 library
+    char *p_hdf5_plugin_path;
 
     H5get_libversion(&hdf5_majnum, &hdf5_minnum, &hdf5_relnum);
     printf("HDF5 library version: %d.%d.%d\n", hdf5_majnum, hdf5_minnum, hdf5_relnum);
-    printf("The HDF5 library plugin directory is %s.\n", H5_DEFAULT_PLUGINDIR);
+    p_hdf5_plugin_path = getenv("HDF5_PLUGIN_PATH");
+    if(p_hdf5_plugin_path == NULL)
+      printf("The HDF5 library plugin directory (default) is %s.\n", H5_DEFAULT_PLUGINDIR);
+    else
+      printf("The HDF5 library plugin directory (env) is %s.\n", p_hdf5_plugin_path);
     if (H5Zfilter_avail(FILTER_ID_BITSHUFFLE) <= 0) {
         printf("WARNING: Plugin bitshuffle is NOT available so compression is DISABLED!\n");
         printf("Please copy the bitshuffle plugin to the plugin directory.\n\n");
