@@ -227,3 +227,56 @@ void fbh5_show_context(char * caller, fbh5_context_t * p_fbh5_ctx) {
     fbh5_info("fbh5_show_context(%s): byte_count = %ld\n", caller, p_fbh5_ctx->byte_count);
     fbh5_info("fbh5_show_context(%s): dump_count = %ld\n", caller, p_fbh5_ctx->dump_count);
 }
+
+
+/***
+    Algorithm (GBT) to calculate the chunk dimensions depending on the file type.
+    Python3 source: blimpy waterfall.py _get_chunk_dimensions()
+
+    * High frequency resolution (HFR)   --> (1,1,1048576)
+    * High time resolution (HTR)        --> (2048,1,512)
+    * Intermediate frequency resolution --> (10,1,65536)
+    * None of the above ------------------> (1,1,512)
+***/
+void fbh5_blimpy_chunking(fb_hdr_t * p_fb_hdr, hsize_t * p_cdims) {
+
+        // GBT: '.0000.' is HFR
+        // GBT: 1048576 is the number of channels in a coarse channel.
+        if(p_fb_hdr->foff < 1.0e-5) {
+            *p_cdims       = 1;
+            *(p_cdims + 1) = 1;
+            *(p_cdims + 2) = 1048576;
+            if(p_fb_hdr->nchans < 1048576)
+                *(p_cdims + 2) = p_fb_hdr->nchans;
+            return;
+        }
+
+        // GBT: .0001. is HTR
+        // GBT: 512 is the total number of channels per single band
+        if(p_fb_hdr->tsamp < 1.0e-3) {
+            *p_cdims       = 2048;
+            *(p_cdims + 1) = 1;
+            *(p_cdims + 2) = 512;
+            if(p_fb_hdr->nchans < 512)
+                *(p_cdims + 2) = p_fb_hdr->nchans;
+            return;
+        }
+
+        // GBT: .0002. is intermediate
+        // GBT: 65536 is the total number of channels per single band
+        if(p_fb_hdr->foff < 1.0e-2 && p_fb_hdr->foff  >= 1.0e-5) {
+            *p_cdims       = 10;
+            *(p_cdims + 1) = 1;
+            *(p_cdims + 2) = 65536;
+            if(p_fb_hdr->nchans < 65536)
+                *(p_cdims + 2) = p_fb_hdr->nchans;
+            return;
+        }
+
+        // None of the above.
+        *p_cdims       = 1;
+        *(p_cdims + 1) = 1;
+        *(p_cdims + 2) = 512;
+        if(p_fb_hdr->nchans < 512)
+            *(p_cdims + 2) = p_fb_hdr->nchans;
+}

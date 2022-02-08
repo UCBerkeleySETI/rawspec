@@ -8,48 +8,52 @@
 #include "fbh5_defs.h"
 #include "rawspec_version.h"
 
+#define MIN(a,b) ((a < b) ? (a) : (b))
+#define MAX(a,b) ((a > b) ? (a) : (b))
+
 // Returns a pointer to a string containing the librawspec version
 const char * get_librawspec_version();
 // Returns a pointer to a string containing the cuFFT version
 const char * get_cufft_version();
 
-// 1 : specifying file-level caching specifications; 0 : take the default actions
-int CACHE_SPECS = 0;
-
 
 /***
 	Open-file entry point.
 ***/
-int fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, unsigned int Nds, char * output_path, int debug_callback) {
+int fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, unsigned int Nd, char * output_path, int debug_callback) {
     hid_t       dcpl;               // Chunking handle - needed until dataset handle is produced
     hsize_t     max_dims[NDIMS];    // Maximum dataset allocation dimensions
-    hsize_t     cdims[NDIMS];       // Chunking dimensions
     herr_t      status;             // Status from HDF5 function call
     char        wstr[256];          // sprintf target
     unsigned    hdf5_majnum, hdf5_minnum, hdf5_relnum;  // Version/release info for the HDF5 library
+
+    // Chunking parameters
+    int         USE_BLIMPY = 1;     // 1 : use blimpy's algorithm; 0 : don't do that
+    hsize_t     cdims[NDIMS];       // Chunking dimensions array
  
-    // Caching
+    // Caching parameters  
+    int         CACHING_TYPE = 1;       // 0 : no caching ; 1 : computed caching specifications; 2 : default caching
     hid_t       fapl;                   // File access property list identifier
-    size_t      fcache_nslots = 521;    // Hash table number of slots.  Default value.
-    size_t      fcache_nbytes = 0;      // Cache size in bytes
+    size_t      fcache_nslots = 0;      // Hash table number of slots.  Default value = 521.  Determined later.
+    size_t      fcache_nbytes = 0;      // Cache size in bytes.  Determined later.
     
     // Bitshuffle plugin status:
-    int bitshuffle_available = 0;       // Bitshuffle availability: 1=yes, 0=no
+    int         bitshuffle_available = 0;     // Bitshuffle availability: 1=yes, 0=no
 
-    // Bitshuffle options:
-    unsigned bitshuffle_opts[] = {0, 2};
+    // Bitshuffle options
     // Ref: def __init__ in class Bitshuffle in https://github.com/silx-kit/hdf5plugin/blob/main/src/hdf5plugin/__init__.py
     // 0 = take default like blimpy
     // 2 = use lz4 like blimpy
+    unsigned bitshuffle_opts[] = {0, 2};
 
-    // Default: Failed.
+    // Default status: no longer active.  Will be updated later as active.
     p_fbh5_ctx->active = 0;
 
     /*
      * Check whether or not the Bitshuffle filter is available.
      */
     if (H5Zfilter_avail(FILTER_ID_BITSHUFFLE) <= 0)
-        fbh5_warning(__FILE__, __LINE__, "fbhf_open: Plugin bitshuffle is NOT available\n");
+        fbh5_warning(__FILE__, __LINE__, "fbhf_open: Plugin bitshuffle is NOT available; data will not be compressed\n");
     else {
         bitshuffle_available = 1;
     }
@@ -101,26 +105,6 @@ int fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, unsigned int Nds
         return 1;
     }
 
-    /*
-     * If specifying file-level caching specifications, do so now.
-     */
-
-    if(CACHE_SPECS == 1) {
-        fcache_nbytes = p_fbh5_ctx->tint_size + 42;
-        fapl = H5Fget_access_plist(p_fbh5_ctx->file_id);
-        if(fapl < 0)
-            fbh5_warning(__FILE__, __LINE__, "fbh5_open: H5Fget_access_plist FAILED; using default caching");
-        else {
-            status = H5Pset_cache(fapl, 
-                                  0,                // ignored
-                                  fcache_nslots,    // Hash table slot count
-                                  fcache_nbytes,    // File cache size in bytes
-                                  1.0);             // Rawspec writes data only once.  Never reads.
-            if(status < 0)
-                fbh5_warning(__FILE__, __LINE__, "fbh5_open: H5Pset_cache FAILED; using default caching");
-        }
-    }
- 
     /*
      * Write blimpy-required file-level metadata attributes.
      */
@@ -205,16 +189,29 @@ int fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, unsigned int Nds
     /*
      * Add chunking to the dataset creation property list.
      */
-    cdims[0] = Nds;
-    cdims[1] = 1;
-    cdims[2] = p_fb_hdr->nfpc;
-    status   = H5Pset_chunk(dcpl, NDIMS, cdims);
+    printf("Number of spectra per dump (Nd) = %u\n", Nd);
+    printf("Number of fine channels per coarse channel (nfpc) = %u\n", p_fb_hdr->nfpc);
+    if(USE_BLIMPY == 1)
+        fbh5_blimpy_chunking(p_fb_hdr, &cdims[0]);
+    else {
+        // cdims[0] = first multiple of Nd which is >= 16.
+        if(Nd > 16)
+            cdims[0] = Nd;
+        else {
+            unsigned quo = 16 / Nd;
+            if(16 % Nd != 0)
+                quo++;
+            cdims[0] = quo * Nd;
+        }
+        cdims[1] = 1;
+        cdims[2] = MIN(p_fb_hdr->nfpc, 65536);
+    }
+    status = H5Pset_chunk(dcpl, NDIMS, cdims);
     if(status != 0) {
         fbh5_error(__FILE__, __LINE__, "fbh5_open: H5Pset_chunk FAILED");
         return 1;
     }
-    if(debug_callback)
-        fbh5_info("fbh5_open: Chunk dimensions = (%lld, %lld, %lld)\n", cdims[0], cdims[1], cdims[2]);
+    printf("Chunk dimensions = (%lld, %lld, %lld)\n", cdims[0], cdims[1], cdims[2]);
 
     /*
      * Add the Bitshuffle and LZ4 filters to the dataset creation property list.
@@ -259,12 +256,47 @@ int fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, unsigned int Nds
     }
 
     /*
+     * If specifying file-level caching specifications, do so now.
+     */
+    if(CACHING_TYPE != 2) { // not default caching
+        if(CACHING_TYPE == 1) { // specifying cache parameters
+            fcache_nslots = (cdims[0] * cdims[2]) + 1;
+            fcache_nbytes = (Nd * p_fbh5_ctx->tint_size) + 1;
+            printf("Cache nslots = %lu, nbytes = %lu\n", fcache_nslots, fcache_nbytes);
+        } else // no caching (CACHING_TYPE = 0)
+            fcache_nslots = 0;
+            fcache_nbytes = 0;
+        fapl = H5Fget_access_plist(p_fbh5_ctx->file_id);
+        if(fapl < 0)
+            fbh5_warning(__FILE__, __LINE__, "fbh5_open: H5Fget_access_plist FAILED; using default caching");
+        else {
+            // https://portal.hdfgroup.org/display/HDF5/H5P_SET_CACHE
+            status = H5Pset_cache(fapl, 
+                                    0,                // ignored
+                                    fcache_nslots,    // Hash table slot count
+                                    fcache_nbytes,    // File cache size in bytes
+                                    0.75);            // Chunk preemption policy
+            if(status < 0)
+                fbh5_warning(__FILE__, __LINE__, "fbh5_open: H5Pset_cache FAILED; using default caching");
+        }
+    }
+ 
+    /*
      * Close dcpl handle.
      */
     status = H5Pclose(dcpl);
     if(status != 0)
         fbh5_warning(__FILE__, __LINE__, "fbh5_open: H5Pclose/dcpl FAILED\n");
     
+    /*
+     * Close fapl handle.
+     */
+    if(CACHING_TYPE != 2) {
+        status = H5Pclose(fapl);
+        if(status != 0)
+            fbh5_warning(__FILE__, __LINE__, "fbh5_open: H5Pclose/fapl FAILED\n");
+    }
+
     /*
      * Write dataset metadata attributes.
      */
