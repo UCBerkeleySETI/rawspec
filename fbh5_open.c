@@ -28,7 +28,7 @@ int fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, unsigned int Nd,
     unsigned    hdf5_majnum, hdf5_minnum, hdf5_relnum;  // Version/release info for the HDF5 library
 
     // Chunking parameters
-    int         USE_BLIMPY = 1;     // 1 : use blimpy's algorithm; 0 : don't do that
+    int         USE_BLIMPY = 0;     // 1 : use blimpy's algorithm; 0 : don't do that
     hsize_t     cdims[NDIMS];       // Chunking dimensions array
  
     // Caching parameters  
@@ -194,17 +194,9 @@ int fbh5_open(fbh5_context_t * p_fbh5_ctx, fb_hdr_t * p_fb_hdr, unsigned int Nd,
     if(USE_BLIMPY == 1)
         fbh5_blimpy_chunking(p_fb_hdr, &cdims[0]);
     else {
-        // cdims[0] = first multiple of Nd which is >= 16.
-        if(Nd > 16)
-            cdims[0] = Nd;
-        else {
-            unsigned quo = 16 / Nd;
-            if(16 % Nd != 0)
-                quo++;
-            cdims[0] = quo * Nd;
-        }
+        cdims[0] = Nd;
         cdims[1] = 1;
-        cdims[2] = MIN(p_fb_hdr->nfpc, 65536);
+        cdims[2] = p_fb_hdr->nfpc;
     }
     status = H5Pset_chunk(dcpl, NDIMS, cdims);
     if(status != 0) {
