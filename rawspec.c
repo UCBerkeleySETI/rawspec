@@ -580,6 +580,13 @@ int main(int argc, char *argv[])
 
       // If first file for stem, check sizing
       if(fi == 0) {
+        if(raw_hdr.nbeams > 0) {
+          fprintf(stderr, "Header has NBEAM %d, which overrides NANTS (%d)\n",
+            raw_hdr.nbeams, raw_hdr.nants
+          );
+          raw_hdr.nants = raw_hdr.nbeams;
+        }
+
         // Verify that obsnchan is divisible by nants
         if(raw_hdr.obsnchan % raw_hdr.nants != 0) {
           fprintf(stderr, "bad obsnchan/nants: %u %% %u != 0\n",
@@ -615,6 +622,7 @@ int main(int argc, char *argv[])
         fprintf(stderr, "OBSNCHAN = %d\n",  raw_hdr.obsnchan);
         fprintf(stderr, "NANTS    = %d\n",  raw_hdr.nants);
         fprintf(stderr, "NBITS    = %d\n",  raw_hdr.nbits);
+        fprintf(stderr, "INTEGER DATA = %d\n",  raw_hdr.integer_data);
         fprintf(stderr, "NPOL     = %d\n",  raw_hdr.npol);
         fprintf(stderr, "OBSFREQ  = %g\n",  raw_hdr.obsfreq);
         fprintf(stderr, "OBSBW    = %g\n",  raw_hdr.obsbw);
@@ -749,6 +757,7 @@ int main(int argc, char *argv[])
           ctx.Ntpb = Ntpb;
           ctx.Nbps = Nbps;
           ctx.input_conjugated = input_conjugated;
+          ctx.integer_data = raw_hdr.integer_data;
 
           // Initialize for new dimensions and/or conjugation
           ctx.Nb = 0;           // auto-calculate
@@ -1026,6 +1035,9 @@ int main(int argc, char *argv[])
                     fname, strerror(errno));
           }
           break;
+        }
+        if(raw_hdr.nbeams > 0) {
+          raw_hdr.nants = raw_hdr.nbeams;
         }
       } // For each block
 
