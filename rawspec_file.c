@@ -17,7 +17,7 @@ int open_output_file(callback_data_t *cb_data, const char * dest, const char *st
   int fd;
   const char * basename;
   char fname[PATH_MAX+1];
-  char fileext[3];
+  char fileext[4] = {'\0'};
   int retcode;
 
   // If dest is given and it's not empty
