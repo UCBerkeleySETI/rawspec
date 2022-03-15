@@ -512,7 +512,7 @@ int rawspec_initialize(rawspec_context * ctx)
     return 1;
   } else if(ctx->float_data && ctx->Nbps != 16 && ctx->Nbps != 32) {
     fprintf(
-      stderr,
+      stdout,
       "Nbps cannot be %d for floating-point data, treating as 16.\n",
       ctx->Nbps
     );
