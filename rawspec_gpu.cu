@@ -505,12 +505,12 @@ int rawspec_initialize(rawspec_context * ctx)
   // NbpsIsExpanded = 1 (true) if Nbps==4 else 0 (false).
   if(ctx->Nbps == 0)
     ctx->Nbps = 8;
-  if(ctx->integer_data && ctx->Nbps != 4 && ctx->Nbps != 8 && ctx->Nbps != 16) {
+  if(!ctx->float_data && ctx->Nbps != 4 && ctx->Nbps != 8 && ctx->Nbps != 16) {
     fprintf(stderr, "Number of bits per sample in raw header must be 4, 0/8, or 16\n");
     fprintf(stderr, "Observed a value of %d\n", ctx->Nbps);
     fflush(stderr);
     return 1;
-  } else if(!ctx->integer_data && ctx->Nbps != 16 && ctx->Nbps != 32) {
+  } else if(ctx->float_data && ctx->Nbps != 16 && ctx->Nbps != 32) {
     fprintf(
       stderr,
       "Nbps cannot be %d for floating-point data, treating as 16.\n",
@@ -839,7 +839,7 @@ int rawspec_initialize(rawspec_context * ctx)
   }
   fflush(stderr);
 
-  fprintf(stderr, "Detected %s data.\n", ctx->integer_data ? "Integer" : "Float");
+  fprintf(stdout, "Detected %s data.\n", ctx->float_data ? "Float" : "Integer");
 
   // Create texture object for device input buffer
   // res_desc describes input resource
@@ -847,7 +847,7 @@ int rawspec_initialize(rawspec_context * ctx)
   memset(&res_desc, 0, sizeof(res_desc));
   res_desc.resType = cudaResourceTypePitch2D;
   res_desc.res.pitch2D.devPtr = gpu_ctx->d_fft_in;
-  res_desc.res.pitch2D.desc.f = ctx->integer_data ? cudaChannelFormatKindSigned : cudaChannelFormatKindFloat;
+  res_desc.res.pitch2D.desc.f = ctx->float_data ? cudaChannelFormatKindFloat : cudaChannelFormatKindSigned;
   res_desc.res.pitch2D.desc.x = ctx->Nbps; // bits per sample
   res_desc.res.pitch2D.width = 1<<LOAD_TEXTURE_WIDTH_POWER;         // elements
   res_desc.res.pitch2D.height = buf_size>>LOAD_TEXTURE_WIDTH_POWER; // elements
@@ -862,7 +862,7 @@ int rawspec_initialize(rawspec_context * ctx)
   // Not sure whether filter_mode matters for cudaReadModeNormalizedFloat
   tex_desc.filter_mode = cudaFilterModePoint;
 #endif // 0
-  tex_desc.readMode = ctx->integer_data ? cudaReadModeNormalizedFloat : cudaReadModeElementType;
+  tex_desc.readMode = ctx->float_data ? cudaReadModeElementType : cudaReadModeNormalizedFloat;
 
   cuda_rc = cudaCreateTextureObject(&gpu_ctx->tex_obj,
                                     &res_desc, &tex_desc, NULL);

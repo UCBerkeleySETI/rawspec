@@ -24,7 +24,7 @@ typedef struct {
   char telescop[81];
   off_t hdr_pos; // Offset of start of header
   size_t hdr_size; // Size of header in bytes (not including DIRECTIO padding)
-  int integer_data; // flag integer (not float) data
+  int float_data; // flag integer (not float) data
 } rawspec_raw_hdr_t;
 
 // Multiple of 80 and 512

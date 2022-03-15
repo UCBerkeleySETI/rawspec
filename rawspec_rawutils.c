@@ -172,7 +172,7 @@ void rawspec_raw_parse_header(const char * buf, rawspec_raw_hdr_t * raw_hdr)
   raw_hdr->nants    = rawspec_raw_get_u32(buf, "NANTS",    1);
 
   rawspec_raw_get_str(buf, "DATATYPE", "INTEGER", tmp, 80);
-  raw_hdr->integer_data = strncmp(tmp, "INTEGER", 7) == 0;
+  raw_hdr->float_data = strncmp(tmp, "FLOAT", 5) == 0;
 
   rawspec_raw_get_str(buf, "RA_STR", "0.0", tmp, 80);
   raw_hdr->ra = rawspec_raw_hmsstr_to_h(tmp);

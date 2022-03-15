@@ -115,7 +115,7 @@ struct rawspec_context_s {
   int input_conjugated;
 
   // Flag indicating that the input data is integer data (not floating point)
-  int integer_data;
+  int float_data;
 
   // Flag indicating the concurrent output of the output data's incoherent-sum.
   int incoherently_sum;

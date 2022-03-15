@@ -622,7 +622,7 @@ int main(int argc, char *argv[])
         fprintf(stderr, "OBSNCHAN = %d\n",  raw_hdr.obsnchan);
         fprintf(stderr, "NANTS    = %d\n",  raw_hdr.nants);
         fprintf(stderr, "NBITS    = %d\n",  raw_hdr.nbits);
-        fprintf(stderr, "INTEGER DATA = %d\n",  raw_hdr.integer_data);
+        fprintf(stderr, "FLOATDATA= %d\n",  raw_hdr.float_data);
         fprintf(stderr, "NPOL     = %d\n",  raw_hdr.npol);
         fprintf(stderr, "OBSFREQ  = %g\n",  raw_hdr.obsfreq);
         fprintf(stderr, "OBSBW    = %g\n",  raw_hdr.obsbw);
@@ -757,7 +757,7 @@ int main(int argc, char *argv[])
           ctx.Ntpb = Ntpb;
           ctx.Nbps = Nbps;
           ctx.input_conjugated = input_conjugated;
-          ctx.integer_data = raw_hdr.integer_data;
+          ctx.float_data = raw_hdr.float_data;
 
           // Initialize for new dimensions and/or conjugation
           ctx.Nb = 0;           // auto-calculate
