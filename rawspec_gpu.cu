@@ -493,15 +493,22 @@ int rawspec_initialize(rawspec_context * ctx)
     return 1;
   }
 
-  // Validate Nbps. Zero silently defaults to 8 for backwards compatibility
-  // with pre-Nbps versions.  Any other value except 8 or 16 is treated as 8
-  // and a warning is issued to stderr.
-  if(ctx->Nbps == 0) {
+  // Validate Nbps. 
+  // Nbps==0 silently defaults to 8 for backwards compatibility with pre-Nbps versions.
+  // Valid values for Nbps are 4, 8, or 16.
+  // Any other value results in an error message to stderr and return code of 1 (failure).
+  // NbpsIsExpanded = 1 (true) if Nbps==4 else 0 (false).
+  if(ctx->Nbps == 0)
     ctx->Nbps = 8;
-  } else if(ctx->Nbps != 8 && ctx->Nbps != 16) {
-    NbpsIsExpanded = ctx->Nbps == 4;
-    ctx->Nbps = 8;
+  if(ctx->Nbps != 4 && ctx->Nbps != 8 && ctx->Nbps != 16) {
+    fprintf(stderr, "Number of bits per sample in raw header must be 4, 0/8, or 16\n");
+    fprintf(stderr, "Observed a value of %d\n", ctx->Nbps);
+    fflush(stderr);
+    return 1;
   }
+  NbpsIsExpanded = ctx->Nbps == 4;
+  if(ctx->Nbps == 4)
+    ctx->Nbps = 8;
 
   // Determine Ntmax (and validate Nts)
   ctx->Ntmax = 0;
