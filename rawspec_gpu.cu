@@ -511,13 +511,10 @@ int rawspec_initialize(rawspec_context * ctx)
     fflush(stderr);
     return 1;
   } else if(ctx->float_data && ctx->Nbps != 16 && ctx->Nbps != 32) {
-    fprintf(
-      stdout,
-      "Nbps cannot be %d for floating-point data, treating as 16.\n",
-      ctx->Nbps
-    );
+    fprintf(stderr, "Number of bits per float sample in raw header must be 16 or 32\n");
+    fprintf(stderr, "Observed a value of %d\n", ctx->Nbps);
     fflush(stderr);
-    ctx->Nbps = 16;
+    return 1;
   }
   NbpsIsExpanded = ctx->Nbps == 4;
   if(ctx->Nbps == 4)
