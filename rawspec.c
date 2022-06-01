@@ -581,7 +581,7 @@ int main(int argc, char *argv[])
       // If first file for stem, check sizing
       if(fi == 0) {
         if(raw_hdr.nbeams > 0) {
-          fprintf(stderr, "Header has NBEAM %d, which overrides NANTS (%d)\n",
+          fprintf(stderr, "Header has NBEAMS (%d), which overrides NANTS (%d)\n",
             raw_hdr.nbeams, raw_hdr.nants
           );
           raw_hdr.nants = raw_hdr.nbeams;
