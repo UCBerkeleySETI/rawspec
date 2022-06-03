@@ -94,7 +94,7 @@ rawspec.o: rawspec.h rawspec_rawutils.h rawspec_callback.h \
 rawspec_fbutils.o: rawspec_fbutils.h
 rawspec_file.o: rawspec_file.h rawspec.h \
                 rawspec_callback.h rawspec_fbutils.h
-rawspec_gpu.o: rawspec.h rawspec_version.h cuda_error_enum.h
+rawspec_gpu.o: rawspec.h rawspec_version.h cufft_error_name.h
 rawspec_socket.o: rawspec_socket.h rawspec.h \
                   rawspec_callback.h rawspec_fbutils.h
 rawspectest.o: rawspec.h

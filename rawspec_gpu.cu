@@ -6,7 +6,7 @@
 
 #include <cufft.h>
 #include <cufftXt.h>
-#include "cuda_error_enum.h"
+#include "cufft_error_name.h"
 
 #define NO_PLAN   ((cufftHandle)-1)
 #define NO_STREAM ((cudaStream_t)-1)

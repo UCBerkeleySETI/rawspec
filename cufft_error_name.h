@@ -30,8 +30,8 @@
 ////////////////////////////////////////////////////////////////////////////////
 // This is a cufft version of `cudaGetErrorName`
 
-#ifndef COMMON_HELPER_CUDA_H_
-#define COMMON_HELPER_CUDA_H_
+#ifndef CUFFT_ERROR_NAME_H_
+#define CUFFT_ERROR_NAME_H_
 
 #include <stdio.h>
 
