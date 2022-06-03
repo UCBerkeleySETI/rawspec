@@ -16,9 +16,14 @@
 
 #define MIN(a,b) ((a < b) ? (a) : (b))
 
-#define PRINT_ERRMSG(error)                  \
+#define PRINT_CUDA_ERRMSG(error)             \
   fprintf(stderr, "got error %s at %s:%d\n", \
-      _cudaGetErrorEnum(error),  \
+      cudaGetErrorName(error),  \
+      __FILE__, __LINE__); fflush(stderr)
+
+#define PRINT_CUFFT_ERRMSG(error)            \
+  fprintf(stderr, "got error %s at %s:%d\n", \
+      cufftGetErrorName(error),  \
       __FILE__, __LINE__); fflush(stderr)
 
 // Stream callback data structure
@@ -646,7 +651,7 @@ int rawspec_initialize(rawspec_context * ctx)
   // Set CUDA device (validates gpu_index)
   cuda_rc = cudaSetDevice(ctx->gpu_index);
   if(cuda_rc != cudaSuccess) {
-    PRINT_ERRMSG(cuda_rc);
+    PRINT_CUDA_ERRMSG(cuda_rc);
     // TODO return distinct error code
     return 1;
   }
@@ -699,7 +704,7 @@ int rawspec_initialize(rawspec_context * ctx)
           ctx->Ntpb * ctx->Np * ctx->Nc * 2 /*complex*/ * (ctx->Nbps/8),
           cudaHostAllocWriteCombined);
       if(cuda_rc != cudaSuccess) {
-        PRINT_ERRMSG(cuda_rc);
+        PRINT_CUDA_ERRMSG(cuda_rc);
         rawspec_cleanup(ctx);
         return 1;
       }
@@ -716,7 +721,7 @@ int rawspec_initialize(rawspec_context * ctx)
           ctx->Ntpb * ctx->Np * ctx->Nc * 2 /*complex*/ * (ctx->Nbps/8),
           cudaHostRegisterDefault);
       if(cuda_rc != cudaSuccess) {
-        PRINT_ERRMSG(cuda_rc);
+        PRINT_CUDA_ERRMSG(cuda_rc);
         rawspec_cleanup(ctx);
         return 1;
       }
@@ -760,7 +765,7 @@ int rawspec_initialize(rawspec_context * ctx)
                        cudaHostAllocDefault);
 
     if(cuda_rc != cudaSuccess) {
-      PRINT_ERRMSG(cuda_rc);
+      PRINT_CUDA_ERRMSG(cuda_rc);
       rawspec_cleanup(ctx);
       return 1;
     }
@@ -769,7 +774,7 @@ int rawspec_initialize(rawspec_context * ctx)
                         cudaHostAllocDefault);
 
       if(cuda_rc != cudaSuccess) {
-        PRINT_ERRMSG(cuda_rc);
+        PRINT_CUDA_ERRMSG(cuda_rc);
         rawspec_cleanup(ctx);
         return 1;
       }
@@ -795,7 +800,7 @@ int rawspec_initialize(rawspec_context * ctx)
 #endif
   cuda_rc = cudaMalloc(&gpu_ctx->d_fft_in, buf_size);
   if(cuda_rc != cudaSuccess) {
-    PRINT_ERRMSG(cuda_rc);
+    PRINT_CUDA_ERRMSG(cuda_rc);
     rawspec_cleanup(ctx);
     return 1;
   }
@@ -853,7 +858,7 @@ int rawspec_initialize(rawspec_context * ctx)
                                     &res_desc, &tex_desc, NULL);
 
   if(cuda_rc != cudaSuccess) {
-    PRINT_ERRMSG(cuda_rc);
+    PRINT_CUDA_ERRMSG(cuda_rc);
     rawspec_cleanup(ctx);
     return 1;
   }
@@ -864,7 +869,7 @@ int rawspec_initialize(rawspec_context * ctx)
                                sizeof(cudaTextureObject_t));
 
   if(cuda_rc != cudaSuccess) {
-    PRINT_ERRMSG(cuda_rc);
+    PRINT_CUDA_ERRMSG(cuda_rc);
     rawspec_cleanup(ctx);
     return 1;
   }
@@ -875,7 +880,7 @@ int rawspec_initialize(rawspec_context * ctx)
 #endif
     cuda_rc = cudaMalloc(&gpu_ctx->d_blk_expansion_buf, buf_size/2);
     if(cuda_rc != cudaSuccess) {
-      PRINT_ERRMSG(cuda_rc);
+      PRINT_CUDA_ERRMSG(cuda_rc);
       rawspec_cleanup(ctx);
       return 1;
     }
@@ -885,7 +890,7 @@ int rawspec_initialize(rawspec_context * ctx)
 #endif
     cuda_rc = cudaMalloc(&gpu_ctx->d_comp4_exp_LUT, 256*sizeof(char2));
     if(cuda_rc != cudaSuccess) {
-      PRINT_ERRMSG(cuda_rc);
+      PRINT_CUDA_ERRMSG(cuda_rc);
       rawspec_cleanup(ctx);
       return 1;
     }
@@ -906,7 +911,7 @@ int rawspec_initialize(rawspec_context * ctx)
                                       &res_desc, &tex_desc, NULL);
   
     if(cuda_rc != cudaSuccess) {
-      PRINT_ERRMSG(cuda_rc);
+      PRINT_CUDA_ERRMSG(cuda_rc);
       rawspec_cleanup(ctx);
       return 1;
     }
@@ -916,7 +921,7 @@ int rawspec_initialize(rawspec_context * ctx)
                                 sizeof(cudaTextureObject_t));
 
     if(cuda_rc != cudaSuccess) {
-      PRINT_ERRMSG(cuda_rc);
+      PRINT_CUDA_ERRMSG(cuda_rc);
       rawspec_cleanup(ctx);
       return 1;
     }
@@ -936,7 +941,7 @@ int rawspec_initialize(rawspec_context * ctx)
 #endif
   cuda_rc = cudaMalloc(&gpu_ctx->d_fft_out, buf_size);
   if(cuda_rc != cudaSuccess) {
-    PRINT_ERRMSG(cuda_rc);
+    PRINT_CUDA_ERRMSG(cuda_rc);
     rawspec_cleanup(ctx);
     return 1;
   }
@@ -952,7 +957,7 @@ int rawspec_initialize(rawspec_context * ctx)
     cuda_rc = cudaMalloc(&gpu_ctx->d_pwr_out[i],
         abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nbc*sizeof(float));
     if(cuda_rc != cudaSuccess) {
-      PRINT_ERRMSG(cuda_rc);
+      PRINT_CUDA_ERRMSG(cuda_rc);
       rawspec_cleanup(ctx);
       return 1;
     }
@@ -960,7 +965,7 @@ int rawspec_initialize(rawspec_context * ctx)
     cuda_rc = cudaMemset(gpu_ctx->d_pwr_out[i], 0,
         abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nbc*sizeof(float));
     if(cuda_rc != cudaSuccess) {
-      PRINT_ERRMSG(cuda_rc);
+      PRINT_CUDA_ERRMSG(cuda_rc);
       rawspec_cleanup(ctx);
       return 1;
     }
@@ -974,7 +979,7 @@ int rawspec_initialize(rawspec_context * ctx)
       cuda_rc = cudaMalloc(&gpu_ctx->d_prev_pwr_out_cache[i],
           abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
       if(cuda_rc != cudaSuccess) {
-        PRINT_ERRMSG(cuda_rc);
+        PRINT_CUDA_ERRMSG(cuda_rc);
         rawspec_cleanup(ctx);
         return 1;
       }
@@ -982,7 +987,7 @@ int rawspec_initialize(rawspec_context * ctx)
       cuda_rc = cudaMemset(gpu_ctx->d_prev_pwr_out_cache[i], 0,
           abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
       if(cuda_rc != cudaSuccess) {
-        PRINT_ERRMSG(cuda_rc);
+        PRINT_CUDA_ERRMSG(cuda_rc);
         rawspec_cleanup(ctx);
         return 1;
       }
@@ -1000,7 +1005,7 @@ int rawspec_initialize(rawspec_context * ctx)
       cuda_rc = cudaMalloc(&gpu_ctx->d_ics_out[i],
           abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float)/ctx->Nant);
       if(cuda_rc != cudaSuccess) {
-        PRINT_ERRMSG(cuda_rc);
+        PRINT_CUDA_ERRMSG(cuda_rc);
         rawspec_cleanup(ctx);
         return 1;
       }
@@ -1008,7 +1013,7 @@ int rawspec_initialize(rawspec_context * ctx)
       cuda_rc = cudaMemset(gpu_ctx->d_ics_out[i], 0,
           abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float)/ctx->Nant);
       if(cuda_rc != cudaSuccess) {
-        PRINT_ERRMSG(cuda_rc);
+        PRINT_CUDA_ERRMSG(cuda_rc);
         rawspec_cleanup(ctx);
         return 1;
       }
@@ -1019,7 +1024,7 @@ int rawspec_initialize(rawspec_context * ctx)
 #endif
       cuda_rc = cudaMalloc(&gpu_ctx->d_Aws, ctx->Nant*sizeof(float));
       if(cuda_rc != cudaSuccess) {
-        PRINT_ERRMSG(cuda_rc);
+        PRINT_CUDA_ERRMSG(cuda_rc);
         rawspec_cleanup(ctx);
         return 1;
       }
@@ -1059,7 +1064,7 @@ int rawspec_initialize(rawspec_context * ctx)
     // Allocate device memory for store_cb_data_t array
     cuda_rc = cudaMalloc(&gpu_ctx->d_scb_data[i], sizeof(store_cb_data_t));
     if(cuda_rc != cudaSuccess) {
-      PRINT_ERRMSG(cuda_rc);
+      PRINT_CUDA_ERRMSG(cuda_rc);
       rawspec_cleanup(ctx);
       return 1;
     }
@@ -1070,7 +1075,7 @@ int rawspec_initialize(rawspec_context * ctx)
                          sizeof(store_cb_data_t),
                          cudaMemcpyHostToDevice);
     if(cuda_rc != cudaSuccess) {
-      PRINT_ERRMSG(cuda_rc);
+      PRINT_CUDA_ERRMSG(cuda_rc);
       rawspec_cleanup(ctx);
       return 1;
     }
@@ -1081,7 +1086,7 @@ int rawspec_initialize(rawspec_context * ctx)
                                  d_cufft_load_callback,
                                  sizeof(h_cufft_load_callback));
   if(cuda_rc != cudaSuccess) {
-    PRINT_ERRMSG(cuda_rc);
+    PRINT_CUDA_ERRMSG(cuda_rc);
     rawspec_cleanup(ctx);
     return 1;
   }
@@ -1090,7 +1095,7 @@ int rawspec_initialize(rawspec_context * ctx)
                                  d_cufft_store_callback,
                                  sizeof(h_cufft_store_callback));
   if(cuda_rc != cudaSuccess) {
-    PRINT_ERRMSG(cuda_rc);
+    PRINT_CUDA_ERRMSG(cuda_rc);
     rawspec_cleanup(ctx);
     return 1;
   }
@@ -1099,7 +1104,7 @@ int rawspec_initialize(rawspec_context * ctx)
                                  d_cufft_store_callback_pol0,
                                  sizeof(h_cufft_store_callback_pols[0]));
   if(cuda_rc != cudaSuccess) {
-    PRINT_ERRMSG(cuda_rc);
+    PRINT_CUDA_ERRMSG(cuda_rc);
     rawspec_cleanup(ctx);
     return 1;
   }
@@ -1109,7 +1114,7 @@ int rawspec_initialize(rawspec_context * ctx)
                                                        : d_cufft_store_callback_pol1,
                                  sizeof(h_cufft_store_callback_pols[1]));
   if(cuda_rc != cudaSuccess) {
-    PRINT_ERRMSG(cuda_rc);
+    PRINT_CUDA_ERRMSG(cuda_rc);
     rawspec_cleanup(ctx);
     return 1;
   }
@@ -1118,7 +1123,7 @@ int rawspec_initialize(rawspec_context * ctx)
                                  d_cufft_store_callback_pol0_iquv,
                                  sizeof(h_cufft_store_callback_iquv[0]));
   if(cuda_rc != cudaSuccess) {
-    PRINT_ERRMSG(cuda_rc);
+    PRINT_CUDA_ERRMSG(cuda_rc);
     rawspec_cleanup(ctx);
     return 1;
   }
@@ -1128,7 +1133,7 @@ int rawspec_initialize(rawspec_context * ctx)
                                                        : d_cufft_store_callback_pol1_iquv,
                                  sizeof(h_cufft_store_callback_iquv[1]));
   if(cuda_rc != cudaSuccess) {
-    PRINT_ERRMSG(cuda_rc);
+    PRINT_CUDA_ERRMSG(cuda_rc);
     rawspec_cleanup(ctx);
     return 1;
   }
@@ -1137,7 +1142,7 @@ int rawspec_initialize(rawspec_context * ctx)
   cuda_rc = cudaStreamCreateWithFlags(&gpu_ctx->compute_stream,
                                       cudaStreamNonBlocking);
   if(cuda_rc != cudaSuccess) {
-    PRINT_ERRMSG(cuda_rc);
+    PRINT_CUDA_ERRMSG(cuda_rc);
     rawspec_cleanup(ctx);
     return 1;
   }
@@ -1148,7 +1153,7 @@ int rawspec_initialize(rawspec_context * ctx)
       // Create plan handle (does not "make the plan", that happens later)
       cufft_rc = cufftCreate(&gpu_ctx->plan[i][p]);
       if(cufft_rc != CUFFT_SUCCESS) {
-        PRINT_ERRMSG(cufft_rc);
+        PRINT_CUFFT_ERRMSG(cufft_rc);
         rawspec_cleanup(ctx);
         return 1;
       }
@@ -1156,7 +1161,7 @@ int rawspec_initialize(rawspec_context * ctx)
       // Prevent auto-allocation of work area for plan
       cufft_rc = cufftSetAutoAllocation(gpu_ctx->plan[i][p], 0);
       if(cufft_rc != CUFFT_SUCCESS) {
-        PRINT_ERRMSG(cufft_rc);
+        PRINT_CUFFT_ERRMSG(cufft_rc);
         rawspec_cleanup(ctx);
         return 1;
       }
@@ -1182,7 +1187,7 @@ int rawspec_initialize(rawspec_context * ctx)
                  );
 
       if(cufft_rc != CUFFT_SUCCESS) {
-        PRINT_ERRMSG(cufft_rc);
+        PRINT_CUFFT_ERRMSG(cufft_rc);
         rawspec_cleanup(ctx);
         return 1;
       }
@@ -1197,7 +1202,7 @@ int rawspec_initialize(rawspec_context * ctx)
                                     CUFFT_CB_LD_COMPLEX,
                                     (void **)&gpu_ctx->d_fft_in);
       if(cufft_rc != CUFFT_SUCCESS) {
-        PRINT_ERRMSG(cufft_rc);
+        PRINT_CUFFT_ERRMSG(cufft_rc);
         rawspec_cleanup(ctx);
         return 1;
       }
@@ -1223,7 +1228,7 @@ int rawspec_initialize(rawspec_context * ctx)
         return 1;
       }
       if(cufft_rc != CUFFT_SUCCESS) {
-        PRINT_ERRMSG(cufft_rc);
+        PRINT_CUFFT_ERRMSG(cufft_rc);
         rawspec_cleanup(ctx);
         return 1;
       }
@@ -1231,7 +1236,7 @@ int rawspec_initialize(rawspec_context * ctx)
       // Associate compute stream with plan
       cufft_rc = cufftSetStream(gpu_ctx->plan[i][p], gpu_ctx->compute_stream);
       if(cufft_rc != CUFFT_SUCCESS) {
-        PRINT_ERRMSG(cufft_rc);
+        PRINT_CUFFT_ERRMSG(cufft_rc);
         rawspec_cleanup(ctx);
         return 1;
       }
@@ -1239,7 +1244,7 @@ int rawspec_initialize(rawspec_context * ctx)
       // Get work size for this plan
       cufft_rc = cufftGetSize(gpu_ctx->plan[i][p], &work_size);
       if(cufft_rc != CUFFT_SUCCESS) {
-        PRINT_ERRMSG(cufft_rc);
+        PRINT_CUFFT_ERRMSG(cufft_rc);
         rawspec_cleanup(ctx);
         return 1;
       }
@@ -1257,7 +1262,7 @@ int rawspec_initialize(rawspec_context * ctx)
 #endif
   cuda_rc = cudaMalloc(&gpu_ctx->d_work_area, gpu_ctx->work_size);
   if(cuda_rc != cudaSuccess) {
-    PRINT_ERRMSG(cuda_rc);
+    PRINT_CUDA_ERRMSG(cuda_rc);
     rawspec_cleanup(ctx);
     return 1;
   }
@@ -1270,7 +1275,7 @@ int rawspec_initialize(rawspec_context * ctx)
     for(p=0; p<2; p++) {
       cufft_rc = cufftSetWorkArea(gpu_ctx->plan[i][p], gpu_ctx->d_work_area);
       if(cufft_rc != CUFFT_SUCCESS) {
-        PRINT_ERRMSG(cufft_rc);
+        PRINT_CUFFT_ERRMSG(cufft_rc);
         rawspec_cleanup(ctx);
         return 1;
       }
@@ -1404,7 +1409,7 @@ int rawspec_copy_blocks_to_gpu_expanding_complex4(rawspec_context * ctx,
                           block_size, cudaMemcpyHostToDevice, gpu_ctx->compute_stream);
 
     if(rc != cudaSuccess) {
-      PRINT_ERRMSG(rc);
+      PRINT_CUDA_ERRMSG(rc);
       return 1;
     }
   }
@@ -1447,7 +1452,7 @@ int rawspec_copy_blocks_to_gpu(rawspec_context * ctx,
                       cudaMemcpyHostToDevice);
 
     if(rc != cudaSuccess) {
-      PRINT_ERRMSG(rc);
+      PRINT_CUDA_ERRMSG(rc);
       return 1;
     }
   }
@@ -1478,7 +1483,7 @@ int rawspec_zero_blocks_to_gpu(rawspec_context * ctx,
                       ctx->Nc);                                 // height
 
     if(rc != cudaSuccess) {
-      PRINT_ERRMSG(rc);
+      PRINT_CUDA_ERRMSG(rc);
       return 1;
     }
   }
@@ -1550,7 +1555,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
                                 fft_dir <= 0 ? CUFFT_INVERSE : CUFFT_FORWARD);
 
         if(cufft_rc != CUFFT_SUCCESS) {
-          PRINT_ERRMSG(cufft_rc);
+          PRINT_CUFFT_ERRMSG(cufft_rc);
           return 1;
         }
       }
@@ -1613,7 +1618,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
               cudaMemcpyDeviceToHost,
               gpu_ctx->compute_stream);
             if(cuda_rc != cudaSuccess) {
-              PRINT_ERRMSG(cuda_rc);
+              PRINT_CUDA_ERRMSG(cuda_rc);
               return 1;
             }
           }
@@ -1626,7 +1631,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
                                           (void *)&gpu_ctx->dump_cb_data[i], 0);
 
           if(cuda_rc != cudaSuccess) {
-            PRINT_ERRMSG(cuda_rc);
+            PRINT_CUDA_ERRMSG(cuda_rc);
             return 1;
           }
         }
@@ -1655,7 +1660,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
                                         gpu_ctx->compute_stream);
 
             if(cuda_rc != cudaSuccess) {
-              PRINT_ERRMSG(cuda_rc);
+              PRINT_CUDA_ERRMSG(cuda_rc);
               rawspec_cleanup(ctx);
               return 1;
             }
@@ -1672,7 +1677,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
                                         gpu_ctx->compute_stream);
 
             if(cuda_rc != cudaSuccess) {
-              PRINT_ERRMSG(cuda_rc);
+              PRINT_CUDA_ERRMSG(cuda_rc);
               rawspec_cleanup(ctx);
               return 1;
             }
@@ -1690,7 +1695,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
                                           (void *)&gpu_ctx->dump_cb_data[i], 0);
 
           if(cuda_rc != cudaSuccess) {
-            PRINT_ERRMSG(cuda_rc);
+            PRINT_CUDA_ERRMSG(cuda_rc);
             return 1;
           }
         }
@@ -1701,7 +1706,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
                                   gpu_ctx->compute_stream);
 
         if(cuda_rc != cudaSuccess) {
-          PRINT_ERRMSG(cuda_rc);
+          PRINT_CUDA_ERRMSG(cuda_rc);
           return 1;
         }
         if(is_last_channel_batch && ctx->incoherently_sum){
@@ -1711,7 +1716,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
                                     gpu_ctx->compute_stream);
     
           if(cuda_rc != cudaSuccess) {
-            PRINT_ERRMSG(cuda_rc);
+            PRINT_CUDA_ERRMSG(cuda_rc);
             return 1;
           }
         }
@@ -1767,7 +1772,7 @@ int rawspec_reset_integration(rawspec_context * ctx)
     cuda_rc = cudaMemset(gpu_ctx->d_pwr_out[i], 0,
         abs(ctx->Npolout[i])*ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
     if(cuda_rc != cudaSuccess) {
-      PRINT_ERRMSG(cuda_rc);
+      PRINT_CUDA_ERRMSG(cuda_rc);
       return 0;
     }
   }
@@ -1807,7 +1812,7 @@ int rawspec_wait_for_completion(rawspec_context * ctx)
     rc = cudaStreamAddCallback(gpu_ctx->compute_stream, pre_dump_stream_callback,
                                     (void *)&gpu_ctx->dump_cb_data[i], 0);
     if(rc != cudaSuccess) {
-      PRINT_ERRMSG(rc);
+      PRINT_CUDA_ERRMSG(rc);
       return 1;
     }
   }
