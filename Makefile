@@ -51,7 +51,7 @@ CFLAGS = -ggdb -fPIC -I$(CUDA_PATH)/include $(INCDIR_H5)
 ifdef DEBUG_CALLBACKS
 CFLAGS += -DDEBUG_CALLBACKS=$(DEBUG_CALLBACKS)
 endif
-NVCC_FLAGS = -m64 -g -Xcompiler=-fPIC -I$(CUDA_PATH)/samples/common/inc
+NVCC_FLAGS = -m64 -g -Xcompiler=-fPIC
 ifdef VERBOSE_ALLOC
 NVCC_FLAGS += -DVERBOSE_ALLOC=$(VERBOSE_ALLOC)
 endif
@@ -94,7 +94,7 @@ rawspec.o: rawspec.h rawspec_rawutils.h rawspec_callback.h \
 rawspec_fbutils.o: rawspec_fbutils.h
 rawspec_file.o: rawspec_file.h rawspec.h \
                 rawspec_callback.h rawspec_fbutils.h
-rawspec_gpu.o: rawspec.h rawspec_version.h
+rawspec_gpu.o: rawspec.h rawspec_version.h cufft_error_name.h
 rawspec_socket.o: rawspec_socket.h rawspec.h \
                   rawspec_callback.h rawspec_fbutils.h
 rawspectest.o: rawspec.h
