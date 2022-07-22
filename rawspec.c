@@ -622,7 +622,7 @@ int main(int argc, char *argv[])
         fprintf(stderr, "OBSNCHAN = %d\n",  raw_hdr.obsnchan);
         fprintf(stderr, "NANTS    = %d\n",  raw_hdr.nants);
         fprintf(stderr, "NBITS    = %d\n",  raw_hdr.nbits);
-        fprintf(stderr, "FLOATDATA= %d\n",  raw_hdr.float_data);
+        fprintf(stderr, "DATATYPE = %s\n",  raw_hdr.float_data ? "FLOAT" : "INTEGER");
         fprintf(stderr, "NPOL     = %d\n",  raw_hdr.npol);
         fprintf(stderr, "OBSFREQ  = %g\n",  raw_hdr.obsfreq);
         fprintf(stderr, "OBSBW    = %g\n",  raw_hdr.obsbw);
