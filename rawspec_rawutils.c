@@ -242,6 +242,13 @@ off_t rawspec_raw_read_header(int fd, rawspec_raw_hdr_t * raw_hdr)
   if(raw_hdr->npol == 4) {
     // 2 is the actual number of polarizations present
     raw_hdr->npol = 2;
+  } else if(raw_hdr->npol == 2) {
+    // 1 is the actual number of polarizations present
+    raw_hdr->npol = 1;
+  } else {
+    fprintf(stderr,
+        "NPOL must be either 2 or 4, not %d\n", raw_hdr->npol);
+    return -1;
   }
 
   // Save header pos/size
