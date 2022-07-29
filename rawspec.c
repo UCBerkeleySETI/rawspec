@@ -213,7 +213,7 @@ int main(int argc, char *argv[])
   int flag_debugging = 0;
 
   // FBH5 fields
-  int flag_fbh5_output = 0;
+  enum rawspec_callback_file_format_t flag_file_output = FILE_FORMAT_FBSIGPROC;
 
   // For net data rate rate calculations
   double rate = 6.0;
@@ -245,7 +245,7 @@ int main(int argc, char *argv[])
         break;
 
       case 'j': // FBH5 output format requested
-        flag_fbh5_output = 1;
+        flag_file_output = FILE_FORMAT_FBH5;
         break;
 
       case 'z': // Selected dynamic debugging
@@ -403,10 +403,14 @@ int main(int argc, char *argv[])
 
   // If writing output files, show the format used
   if(output_mode == RAWSPEC_FILE) {
-      if(flag_fbh5_output)
-          printf("writing output files in FBH5 format\n");
-      else
-          printf("writing output files in SIGPROC Filterbank format\n");
+    switch(flag_file_output) {
+      case FILE_FORMAT_FBH5:
+        printf("writing output files in FBH5 format\n");
+        break;
+      case FILE_FORMAT_FBSIGPROC:
+        printf("writing output files in SIGPROC Filterbank format\n");
+        break;
+    }
   }
 
   // If schan is non-zero, nchan must be too
@@ -495,12 +499,13 @@ int main(int argc, char *argv[])
     // Init callback file descriptors to sentinal values
     cb_data[i].fd = malloc(sizeof(int));
     cb_data[i].fd[0] = -1;
-    if(flag_fbh5_output) {
-        cb_data[i].flag_fbh5_output = 1;
+
+    cb_data[i].flag_file_output = flag_file_output;
+    switch(flag_file_output) {
+      case FILE_FORMAT_FBH5:
         cb_data[i].fbh5_ctx_ant = malloc(sizeof(fbh5_context_t));
         cb_data[i].fbh5_ctx_ant[0].active = 0;
-    } else {
-        cb_data[i].flag_fbh5_output = 0;
+        break;
     }
   }
 
@@ -639,12 +644,14 @@ int main(int argc, char *argv[])
                 // For each antenna .....
                 for(j=0; j<cb_data[i].Nant; j++) {
                   // If output file for antenna j is still open, close it.
-                  if(flag_fbh5_output) {
+                  switch(flag_file_output) {
+                    case FILE_FORMAT_FBH5:
                       if(cb_data[i].fbh5_ctx_ant[j].active) {
                         if(fbh5_close(&(cb_data[i].fbh5_ctx_ant[j]), cb_data[i].debug_callback) != 0)
                           exit_status = 1;
                       }
-                  } else {
+                      break;
+                    case FILE_FORMAT_FBSIGPROC:
                       if(cb_data[i].fd[j] != -1) {
                         if(close(cb_data[i].fd[j]) < 0) {
                           fprintf(stderr, "SIGPROC-CLOSE-ERROR\n");
@@ -652,10 +659,11 @@ int main(int argc, char *argv[])
                         }                      
                         cb_data[i].fd[j] = -1;
                       }
+                      break;
                   }
                 }
                 // Free all output file resources
-                if(flag_fbh5_output) {
+                if(flag_file_output == FILE_FORMAT_FBH5) {
                     free(cb_data[i].fbh5_ctx_ant);
                 }
                 free(cb_data[i].fd);
@@ -663,14 +671,14 @@ int main(int argc, char *argv[])
                 cb_data[i].per_ant_out = per_ant_out;
                 // Re-init callback file descriptors to sentinal values
                 // Memory is allocated by the output files are not yet open.
-                if(flag_fbh5_output) {
-                    cb_data[i].flag_fbh5_output = 1;
+                cb_data[i].flag_file_output = flag_file_output;
+                switch(flag_file_output) {
+                  case FILE_FORMAT_FBH5:
                     cb_data[i].fbh5_ctx_ant = malloc(sizeof(fbh5_context_t) * raw_hdr.nants);
                     for(j=0; j<raw_hdr.nants; j++) {
                         cb_data[i].fbh5_ctx_ant[j].active = 0;
                     }
-                } else {
-                    cb_data[i].flag_fbh5_output = 0;
+                    break;
                 }
                 cb_data[i].fd = malloc(sizeof(int)*raw_hdr.nants);
                 for(j=0; j<raw_hdr.nants; j++){
@@ -860,9 +868,13 @@ int main(int argc, char *argv[])
               }
 
               // Write filterbank header to SIGPROC output ICS file.
-              // If FBH5, the header was already written by fbh5_open().
-              if(! flag_fbh5_output) {
-                fb_fd_write_header(cb_data[i].fd_ics, &cb_data[i].fb_hdr);
+              switch(flag_file_output) {
+                case FILE_FORMAT_FBH5:
+                  // the header was already written by fbh5_open().
+                  break;
+                case FILE_FORMAT_FBSIGPROC:
+                  fb_fd_write_header(cb_data[i].fd_ics, &cb_data[i].fb_hdr);
+                  break;
               }
             } // if(ctx.incoherently_sum)
           } // if(output_mode == RAWSPEC_FILE)
@@ -1050,12 +1062,14 @@ int main(int argc, char *argv[])
       for(i=0; i<ctx.No; i++) {
         // Antennas
         for(j=0; j < (cb_data[i].per_ant_out ? cb_data[i].Nant : 1); j++) {
-          if(flag_fbh5_output) {
+          switch(flag_file_output) {
+            case FILE_FORMAT_FBH5:
               if(cb_data[i].fbh5_ctx_ant[j].active) {
                 if(fbh5_close(&(cb_data[i].fbh5_ctx_ant[j]), cb_data[i].debug_callback) != 0)
                   exit_status = 1;
               }
-          } else {
+              break;
+            case FILE_FORMAT_FBSIGPROC:
               if(cb_data[i].fd[j] != -1) {
                 if(close(cb_data[i].fd[j]) < 0) {
                   fprintf(stderr, "SIGPROC-CLOSE-ERROR ant %d\n", j);
@@ -1063,16 +1077,19 @@ int main(int argc, char *argv[])
                 }
                 cb_data[i].fd[j] = -1;
               }
-           }
+              break;
+          }
         }
         // ICS
         if(ctx.incoherently_sum) {
-          if(flag_fbh5_output) {
+          switch(flag_file_output) {
+            case FILE_FORMAT_FBH5:
               if(cb_data[i].fbh5_ctx_ics.active) {
                   if(fbh5_close(&(cb_data[i].fbh5_ctx_ics), cb_data[i].debug_callback) != 0)
                     exit_status = 1;
               }
-          } else {
+              break;
+            case FILE_FORMAT_FBSIGPROC:
               if(cb_data[i].fd_ics != -1) {
                 if(close(cb_data[i].fd_ics) < 0) {
                   fprintf(stderr, "SIGPROC-CLOSE-ERROR cb %d ics\n", i);
@@ -1080,6 +1097,7 @@ int main(int argc, char *argv[])
                 }
                 cb_data[i].fd_ics = -1;
               }
+              break;
           }
         } // ctx.incoherently_sum
       }

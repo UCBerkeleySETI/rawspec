@@ -21,10 +21,14 @@ int open_output_file(callback_data_t *cb_data, const char * dest, const char *st
   int retcode;
 
   // If dest is given and it's not empty
-  if(cb_data->flag_fbh5_output)
+  switch(cb_data->flag_file_output) {
+    case FILE_FORMAT_FBH5:
       strcpy(fileext, "h5");
-  else
+      break;
+    case FILE_FORMAT_FBSIGPROC:
       strcpy(fileext, "fil");
+      break;
+  }
   if(dest && dest[0]) {
     // Look for last '/' in stem
     basename = strrchr(stem, '/');
@@ -40,7 +44,9 @@ int open_output_file(callback_data_t *cb_data, const char * dest, const char *st
     snprintf(fname, PATH_MAX, "%s.rawspec.%04d.%s", stem, output_idx, fileext);
   }
   fname[PATH_MAX] = '\0';
-  if(cb_data->flag_fbh5_output) {
+
+  switch(cb_data->flag_file_output) {
+    case FILE_FORMAT_FBH5:
       // Open an FBH5 output file.
       // If antenna_index < 0, then use the ICS context;
       // Else, use the indicated antenna context.
@@ -55,17 +61,19 @@ int open_output_file(callback_data_t *cb_data, const char * dest, const char *st
       if(cb_data->debug_callback)
           printf("open_output_file: fbh5_open(%s) successful\n", fname);
       return ENABLER_FD_FOR_FBH5;
-  }
 
-  // Open a SIGPROC Filterbank output file.
-  fd = open(fname, O_WRONLY | O_CREAT | O_TRUNC, 0664);
-  if(fd == -1) {
-    cb_data->exit_soon = 1;
-    perror(fname);
-  } else {
-    posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
+    case FILE_FORMAT_FBSIGPROC:
+      // Open a SIGPROC Filterbank output file.
+      fd = open(fname, O_WRONLY | O_CREAT | O_TRUNC, 0664);
+      if(fd == -1) {
+        cb_data->exit_soon = 1;
+        perror(fname);
+      } else {
+        posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
+      }
+      return fd;
+
   }
-  return fd;
 }
 
 // Open one or more output Filterbank files for the following cases:
@@ -93,8 +101,11 @@ int open_output_file_per_antenna_and_write_header(callback_data_t *cb_data, cons
     }
 
     // Write filterbank header to output file if SIGPROC.
-    if(! cb_data->flag_fbh5_output)
+    switch(cb_data->flag_file_output) {
+      case FILE_FORMAT_FBSIGPROC:
         fb_fd_write_header(cb_data->fd[i], &cb_data->fb_hdr);
+        break;
+    }
   }
   return 0;
 }
@@ -108,25 +119,29 @@ void * dump_file_thread_func(void *arg)
   if(cb_data->fd && cb_data->h_pwrbuf && (cb_data->Nant == 1)) {
       if(cb_data->debug_callback)
         printf("dump_file_thread_func: write for nants=0\n");
-      if(cb_data->flag_fbh5_output) {
-        retcode = fbh5_write(&(cb_data->fbh5_ctx_ant[0]),
-                   &(cb_data->fb_hdr), 
-                   cb_data->h_pwrbuf, 
-                   cb_data->h_pwrbuf_size,
-                   cb_data->debug_callback);
-        if(retcode != 0) {
-            cb_data->exit_soon = 1;
-            cb_data->output_thread_valid = 0;
-        }
-      } else { // SIGPROC Filterbank
-        if(write(cb_data->fd[0], 
-              cb_data->h_pwrbuf, 
-              cb_data->h_pwrbuf_size) < 0) {
-            cb_data->exit_soon = 1;
-            cb_data->output_thread_valid = 0;
-            fprintf(stderr, "SIGPROC-WRITE-ERROR\n");
-        }
-      } // if(cb_data->flag_fbh5_output) 
+
+      switch(cb_data->flag_file_output) {
+        case FILE_FORMAT_FBH5:
+          retcode = fbh5_write(&(cb_data->fbh5_ctx_ant[0]),
+                    &(cb_data->fb_hdr), 
+                    cb_data->h_pwrbuf, 
+                    cb_data->h_pwrbuf_size,
+                    cb_data->debug_callback);
+          if(retcode != 0) {
+              cb_data->exit_soon = 1;
+              cb_data->output_thread_valid = 0;
+          }
+          break;
+        case FILE_FORMAT_FBSIGPROC:
+          if(write(cb_data->fd[0], 
+                cb_data->h_pwrbuf, 
+                cb_data->h_pwrbuf_size) < 0) {
+              cb_data->exit_soon = 1;
+              cb_data->output_thread_valid = 0;
+              fprintf(stderr, "SIGPROC-WRITE-ERROR\n");
+          }
+          break;
+      }
   }
 
   // Multiple antennas, split output
@@ -145,7 +160,9 @@ void * dump_file_thread_func(void *arg)
             }
             if(cb_data->debug_callback)
                 printf("dump_file_thread_func: write for antenna %ld-%ld-%ld\n", k, j, i);
-            if(cb_data->flag_fbh5_output) {
+
+            switch(cb_data->flag_file_output) {
+              case FILE_FORMAT_FBH5:
                 retcode = fbh5_write(&(cb_data->fbh5_ctx_ant[i]),
                            &(cb_data->fb_hdr), 
                            cb_data->h_pwrbuf + i * ant_stride + j * pol_stride + k * spectra_stride, 
@@ -155,7 +172,8 @@ void * dump_file_thread_func(void *arg)
                     cb_data->exit_soon = 1;
                     cb_data->output_thread_valid = 0;
                 }
-            } else { // SIGPROC Filterbank
+                break;
+              case FILE_FORMAT_FBSIGPROC:
                 if(write(cb_data->fd[i], 
                       cb_data->h_pwrbuf + i * ant_stride + j * pol_stride + k * spectra_stride, 
                       ant_stride * sizeof(float)) < 0) {
@@ -163,7 +181,8 @@ void * dump_file_thread_func(void *arg)
                   cb_data->output_thread_valid = 0;
                   fprintf(stderr, "SIGPROC-WRITE-ERROR\n");
                 }
-            } // if(cb_data->flag_fbh5_output)
+                break;
+            }
           } // for(size_t i = 0; i < cb_data->Nant; i++)
         } // for(size_t j = 0; j < cb_data->fb_hdr.nifs; j++)
       } // for(size_t k = 0; k < cb_data->Nds; k++)
@@ -174,7 +193,9 @@ void * dump_file_thread_func(void *arg)
   if(cb_data->fd_ics && cb_data->h_icsbuf) {
     if(cb_data->debug_callback)
         printf("dump_file_thread_func: write for ICS\n");
-    if(cb_data->flag_fbh5_output) {
+
+    switch(cb_data->flag_file_output) {
+      case FILE_FORMAT_FBH5:
         retcode = fbh5_write(&(cb_data->fbh5_ctx_ics),
                    &(cb_data->fb_hdr), 
                    cb_data->h_icsbuf,
@@ -184,7 +205,8 @@ void * dump_file_thread_func(void *arg)
             cb_data->exit_soon = 1;
             cb_data->output_thread_valid = 0;
         }
-    } else { // SIGPROC Filterbank
+        break;
+      case FILE_FORMAT_FBSIGPROC:
         if(write(cb_data->fd_ics, 
               cb_data->h_icsbuf, 
               cb_data->h_pwrbuf_size/cb_data->Nant) < 0) {
@@ -192,6 +214,7 @@ void * dump_file_thread_func(void *arg)
             cb_data->output_thread_valid = 0;
             fprintf(stderr, "SIGPROC-WRITE-ERROR\n");
         }
+        break;
     }
   }
 
