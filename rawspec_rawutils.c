@@ -240,8 +240,7 @@ void rawspec_raw_parse_header(const char * buf, rawspec_raw_hdr_t * raw_hdr)
 // of the subsequent data block and the file descriptor `fd` will also refer to
 // that location in the file.  On EOF, this function returns 0.  On failure,
 // this function returns -1 and the location to which fd refers is undefined.
-off_t rawspec_raw_read_header(int fd, rawspec_raw_hdr_t * raw_hdr)
-{
+off_t rawspec_raw_read_guppiraw_header(int fd, guppiraw_header_t * header) {
   int i;
   // Ensure that hdr is aligned to a 512-byte boundary so that it can be used
   // with files opened with O_DIRECT.
@@ -258,7 +257,17 @@ off_t rawspec_raw_read_header(int fd, rawspec_raw_hdr_t * raw_hdr)
     return 0;
   }
 
-  rawspec_raw_parse_header(hdr, raw_hdr);
+  if(header->metadata.user_data == NULL) {
+    header->metadata.user_data = malloc(sizeof(rawspec_raw_hdr_t));
+  }
+  header->metadata.user_callback = _rawspec_header_parse_metadata;
+
+  rawspec_raw_hdr_t* raw_hdr = (rawspec_raw_hdr_t*) header->metadata.user_data;
+  snprintf(raw_hdr->src_name, 72, "Unknown");
+  snprintf(raw_hdr->telescop, 72, "Unknown");
+  raw_hdr->mjd = 0.0;
+
+  guppiraw_header_parse(header, hdr, hdr_size);
 
   if(raw_hdr->blocsize ==  0) {
     fprintf(stderr, " BLOCSIZE not found in header\n");
@@ -307,4 +316,16 @@ off_t rawspec_raw_read_header(int fd, rawspec_raw_hdr_t * raw_hdr)
   //printf("RRP: seek=%ld\n", pos);
 
   return pos;
+}
+
+// Reads RAW file params from fd.  On entry, fd is assumed to be at the start
+// of a RAW header section.  On success, this function returns the file offset
+// of the subsequent data block and the file descriptor `fd` will also refer to
+// that location in the file.  On EOF, this function returns 0.  On failure,
+// this function returns -1 and the location to which fd refers is undefined.
+off_t rawspec_raw_read_header(int fd, rawspec_raw_hdr_t * raw_hdr)
+{
+  guppiraw_header_t header = {0};
+  header.metadata.user_data = (void*) raw_hdr;
+  return rawspec_raw_read_guppiraw_header(fd, &header);
 }

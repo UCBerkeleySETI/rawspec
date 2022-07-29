@@ -200,6 +200,8 @@ int main(int argc, char *argv[])
   size_t total_bytes_read;
   off_t pos;
   rawspec_raw_hdr_t raw_hdr;
+  guppiraw_header_t guppiraw_header;
+  guppiraw_header.metadata.user_data = &raw_hdr;
   callback_data_t cb_data[MAX_OUTPUTS];
   rawspec_context ctx;
   int ant = -1;
@@ -572,7 +574,7 @@ int main(int argc, char *argv[])
       posix_fadvise(fdin, 0, 0, POSIX_FADV_SEQUENTIAL);
 
       // Read obs params
-      pos = rawspec_raw_read_header(fdin, &raw_hdr);
+      pos = rawspec_raw_read_guppiraw_header(fdin, &guppiraw_header);
       if(pos <= 0) {
         if(pos == -1) {
           fprintf(stderr, "error getting obs params from %s\n", fname);
@@ -1031,7 +1033,7 @@ int main(int argc, char *argv[])
         bi++;
 
         // Read obs params of next block
-        pos = rawspec_raw_read_header(fdin, &raw_hdr);
+        pos = rawspec_raw_read_guppiraw_header(fdin, &guppiraw_header);
         if(pos <= 0) {
           if(pos == -1) {
             fprintf(stderr, "error getting obs params from %s [%s]\n",

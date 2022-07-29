@@ -63,6 +63,7 @@ void rawspec_raw_parse_header(const char * buf, rawspec_raw_hdr_t * raw_hdr);
 // that location in the file.  On EOF, this function returns 0.  On failure,
 // this function returns -1 and the location to which fd refers is undefined.
 off_t rawspec_raw_read_header(int fd, rawspec_raw_hdr_t * raw_hdr);
+off_t rawspec_raw_read_guppiraw_header(int fd, guppiraw_header_t * header);
 
 #ifdef __cplusplus
 }
