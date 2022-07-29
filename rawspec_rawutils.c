@@ -5,7 +5,6 @@
 #include <string.h>
 
 #include "rawspec_rawutils.h"
-#include "hget.h"
 
 int32_t rawspec_raw_get_s32(const char * buf, const char * key, int32_t def)
 {
@@ -151,38 +150,89 @@ int rawspec_raw_header_size(char * hdr, size_t len, int directio)
   return 0;
 }
 
+const uint64_t KEY_UINT64_BLOCSIZE = GUPPI_RAW_KEY_UINT64_ID_LE('B','L','O','C','S','I','Z','E');
+const uint64_t KEY_UINT64_NPOL     = GUPPI_RAW_KEY_UINT64_ID_LE('N','P','O','L',' ',' ',' ',' ');
+const uint64_t KEY_UINT64_OBSNCHAN = GUPPI_RAW_KEY_UINT64_ID_LE('O','B','S','N','C','H','A','N');
+const uint64_t KEY_UINT64_NBITS    = GUPPI_RAW_KEY_UINT64_ID_LE('N','B','I','T','S',' ',' ',' ');
+const uint64_t KEY_UINT64_OBSFREQ  = GUPPI_RAW_KEY_UINT64_ID_LE('O','B','S','F','R','E','Q',' ');
+const uint64_t KEY_UINT64_OBSBW    = GUPPI_RAW_KEY_UINT64_ID_LE('O','B','S','B','W',' ',' ',' ');
+const uint64_t KEY_UINT64_TBIN     = GUPPI_RAW_KEY_UINT64_ID_LE('T','B','I','N',' ',' ',' ',' ');
+const uint64_t KEY_UINT64_DIRECTIO = GUPPI_RAW_KEY_UINT64_ID_LE('D','I','R','E','C','T','I','O');
+const uint64_t KEY_UINT64_PKTIDX   = GUPPI_RAW_KEY_UINT64_ID_LE('P','K','T','I','D','X',' ',' ');
+const uint64_t KEY_UINT64_BEAM_ID  = GUPPI_RAW_KEY_UINT64_ID_LE('B','E','A','M','_','I','D',' ');
+const uint64_t KEY_UINT64_NBEAM    = GUPPI_RAW_KEY_UINT64_ID_LE('N','B','E','A','M',' ',' ',' ');
+const uint64_t KEY_UINT64_NANTS    = GUPPI_RAW_KEY_UINT64_ID_LE('N','A','N','T','S',' ',' ',' ');
+const uint64_t KEY_UINT64_RA_STR   = GUPPI_RAW_KEY_UINT64_ID_LE('R','A','_','S','T','R',' ',' ');
+const uint64_t KEY_UINT64_DEC_STR  = GUPPI_RAW_KEY_UINT64_ID_LE('D','E','C','_','S','T','R',' ');
+const uint64_t KEY_UINT64_STT_IMJD = GUPPI_RAW_KEY_UINT64_ID_LE('S','T','T','_','I','M','J','D');
+const uint64_t KEY_UINT64_STT_SMJD = GUPPI_RAW_KEY_UINT64_ID_LE('S','T','T','_','S','M','J','D');
+const uint64_t KEY_UINT64_SRC_NAME = GUPPI_RAW_KEY_UINT64_ID_LE('S','R','C','_','N','A','M','E');
+const uint64_t KEY_UINT64_TELESCOP = GUPPI_RAW_KEY_UINT64_ID_LE('T','E','L','E','S','C','O','P');
+
+void _rawspec_header_parse_metadata(const char* entry, void* raw_hdr_void) {
+  rawspec_raw_hdr_t * raw_hdr = (rawspec_raw_hdr_t*) raw_hdr_void;
+
+  if(((uint64_t*)entry)[0] == KEY_UINT64_BLOCSIZE)
+    hgeti4(entry, "BLOCSIZE", &raw_hdr->blocsize);
+  else if(((uint64_t*)entry)[0] == KEY_UINT64_NPOL)
+    hgeti4(entry, "NPOL", &raw_hdr->npol);
+  else if(((uint64_t*)entry)[0] == KEY_UINT64_OBSNCHAN)
+    hgeti4(entry, "OBSNCHAN", &raw_hdr->obsnchan);
+  else if(((uint64_t*)entry)[0] == KEY_UINT64_NBITS)
+    hgetu4(entry, "NBITS", &raw_hdr->nbits);
+  else if(((uint64_t*)entry)[0] == KEY_UINT64_OBSFREQ)
+    hgetr8(entry, "OBSFREQ", &raw_hdr->obsfreq);
+  else if(((uint64_t*)entry)[0] == KEY_UINT64_OBSBW)
+    hgetr8(entry, "OBSBW", &raw_hdr->obsbw);
+  else if(((uint64_t*)entry)[0] == KEY_UINT64_TBIN)
+    hgetr8(entry, "TBIN", &raw_hdr->tbin);
+  else if(((uint64_t*)entry)[0] == KEY_UINT64_DIRECTIO)
+    hgeti4(entry, "DIRECTIO", &raw_hdr->directio);
+  else if(((uint64_t*)entry)[0] == KEY_UINT64_PKTIDX)
+    hgetu8(entry, "PKTIDX", &raw_hdr->pktidx);
+  else if(((uint64_t*)entry)[0] == KEY_UINT64_BEAM_ID)
+    hgeti4(entry, "BEAM_ID", &raw_hdr->beam_id);
+  else if(((uint64_t*)entry)[0] == KEY_UINT64_NBEAM)
+    hgeti4(entry, "NBEAM", &raw_hdr->nbeam);
+  else if(((uint64_t*)entry)[0] == KEY_UINT64_NANTS)
+    hgetu4(entry, "NANTS", &raw_hdr->nants);
+  else if(((uint64_t*)entry)[0] == KEY_UINT64_RA_STR) {
+    char tmp[72];
+    hgets(entry, "RA_STR", 72, tmp);
+    raw_hdr->ra = rawspec_raw_hmsstr_to_h(tmp);
+  }
+  else if(((uint64_t*)entry)[0] == KEY_UINT64_DEC_STR) {
+    char tmp[72];
+    hgets(entry, "DEC_STR", 72, tmp);
+    raw_hdr->dec = rawspec_raw_dmsstr_to_d(tmp);
+  }
+  else if(((uint64_t*)entry)[0] == KEY_UINT64_STT_IMJD) {
+    double tmp = 0.0;
+    hgetr8(entry, "STT_IMJD", &tmp);
+    raw_hdr->mjd += tmp/86400.0;
+  }
+  else if(((uint64_t*)entry)[0] == KEY_UINT64_STT_SMJD) {
+    double tmp = 0.0;
+    hgetr8(entry, "STT_SMJD", &tmp);
+    raw_hdr->mjd += tmp/86400.0;
+  }
+  else if(((uint64_t*)entry)[0] == KEY_UINT64_SRC_NAME)
+    hgets(entry, "SRC_NAME", 72, raw_hdr->src_name);
+  else if(((uint64_t*)entry)[0] == KEY_UINT64_TELESCOP)
+    hgets(entry, "TELESCOP", 72, raw_hdr->telescop);
+}
+
 // Parses rawspec related RAW header params from buf into raw_hdr.
 void rawspec_raw_parse_header(const char * buf, rawspec_raw_hdr_t * raw_hdr)
 {
-  int smjd;
-  int imjd;
-  char tmp[80];
+  snprintf(raw_hdr->src_name, 72, "Unknown");
+  snprintf(raw_hdr->telescop, 72, "Unknown");
+  raw_hdr->mjd = 0.0;
 
-  raw_hdr->blocsize = rawspec_raw_get_s32(buf, "BLOCSIZE", 0);
-  raw_hdr->npol     = rawspec_raw_get_s32(buf, "NPOL",     0);
-  raw_hdr->obsnchan = rawspec_raw_get_s32(buf, "OBSNCHAN", 0);
-  raw_hdr->nbits    = rawspec_raw_get_u32(buf, "NBITS",    8);
-  raw_hdr->obsfreq  = rawspec_raw_get_dbl(buf, "OBSFREQ",  0.0);
-  raw_hdr->obsbw    = rawspec_raw_get_dbl(buf, "OBSBW",    0.0);
-  raw_hdr->tbin     = rawspec_raw_get_dbl(buf, "TBIN",     0.0);
-  raw_hdr->directio = rawspec_raw_get_s32(buf, "DIRECTIO", 0);
-  raw_hdr->pktidx   = rawspec_raw_get_u64(buf, "PKTIDX",  -1);
-  raw_hdr->beam_id  = rawspec_raw_get_s32(buf, "BEAM_ID", -1);
-  raw_hdr->nbeam    = rawspec_raw_get_s32(buf, "NBEAM",   -1);
-  raw_hdr->nants    = rawspec_raw_get_u32(buf, "NANTS",    1);
-
-  rawspec_raw_get_str(buf, "RA_STR", "0.0", tmp, 80);
-  raw_hdr->ra = rawspec_raw_hmsstr_to_h(tmp);
-
-  rawspec_raw_get_str(buf, "DEC_STR", "0.0", tmp, 80);
-  raw_hdr->dec = rawspec_raw_dmsstr_to_d(tmp);
-
-  imjd = rawspec_raw_get_s32(buf, "STT_IMJD", 51545); // TODO use double?
-  smjd = rawspec_raw_get_s32(buf, "STT_SMJD", 0);     // TODO use double?
-  raw_hdr->mjd = ((double)imjd) + ((double)smjd)/86400.0;
-
-  rawspec_raw_get_str(buf, "SRC_NAME", "Unknown", raw_hdr->src_name, 80);
-  rawspec_raw_get_str(buf, "TELESCOP", "Unknown", raw_hdr->telescop, 80);
+  guppiraw_metadata_t metadata = {0};
+  metadata.user_data = raw_hdr;
+  metadata.user_callback = _rawspec_header_parse_metadata;
+  guppiraw_header_string_parse_metadata(&metadata, buf, -1);
 }
 
 // Reads RAW file params from fd.  On entry, fd is assumed to be at the start

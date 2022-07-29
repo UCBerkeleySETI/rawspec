@@ -4,6 +4,8 @@
 #include <stdint.h>
 #include <sys/types.h>
 
+#include "guppirawc99/header.h"
+
 typedef struct {
   int directio;
   size_t blocsize;

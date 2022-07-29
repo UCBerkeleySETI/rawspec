@@ -39,6 +39,39 @@ LINKH5:= $(LIBDIR_H5) -l $(LIBHDF5) -l $(LIBHDF5_HL)
 
 # End HDF5 definitions
 
+# Begin GuppiRawC99 definitions
+
+# if we have pkg-config installed, do we have guppirawc99 libraries installed?
+ifeq ($(HAVEPKG),yes)
+  HAVEGRC99 = $(shell pkg-config --exists guppirawc99 && echo yes)
+endif
+
+# depending on the above questions use, in order of priority:
+# 1. User supplied values for INCDIR_GRC99 and LIBDIR_GRC99
+# 2. Whatever pkg-config supplies for those variables 
+# 3. Failing either the above, default values /usr/local/include and /usr/local/lib
+
+ifeq ($(INCDIR_GRC99),)
+  ifeq ($(HAVEGRC99),yes)
+    INCDIR_GRC99 = $(shell pkg-config --cflags guppirawc99)
+  else
+    INCDIR_GRC99 = -I/usr/local/include
+  endif
+endif
+    
+ifeq ($(LIBDIR_GRC99),)
+  ifeq ($(HAVEGRC99),yes)
+    LIBDIR_GRC99 = $(shell pkg-config --libs guppirawc99)
+  else
+    LIBDIR_GRC99 = -L/usr/local/lib
+  endif
+endif
+
+LIBGRC99= :libguppirawc99.so
+LINKGRC99:= $(LIBDIR_GRC99) -l $(LIBGRC99)
+
+# End GuppiRawC99 definitions
+
 CUDA_DIR ?= $(CUDA_ROOT)
 CUDA_PATH ?= $(CUDA_DIR)
 
@@ -47,7 +80,7 @@ CXX           ?= g++
 HOST_COMPILER ?= $(CXX)
 NVCC          := $(CUDA_PATH)/bin/nvcc -ccbin $(HOST_COMPILER)
 
-CFLAGS = -ggdb -fPIC -I$(CUDA_PATH)/include $(INCDIR_H5)
+CFLAGS = -ggdb -fPIC -I$(CUDA_PATH)/include $(INCDIR_H5) $(INCDIR_GRC99)
 ifdef DEBUG_CALLBACKS
 CFLAGS += -DDEBUG_CALLBACKS=$(DEBUG_CALLBACKS)
 endif
@@ -98,7 +131,7 @@ rawspec_gpu.o: rawspec.h rawspec_version.h cufft_error_name.h
 rawspec_socket.o: rawspec_socket.h rawspec.h \
                   rawspec_callback.h rawspec_fbutils.h
 rawspectest.o: rawspec.h
-rawspec_rawutils.o: rawspec_rawutils.h hget.h
+rawspec_rawutils.o: rawspec_rawutils.h
 
 # Begin fbh5 objects
 fbh5_open.o: fbh5_defs.h rawspec_callback.h rawspec_fbutils.h
@@ -111,11 +144,11 @@ fbh5_util.o: fbh5_defs.h rawspec_callback.h rawspec_fbutils.h
 	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) -dc $(GENCODE_FLAGS) -o $@ -c $<
 	
 librawspec.so: rawspec_gpu.o rawspec_fbutils.o rawspec_rawutils.o fbh5_open.o fbh5_close.o fbh5_write.o fbh5_util.o
-	$(VERBOSE) $(NVCC) -shared $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ $(CUDA_STATIC_LIBS) $(LINKH5)
+	$(VERBOSE) $(NVCC) -shared $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ $(CUDA_STATIC_LIBS) $(LINKH5) $(LINKGRC99)
 
 rawspec: librawspec.so
 rawspec: rawspec.o rawspec_file.o rawspec_socket.o 
-	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ -L. -lrawspec $(LINKH5)
+	$(VERBOSE) $(NVCC) $(NVCC_FLAGS) $(GENCODE_FLAGS) -o $@ $^ -L. -lrawspec $(LINKH5) $(LINKGRC99)
 
 rawspectest: librawspec.so
 rawspectest: rawspectest.o
