@@ -7,6 +7,7 @@
 
 #include "rawspec_file.h"
 #include "fbh5_defs.h"
+#include "guppirawc99.h"
 
 // Open a single Filterbank file for one of the following:
 //   * nants = 0
@@ -27,6 +28,9 @@ int open_output_file(callback_data_t *cb_data, const char * dest, const char *st
       break;
     case FILE_FORMAT_FBSIGPROC:
       strcpy(fileext, "fil");
+      break;
+    case FILE_FORMAT_GUPPIRAW:
+      strcpy(fileext, "raw");
       break;
   }
   if(dest && dest[0]) {
@@ -73,6 +77,15 @@ int open_output_file(callback_data_t *cb_data, const char * dest, const char *st
       }
       return fd;
 
+    case FILE_FORMAT_GUPPIRAW:
+      // Open a SIGPROC Filterbank output file.
+      fd = open(fname, O_WRONLY | O_CREAT | O_TRUNC, 0664);
+      if(fd == -1) {
+        cb_data->exit_soon = 1;
+        perror(fname);
+      }
+      return fd;
+
   }
 }
 
@@ -114,9 +127,41 @@ void * dump_file_thread_func(void *arg)
 {
   callback_data_t * cb_data = (callback_data_t *)arg;
   int retcode;
+  const size_t spectra_stride = cb_data->h_pwrbuf_size / (cb_data->Nds * sizeof(float));
+  const size_t pol_stride = spectra_stride / cb_data->fb_hdr.nifs;
+  const size_t ant_stride = pol_stride / cb_data->Nant;
+  const size_t chan_stride = ant_stride / cb_data->Nf;
 
   // Single antenna case
-  if(cb_data->fd && cb_data->h_pwrbuf && (cb_data->Nant == 1)) {
+  if(cb_data->fd && cb_data->h_pwrbuf) {
+    if(cb_data->flag_file_output == FILE_FORMAT_GUPPIRAW) {
+      // printf("guppiraw_write antenna: %ld bytes\n\t", cb_data->h_pwrbuf_size / (cb_data->per_ant_out ? cb_data->Nant : 1 ));
+      for(size_t i = 0; i < (cb_data->per_ant_out ? cb_data->Nant : 1); i++){ 
+        // printf("%d ", cb_data->fd[i]);
+        if(cb_data->fd[i] == -1){
+          // Assume that the following file-descriptors aren't valid
+          break;
+        }
+        size_t bytes_written = guppiraw_write_block_arbitrary(
+          cb_data->fd[i],
+          &cb_data->guppiraw_header,
+          cb_data->h_pwrbuf + ant_stride*i,
+          ant_stride*sizeof(float),
+          chan_stride*sizeof(float),
+          spectra_stride*sizeof(float),
+          pol_stride*sizeof(float)
+        );
+        if(bytes_written
+           < cb_data->h_pwrbuf_size / (cb_data->per_ant_out ? cb_data->Nant : 1)
+        ) {
+          cb_data->exit_soon = 1;
+          cb_data->output_thread_valid = 0;
+          fprintf(stderr, "GUPPIRAW-WRITE-ERROR: wrote %ld (%ld vs %ld)\n", bytes_written, cb_data->h_pwrbuf_size, cb_data->guppiraw_header.metadata.datashape.block_size);
+        }
+      }
+      // printf("\n");
+    } 
+    else if(cb_data->Nant == 1) {
       if(cb_data->debug_callback)
         printf("dump_file_thread_func: write for nants=0\n");
 
@@ -142,15 +187,8 @@ void * dump_file_thread_func(void *arg)
           }
           break;
       }
-  }
-
-  // Multiple antennas, split output
-  if(cb_data->fd && cb_data->h_pwrbuf && (cb_data->Nant > 1)) {
-    if(cb_data->per_ant_out) {
-      size_t spectra_stride = cb_data->h_pwrbuf_size / (cb_data->Nds * sizeof(float));
-      size_t pol_stride = spectra_stride / cb_data->fb_hdr.nifs;
-      size_t ant_stride = pol_stride / cb_data->Nant;
-
+    } else if(cb_data->per_ant_out && cb_data->Nant > 1) {
+      // Multiple antennas, split output
       for(size_t k = 0; k < cb_data->Nds; k++){// Spectra out
         for(size_t j = 0; j < cb_data->fb_hdr.nifs; j++){// Npolout
           for(size_t i = 0; i < cb_data->Nant; i++){ 
@@ -164,10 +202,10 @@ void * dump_file_thread_func(void *arg)
             switch(cb_data->flag_file_output) {
               case FILE_FORMAT_FBH5:
                 retcode = fbh5_write(&(cb_data->fbh5_ctx_ant[i]),
-                           &(cb_data->fb_hdr), 
-                           cb_data->h_pwrbuf + i * ant_stride + j * pol_stride + k * spectra_stride, 
-                           ant_stride * sizeof(float),
-                           cb_data->debug_callback);
+                          &(cb_data->fb_hdr), 
+                          cb_data->h_pwrbuf + i * ant_stride + j * pol_stride + k * spectra_stride, 
+                          ant_stride * sizeof(float),
+                          cb_data->debug_callback);
                 if(retcode != 0) {
                     cb_data->exit_soon = 1;
                     cb_data->output_thread_valid = 0;
@@ -186,7 +224,7 @@ void * dump_file_thread_func(void *arg)
           } // for(size_t i = 0; i < cb_data->Nant; i++)
         } // for(size_t j = 0; j < cb_data->fb_hdr.nifs; j++)
       } // for(size_t k = 0; k < cb_data->Nds; k++)
-    } // if(cb_data->per_ant_out)
+    } // else if(cb_data->per_ant_out)
   } // if(cb_data->fd && cb_data->h_pwrbuf)
 
   // Multiple antennas, ICS output
@@ -213,6 +251,23 @@ void * dump_file_thread_func(void *arg)
             cb_data->exit_soon = 1;
             cb_data->output_thread_valid = 0;
             fprintf(stderr, "SIGPROC-WRITE-ERROR\n");
+        }
+        break;
+      case FILE_FORMAT_GUPPIRAW:
+        if(
+          guppiraw_write_block_arbitrary(
+            cb_data->fd_ics,
+            &cb_data->guppiraw_header_ics,
+            cb_data->h_pwrbuf,
+            ant_stride*sizeof(float),
+            chan_stride*sizeof(float),
+            spectra_stride*sizeof(float),
+            pol_stride*sizeof(float)
+          ) < cb_data->h_pwrbuf_size / (cb_data->per_ant_out ? 1 : cb_data->Nant)
+        ) {
+          cb_data->exit_soon = 1;
+          cb_data->output_thread_valid = 0;
+          fprintf(stderr, "GUPPIRAW-WRITE-ERROR\n");
         }
         break;
     }

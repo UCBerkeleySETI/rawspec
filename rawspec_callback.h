@@ -4,6 +4,7 @@
 #include <pthread.h>
 #include "hdf5.h"
 #include "rawspec_fbutils.h"
+#include "guppirawc99/header.h"
 
 typedef struct {
     int active;                 // Still active? 1=yes, 0=no
@@ -61,6 +62,8 @@ typedef struct {
   unsigned int exit_soon;
 
   // Added for GUPPI RAW output 2022-07
+  guppiraw_header_t guppiraw_header;
+  guppiraw_header_t guppiraw_header_ics;
 } callback_data_t;
 
 #endif // _RAWSPEC_CALLBACK_H_

@@ -115,6 +115,7 @@ void usage(const char *argv0) {
     "  -i, --ics=W1[,W2...]   Output incoherent-sum (exclusively, unless with -S)\n"
     "                         specifying per antenna-weights or a singular, uniform weight\n"
     "  -j, --fbh5             Format output Filterbank files as FBH5 (.h5) instead of SIGPROC(.fil)\n"
+    "  -k, --guppi            Output GUPPI RAW files (.raw) instead of Filterbank files\n"
     "  -n, --nchan=N          Number of coarse channels to process [all]\n"
     "  -o, --outidx=N         First index number for output files [0]\n"
     "  -p  --pols={1|4}[,...] Number of output polarizations [1]\n"
@@ -239,7 +240,7 @@ int main(int argc, char *argv[])
 
   // Parse command line.
   argv0 = argv[0];
-  while((opt=getopt_long(argc, argv, "a:b:d:f:g:HSjzs:i:n:o:p:r:t:hv", long_opts, NULL)) != -1) {
+  while((opt=getopt_long(argc, argv, "a:b:d:f:g:HSjkzs:i:n:o:p:r:t:hv", long_opts, NULL)) != -1) {
     switch (opt) {
       case 'h': // Help
         usage(argv0);
@@ -248,6 +249,10 @@ int main(int argc, char *argv[])
 
       case 'j': // FBH5 output format requested
         flag_file_output = FILE_FORMAT_FBH5;
+        break;
+
+      case 'k': // GUPPI RAW output format requested
+        flag_file_output = FILE_FORMAT_GUPPIRAW;
         break;
 
       case 'z': // Selected dynamic debugging
@@ -411,6 +416,9 @@ int main(int argc, char *argv[])
         break;
       case FILE_FORMAT_FBSIGPROC:
         printf("writing output files in SIGPROC Filterbank format\n");
+        break;
+      case FILE_FORMAT_GUPPIRAW:
+        printf("writing GUPPI RAW output files\n");
         break;
     }
   }
@@ -627,7 +635,7 @@ int main(int argc, char *argv[])
         fprintf(stderr, "OBSBW    = %g\n",  raw_hdr.obsbw);
         fprintf(stderr, "TBIN     = %g\n",  raw_hdr.tbin);
 #endif // VERBOSE
-        if(raw_hdr.nants > 1 && !(per_ant_out || ctx.incoherently_sum)){
+        if(raw_hdr.nants > 1 && !(per_ant_out || ctx.incoherently_sum) && flag_file_output != FILE_FORMAT_GUPPIRAW){
           printf("NANTS = %d >1: Enabling --split-ant in lieu of neither --split-ant nor --ics flags.\n", raw_hdr.nants);
           per_ant_out = 1;
         }
@@ -795,6 +803,43 @@ int main(int argc, char *argv[])
                 printf("output %d Nds = %u, Nf = %u\n", i, cb_data[i].Nds, cb_data[i].Nf);
               }
               cb_data[i].Nant = raw_hdr.nants;
+
+              if(flag_file_output == FILE_FORMAT_GUPPIRAW) {
+                if(ctx.incoherently_sum) {
+                  guppiraw_header_copy(&cb_data[i].guppiraw_header_ics, &guppiraw_header);
+                  cb_data[i].guppiraw_header_ics.metadata.user_data = malloc(sizeof(rawspec_raw_hdr_t));
+                  memcpy(cb_data[i].guppiraw_header_ics.metadata.user_data, &raw_hdr, sizeof(rawspec_raw_hdr_t));
+                  guppiraw_header_put_string(&cb_data[i].guppiraw_header_ics, "DATATYPE", "FLOAT");
+
+                  cb_data[i].guppiraw_header_ics.metadata.datashape.block_size = ctx.h_pwrbuf_size[i]/ctx.Nant;
+                  cb_data[i].guppiraw_header_ics.metadata.datashape.n_ant = 1;
+                  cb_data[i].guppiraw_header.metadata.datashape.n_bit = (sizeof(float)*8)/2; // to account for assumption of data being complex
+                  cb_data[i].guppiraw_header_ics.metadata.datashape.n_time = ctx.Nds[i];
+                  cb_data[i].guppiraw_header_ics.metadata.datashape.n_pol = ctx.Npolout[i];
+                  cb_data[i].guppiraw_header_ics.metadata.datashape.n_aspectchan = ctx.Nts[i] * ctx.Nc/ctx.Nant;
+                  guppiraw_header_put_metadata(&cb_data[i].guppiraw_header);
+                }
+
+                guppiraw_header_copy(&cb_data[i].guppiraw_header, &guppiraw_header);
+                cb_data[i].guppiraw_header.metadata.user_data = malloc(sizeof(rawspec_raw_hdr_t));
+                memcpy(cb_data[i].guppiraw_header.metadata.user_data, &raw_hdr, sizeof(rawspec_raw_hdr_t));
+
+                if(cb_data[i].per_ant_out) {
+                  cb_data[i].guppiraw_header.metadata.datashape.n_ant = 1;
+                }
+                cb_data[i].guppiraw_header.metadata.datashape.n_bit = (sizeof(float)*8)/2; // to account for assumption of data being complex
+                cb_data[i].guppiraw_header.metadata.datashape.n_time = ctx.Nds[i];
+                cb_data[i].guppiraw_header.metadata.datashape.n_pol = ctx.Npolout[i];
+                cb_data[i].guppiraw_header.metadata.datashape.n_aspectchan = ctx.Nts[i] * ctx.Nc/ctx.Nant;
+                guppiraw_header_put_string(&cb_data[i].guppiraw_header, "DATATYPE", "FLOAT");
+                guppiraw_header_put_metadata(&cb_data[i].guppiraw_header);
+                char* header_string = guppiraw_header_malloc_string(&guppiraw_header);
+                printf("```%s```\n", header_string);
+                free(header_string);
+                header_string = guppiraw_header_malloc_string(&cb_data[i].guppiraw_header);
+                printf("```%s```\n", header_string);
+                free(header_string);
+              }
             }
 #if 0
             if(output_mode == RAWSPEC_NET) {
