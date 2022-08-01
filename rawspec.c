@@ -233,7 +233,7 @@ int main(int argc, char *argv[])
 
   // Init rawspec context
   memset(&ctx, 0, sizeof(ctx));
-  ctx.Npolout[0] = 1; // others will be set later
+  ctx.Npolout[0] = 0; // others will be set later
 
   // Exit status after mallocs have occured.
   int exit_status = 0;
@@ -465,21 +465,32 @@ int main(int argc, char *argv[])
     ctx.Nas[2] = 3072;
   }
 
+  if(ctx.Npolout[0] == 0) {
+    // default Npolout (-1 means match input, only for GUPPIRAW)
+    ctx.Npolout[0] = (flag_file_output == FILE_FORMAT_GUPPIRAW ? -1 : 1);
+  }
+
   // Validate polout values
   for(i=0; i<ctx.No; i++) {
     if(ctx.Npolout[i] == 0 && i > 0) {
       // Copy value from previous output product
       ctx.Npolout[i] = ctx.Npolout[i-1];
-    } else if(ctx.Npolout[i]!=1 && abs(ctx.Npolout[i])!=4) {
-      fprintf(stderr,
-          "error: number of output pols must be 1 or +/- 4\n");
-      return 1;
+    } else {
+      if(flag_file_output == FILE_FORMAT_GUPPIRAW && ctx.Npolout[i]!=-1) {
+        fprintf(stderr,
+            "error: GUPPI RAW output mode necessitates auto-output pols (-1)\n");
+        return 1;
+      } else if(abs(ctx.Npolout[i])!=1 && abs(ctx.Npolout[i])!=4) {
+        fprintf(stderr,
+            "error: number of output pols must be 1 or +/- 4\n");
+        return 1;
+      }
     }
 
     // Full-pol mode is not supported for network output
     if(ctx.Npolout[i] != 1 && output_mode != RAWSPEC_FILE) {
       fprintf(stderr,
-          "error: full-pol mode is not supported for network output\n");
+          "error: full mode is not supported for network output\n");
       return 1;
     }
   }
@@ -638,6 +649,15 @@ int main(int argc, char *argv[])
         if(raw_hdr.nants > 1 && !(per_ant_out || ctx.incoherently_sum) && flag_file_output != FILE_FORMAT_GUPPIRAW){
           printf("NANTS = %d >1: Enabling --split-ant in lieu of neither --split-ant nor --ics flags.\n", raw_hdr.nants);
           per_ant_out = 1;
+        }
+        if(flag_file_output == FILE_FORMAT_GUPPIRAW) {
+          // assume ctx.Npolout == -1 due to prior checks
+          for(i=0; i<ctx.No; i++) {
+            // map {2*N -> 2, {2*N + 1 -> 1}
+            // negative to indicate complex output (ctx.complex_output)
+            ctx.complex_output = 1;
+            ctx.Npolout[i] = - (2 - (raw_hdr.npol % 2));
+          }
         }
 
         // If splitting output per antenna, re-alloc the fd array.
@@ -811,11 +831,9 @@ int main(int argc, char *argv[])
                   memcpy(cb_data[i].guppiraw_header_ics.metadata.user_data, &raw_hdr, sizeof(rawspec_raw_hdr_t));
                   guppiraw_header_put_string(&cb_data[i].guppiraw_header_ics, "DATATYPE", "FLOAT");
 
-                  cb_data[i].guppiraw_header_ics.metadata.datashape.block_size = ctx.h_pwrbuf_size[i]/ctx.Nant;
                   cb_data[i].guppiraw_header_ics.metadata.datashape.n_ant = 1;
-                  cb_data[i].guppiraw_header.metadata.datashape.n_bit = (sizeof(float)*8)/2; // to account for assumption of data being complex
+                  cb_data[i].guppiraw_header_ics.metadata.datashape.n_bit = sizeof(float)*8;
                   cb_data[i].guppiraw_header_ics.metadata.datashape.n_time = ctx.Nds[i];
-                  cb_data[i].guppiraw_header_ics.metadata.datashape.n_pol = ctx.Npolout[i];
                   cb_data[i].guppiraw_header_ics.metadata.datashape.n_aspectchan = ctx.Nts[i] * ctx.Nc/ctx.Nant;
                   guppiraw_header_put_metadata(&cb_data[i].guppiraw_header);
                 }
@@ -827,9 +845,8 @@ int main(int argc, char *argv[])
                 if(cb_data[i].per_ant_out) {
                   cb_data[i].guppiraw_header.metadata.datashape.n_ant = 1;
                 }
-                cb_data[i].guppiraw_header.metadata.datashape.n_bit = (sizeof(float)*8)/2; // to account for assumption of data being complex
+                cb_data[i].guppiraw_header.metadata.datashape.n_bit = sizeof(float)*8;
                 cb_data[i].guppiraw_header.metadata.datashape.n_time = ctx.Nds[i];
-                cb_data[i].guppiraw_header.metadata.datashape.n_pol = ctx.Npolout[i];
                 cb_data[i].guppiraw_header.metadata.datashape.n_aspectchan = ctx.Nts[i] * ctx.Nc/ctx.Nant;
                 guppiraw_header_put_string(&cb_data[i].guppiraw_header, "DATATYPE", "FLOAT");
                 guppiraw_header_put_metadata(&cb_data[i].guppiraw_header);
