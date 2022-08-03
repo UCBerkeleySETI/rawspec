@@ -1727,44 +1727,64 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
           height = ctx->Nbc;
 
           for(d=0; d < ctx->Nds[i]; d++) {
+            
+            if(ctx->complex_output) {
+              // GUPPI RAW output, don't translate channels
+              width = dpitch;
+              cuda_rc = cudaMemcpy2DAsync(dst,
+                                          dpitch,
+                                          src,
+                                          spitch,
+                                          width,
+                                          height,
+                                          cudaMemcpyDeviceToHost,
+                                          gpu_ctx->compute_stream);
 
-            // Lo to hi
-            width  = ((ctx->Nts[i]+1) / 2) * sizeof(float) * complexity_factor;
-            cuda_rc = cudaMemcpy2DAsync(dst + ctx->Nts[i]/2,
-                                        dpitch,
-                                        src,
-                                        spitch,
-                                        width,
-                                        height,
-                                        cudaMemcpyDeviceToHost,
-                                        gpu_ctx->compute_stream);
-
-            if(cuda_rc != cudaSuccess) {
-              PRINT_CUDA_ERRMSG(cuda_rc);
-              rawspec_cleanup(ctx);
-              return 1;
+              if(cuda_rc != cudaSuccess) {
+                PRINT_CUDA_ERRMSG(cuda_rc);
+                rawspec_cleanup(ctx);
+                return 1;
+              }
             }
+            else {
+              // Lo to hi
+              width  = ((ctx->Nts[i]+1) / 2) * sizeof(float);
+              cuda_rc = cudaMemcpy2DAsync(dst + ctx->Nts[i]/2,
+                                          dpitch,
+                                          src,
+                                          spitch,
+                                          width,
+                                          height,
+                                          cudaMemcpyDeviceToHost,
+                                          gpu_ctx->compute_stream);
 
-            // Hi to lo
-            width  = (ctx->Nts[i] / 2) * sizeof(float) * complexity_factor;
-            cuda_rc = cudaMemcpy2DAsync(dst,
-                                        dpitch,
-                                        src + (ctx->Nts[i]+1) / 2,
-                                        spitch,
-                                        width,
-                                        height,
-                                        cudaMemcpyDeviceToHost,
-                                        gpu_ctx->compute_stream);
+              if(cuda_rc != cudaSuccess) {
+                PRINT_CUDA_ERRMSG(cuda_rc);
+                rawspec_cleanup(ctx);
+                return 1;
+              }
 
-            if(cuda_rc != cudaSuccess) {
-              PRINT_CUDA_ERRMSG(cuda_rc);
-              rawspec_cleanup(ctx);
-              return 1;
+              // Hi to lo
+              width  = (ctx->Nts[i] / 2) * sizeof(float);
+              cuda_rc = cudaMemcpy2DAsync(dst,
+                                          dpitch,
+                                          src + (ctx->Nts[i]+1) / 2,
+                                          spitch,
+                                          width,
+                                          height,
+                                          cudaMemcpyDeviceToHost,
+                                          gpu_ctx->compute_stream);
+
+              if(cuda_rc != cudaSuccess) {
+                PRINT_CUDA_ERRMSG(cuda_rc);
+                rawspec_cleanup(ctx);
+                return 1;
+              }
             }
 
             // Increment src and dst pointers
-            src += ctx->Nts[i] * ctx->Nas[i];
-            dst += abs(ctx->Npolout[i]) * ctx->Nts[i] * ctx->Nc;
+            src += ctx->Nts[i] * ctx->Nas[i] * complexity_factor;
+            dst += abs(ctx->Npolout[i]) * ctx->Nts[i] * ctx->Nc * complexity_factor;
           }
         }
 
