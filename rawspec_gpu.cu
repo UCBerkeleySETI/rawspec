@@ -533,6 +533,7 @@ int rawspec_initialize(rawspec_context * ctx)
         ctx->Npolout[i] = 1;
     }
   }
+  ctx->complex_output = min(ctx->complex_output, 2);
 
   // Validate Ntpb
   if(ctx->Ntpb == 0) {
@@ -791,7 +792,7 @@ int rawspec_initialize(rawspec_context * ctx)
 
     // Calculate grid dimensions
     gpu_ctx->nthreads[i] = ctx->Nts[i];
-    gpu_ctx->nthreads[i] *= (ctx->complex_output + 1)%3;
+    gpu_ctx->nthreads[i] *= 1 + ctx->complex_output;
     gpu_ctx->grid[i].x = (gpu_ctx->nthreads[i] + MAX_THREADS - 1) / MAX_THREADS;
     gpu_ctx->grid[i].y = ctx->Nds[i];
     gpu_ctx->grid[i].z = ctx->Nbc;
@@ -803,7 +804,7 @@ int rawspec_initialize(rawspec_context * ctx)
     // dumped at one time (Nd).
     ctx->h_pwrbuf_size[i] = abs(ctx->Npolout[i]) *
                             ctx->Nds[i]*ctx->Nts[i]*ctx->Nc*sizeof(float);
-    ctx->h_pwrbuf_size[i] *= (1 + ctx->complex_output)%3; // complex-output conditional double 
+    ctx->h_pwrbuf_size[i] *= 1 + ctx->complex_output; // complex-output conditional double 
     #ifdef VERBOSE_ALLOC
       printf("FFT Host dump buffer[%d] size == %lu\n", i, ctx->h_pwrbuf_size[i]);
     #endif
@@ -996,7 +997,7 @@ int rawspec_initialize(rawspec_context * ctx)
   for(i=0; i < ctx->No; i++) {
     // Power output buffer
     buf_size = abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nbc*sizeof(float);
-    buf_size *= (1 + ctx->complex_output)%3; // complex-output conditional double
+    buf_size *= 1 + ctx->complex_output; // complex-output conditional double
 #ifdef VERBOSE_ALLOC
     printf("Power output buffer size == abs(%u) * %lu == %lu\n",
         ctx->Npolout[i],  ctx->Nb*ctx->Ntpb*ctx->Nbc*sizeof(float),
@@ -1020,7 +1021,7 @@ int rawspec_initialize(rawspec_context * ctx)
     if(gpu_ctx->Nis[i] > 1 && ctx->Nbc < ctx->Nc){
       // Full power output buffer
       buf_size = abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float);
-      buf_size *= (1 + ctx->complex_output)%3; // complex-output conditional double
+      buf_size *= 1 + ctx->complex_output; // complex-output conditional double
 #ifdef VERBOSE_ALLOC
       printf("Full power output buffer cache size == %u * %lu == %lu\n",
           ctx->Npolout[i],  ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float),
@@ -1048,7 +1049,7 @@ int rawspec_initialize(rawspec_context * ctx)
 
     if(ctx->incoherently_sum){
       buf_size = abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float)/ctx->Nant;
-      buf_size *= (1 + ctx->complex_output)%3; // complex-output conditional double
+      buf_size *= 1 + ctx->complex_output; // complex-output conditional double
 #ifdef VERBOSE_ALLOC
       printf("ICS output buffer size == %u * %lu / %u == %lu\n",
           ctx->Npolout[i],  ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float), ctx->Nant,
@@ -1602,7 +1603,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
   dim3 grid_full_pwr;
   const size_t Nchan_per_antenna = ctx->Nc/ctx->Nant;
   const size_t Nantenna_per_batch = ctx->Nbc/Nchan_per_antenna;
-  const char complexity_factor = ctx->complex_output ? 2 : 1;
+  const char complexity_factor = 1 + ctx->complex_output;
   bool is_last_channel_batch;
 
   grid_full_pwr.x = ctx->Nb*ctx->Ntpb*ctx->Nbc;
