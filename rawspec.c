@@ -582,7 +582,7 @@ int main(int argc, char *argv[])
       if(fi == 0) {
         // Verify that obsnchan is divisible by nants
         if(raw_hdr.obsnchan % raw_hdr.nants != 0) {
-          printf("bad obsnchan/nants: %u %% %u != 0\n",
+          fprintf(stderr, "bad obsnchan/nants: %u %% %u != 0\n",
               raw_hdr.obsnchan, raw_hdr.nants);
           close(fdin);
           break; // Goto next stem

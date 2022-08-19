@@ -1773,7 +1773,7 @@ int rawspec_reset_integration(rawspec_context * ctx)
         abs(ctx->Npolout[i])*ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float));
     if(cuda_rc != cudaSuccess) {
       PRINT_CUDA_ERRMSG(cuda_rc);
-      return 0;
+      return 1;
     }
   }
 
