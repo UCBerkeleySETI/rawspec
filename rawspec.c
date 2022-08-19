@@ -580,13 +580,6 @@ int main(int argc, char *argv[])
 
       // If first file for stem, check sizing
       if(fi == 0) {
-        if(raw_hdr.nbeam != 0) {
-          printf("Header has NBEAM (%d), which indicates that the data is that of a beam, overriding NANTS (%d) with 1.\n",
-            raw_hdr.nbeam, raw_hdr.nants
-          );
-          raw_hdr.nants = 1;
-        }
-
         // Verify that obsnchan is divisible by nants
         if(raw_hdr.obsnchan % raw_hdr.nants != 0) {
           fprintf(stderr, "bad obsnchan/nants: %u %% %u != 0\n",
@@ -1035,9 +1028,6 @@ int main(int argc, char *argv[])
                     fname, strerror(errno));
           }
           break;
-        }
-        if(raw_hdr.nbeam != 0) {
-          raw_hdr.nants = 1;
         }
       } // For each block
 
