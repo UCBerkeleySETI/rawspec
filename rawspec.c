@@ -829,7 +829,7 @@ int main(int argc, char *argv[])
                   guppiraw_header_copy(&cb_data[i].guppiraw_header_ics, &guppiraw_header);
                   cb_data[i].guppiraw_header_ics.metadata.user_data = malloc(sizeof(rawspec_raw_hdr_t));
                   memcpy(cb_data[i].guppiraw_header_ics.metadata.user_data, &raw_hdr, sizeof(rawspec_raw_hdr_t));
-                  guppiraw_header_put_string(&cb_data[i].guppiraw_header_ics, "DATATYPE", "FLOAT");
+                  guppiraw_header_put_string(&cb_data[i].guppiraw_header_ics, "DATATYPE", "INTEGER");
 
                   cb_data[i].guppiraw_header_ics.metadata.datashape.n_ant = 1;
                   cb_data[i].guppiraw_header_ics.metadata.datashape.n_bit = sizeof(float)*8;
@@ -848,7 +848,8 @@ int main(int argc, char *argv[])
                 cb_data[i].guppiraw_header.metadata.datashape.n_bit = sizeof(float)*8;
                 cb_data[i].guppiraw_header.metadata.datashape.n_time = ctx.Nds[i];
                 cb_data[i].guppiraw_header.metadata.datashape.n_aspectchan = ctx.Nts[i] * ctx.Nc/ctx.Nant;
-                guppiraw_header_put_string(&cb_data[i].guppiraw_header, "DATATYPE", "FLOAT");
+                guppiraw_header_put_string(&cb_data[i].guppiraw_header, "DATATYPE", "INTEGER");
+                guppiraw_header_put_double(&cb_data[i].guppiraw_header, "CHAN_BW", raw_hdr.obsbw/cb_data[i].guppiraw_header.metadata.datashape.n_aspectchan);
                 guppiraw_header_put_metadata(&cb_data[i].guppiraw_header);
                 char* header_string = guppiraw_header_malloc_string(&guppiraw_header);
                 printf("```%s```\n", header_string);

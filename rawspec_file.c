@@ -131,40 +131,25 @@ void * dump_file_thread_func(void *arg)
   // Single antenna case
   if(cb_data->fd && cb_data->h_pwrbuf) {
     if(cb_data->flag_file_output == FILE_FORMAT_GUPPIRAW) {
-      const char sample_bytesize =  2 * sizeof(float);
-      const size_t spectra_stride = cb_data->h_pwrbuf_size / (cb_data->Nds * sample_bytesize);
-      const size_t pol_stride = spectra_stride / cb_data->guppiraw_header.metadata.datashape.n_pol;
-      const size_t ant_stride = pol_stride / cb_data->Nant;
-      const size_t chan_stride = pol_stride / cb_data->Nf; // Nf is OBSNCHAN
-      int64_t bytes_written;
+      const size_t ant_stride = cb_data->h_pwrbuf_size / cb_data->Nant;
   
-      // printf("guppiraw_write antenna: %ld bytes\n\t", cb_data->h_pwrbuf_size / (cb_data->per_ant_out ? cb_data->Nant : 1 ));
-      fprintf(stdout, "guppiraw_write antenna start: %ld bytes\n", cb_data->h_pwrbuf_size);
       for(size_t i = 0; i < (cb_data->per_ant_out ? cb_data->Nant : 1); i++){ 
-        // printf("%d ", cb_data->fd[i]);
         if(cb_data->fd[i] == -1){
           // Assume that the following file-descriptors aren't valid
           break;
         }
-        bytes_written = guppiraw_write_block_arbitrary(
-          cb_data->fd[i],
-          &cb_data->guppiraw_header,
-          cb_data->h_pwrbuf + ant_stride*2*i,
-          ant_stride*sample_bytesize,
-          chan_stride*sample_bytesize,
-          spectra_stride*sample_bytesize,
-          pol_stride*sample_bytesize
-        );
-        if(bytes_written
-           < (int64_t) cb_data->h_pwrbuf_size / (cb_data->per_ant_out ? cb_data->Nant : 1)
+        if(guppiraw_write_block(
+            cb_data->fd[i],
+            &cb_data->guppiraw_header,
+            cb_data->h_pwrbuf + ant_stride*i
+          ) < (int64_t) cb_data->h_pwrbuf_size / (cb_data->per_ant_out ? cb_data->Nant : 1)
         ) {
           cb_data->exit_soon = 1;
           cb_data->output_thread_valid = 0;
-          fprintf(stderr, "GUPPIRAW-WRITE-ERROR: wrote %ld (%ld vs %ld)\n", bytes_written, cb_data->h_pwrbuf_size, cb_data->guppiraw_header.metadata.datashape.block_size);
+          fprintf(stderr, "GUPPIRAW-WRITE-ERROR\n");
           break;
         }
       }
-      fprintf(stdout, "guppiraw_write antenna end\n");
     } 
     else if(cb_data->Nant == 1) {
       if(cb_data->debug_callback)
@@ -259,21 +244,12 @@ void * dump_file_thread_func(void *arg)
             fprintf(stderr, "SIGPROC-WRITE-ERROR\n");
         }
     } else if (cb_data->flag_file_output == FILE_FORMAT_GUPPIRAW) {
-        const char sample_bytesize =  2 * sizeof(float);
-        const size_t spectra_stride = cb_data->h_pwrbuf_size / (cb_data->Nds * sample_bytesize);
-        const size_t pol_stride = spectra_stride / cb_data->guppiraw_header.metadata.datashape.n_pol;
-        const size_t ant_stride = pol_stride / cb_data->Nant;
-        const size_t chan_stride = pol_stride / cb_data->Nf; // Nf is OBSNCHAN
         if(
-          guppiraw_write_block_arbitrary(
+          guppiraw_write_block(
             cb_data->fd_ics,
             &cb_data->guppiraw_header_ics,
-            cb_data->h_pwrbuf,
-            ant_stride*sample_bytesize,
-            chan_stride*sample_bytesize,
-            spectra_stride*sample_bytesize,
-            pol_stride*sample_bytesize
-          ) < (int64_t) cb_data->h_pwrbuf_size / (cb_data->per_ant_out ? 1 : cb_data->Nant)
+            cb_data->h_icsbuf
+          ) < (int64_t) cb_data->h_pwrbuf_size / cb_data->Nant
         ) {
           cb_data->exit_soon = 1;
           cb_data->output_thread_valid = 0;

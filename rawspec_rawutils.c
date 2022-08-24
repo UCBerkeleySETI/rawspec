@@ -173,7 +173,7 @@ void _rawspec_header_parse_metadata(const char* entry, void* raw_hdr_void) {
   rawspec_raw_hdr_t * raw_hdr = (rawspec_raw_hdr_t*) raw_hdr_void;
 
   if(((uint64_t*)entry)[0] == KEY_UINT64_BLOCSIZE)
-    hgeti4(entry, "BLOCSIZE", &raw_hdr->blocsize);
+    hgetu8(entry, "BLOCSIZE", &raw_hdr->blocsize);
   else if(((uint64_t*)entry)[0] == KEY_UINT64_NPOL)
     hgeti4(entry, "NPOL", &raw_hdr->npol);
   else if(((uint64_t*)entry)[0] == KEY_UINT64_OBSNCHAN)

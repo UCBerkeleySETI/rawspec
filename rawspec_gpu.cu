@@ -533,7 +533,7 @@ int rawspec_initialize(rawspec_context * ctx)
         ctx->Npolout[i] = 1;
     }
   }
-  ctx->complex_output = min(ctx->complex_output, 2);
+  ctx->complex_output = min(ctx->complex_output, 1);
 
   // Validate Ntpb
   if(ctx->Ntpb == 0) {
@@ -805,6 +805,7 @@ int rawspec_initialize(rawspec_context * ctx)
     ctx->h_pwrbuf_size[i] = abs(ctx->Npolout[i]) *
                             ctx->Nds[i]*ctx->Nts[i]*ctx->Nc*sizeof(float);
     ctx->h_pwrbuf_size[i] *= 1 + ctx->complex_output; // complex-output conditional double 
+    printf("FFT Host dump buffer[%d] size == %lu\n", i, ctx->h_pwrbuf_size[i]);
     #ifdef VERBOSE_ALLOC
       printf("FFT Host dump buffer[%d] size == %lu\n", i, ctx->h_pwrbuf_size[i]);
     #endif
@@ -1589,6 +1590,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
   int i;
   int p;
   int d;
+  int b, f;
   float * dst;
   size_t dpitch;
   float * src;
@@ -1608,6 +1610,9 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
   const char complexity_factor = 1 + ctx->complex_output;
   bool is_last_channel_batch;
 
+  printf("Nss: %d\n", gpu_ctx->Nss[0]);
+  printf("Nas: %d\n", ctx->Nas[0]);
+
   grid_full_pwr.x = ctx->Nb*ctx->Ntpb*ctx->Nbc;
   grid_full_pwr.z = complexity_factor;
   
@@ -1616,6 +1621,21 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
 
   // For each output product
   for(i=0; i < ctx->No; i++) {
+    if(ctx->complex_output) {
+      // h_pwrbuf shape: slowest[Channels, Spectra, Polarization]fastest
+      // have to do many 2D copies to achieve this as fine-channels are no longer contiguous
+      dpitch = ctx->Nds[i] * abs(ctx->Npolout[i]) * sizeof(float) * complexity_factor;
+
+      spitch = sizeof(float) * complexity_factor;
+      width = sizeof(float) * complexity_factor;
+      height = ctx->Nts[i];
+    } else {
+      dpitch = ctx->Nts[i] * sizeof(float) * complexity_factor;
+
+      spitch = gpu_ctx->Nss[i] * ctx->Nts[i] * sizeof(float) * complexity_factor;
+      height = ctx->Nbc;
+    }
+
     // Length of an FFT output buffer when abs(Npotout)==4, must be 0 when
     // Npolout==1
     fft_outbuf_length = ctx->Npolout[i] == 1 ? 0 : ctx->Nb*ctx->Ntpb*ctx->Nbc;
@@ -1663,7 +1683,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
                         gpu_ctx->nthreads[i],
                         0, gpu_ctx->compute_stream>>>
                           (
-                            gpu_ctx->d_pwr_out[i] + p*ctx->Nb*ctx->Ntpb*ctx->Nbc*complexity_factor,
+                            gpu_ctx->d_pwr_out[i] + p*fft_outbuf_length*complexity_factor,
                             MIN(ctx->Nas[i], gpu_ctx->Nss[i]), // Na
                             complexity_factor*ctx->Nts[i],                       // xpitch
                             complexity_factor*ctx->Nas[i]*ctx->Nts[i],           // ypitch
@@ -1720,33 +1740,69 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
           // Copy integrated power spectra (or spectrum) to host.  This is done as
           // two 2D copies to get channel 0 in the center of the spectrum.  Special
           // care is taken in the unlikely event that Nt is odd.
-          src    = gpu_ctx->d_pwr_out[i] + (p*ctx->Nb*ctx->Ntpb*ctx->Nbc)*complexity_factor;
-          dst    = ctx->h_pwrbuf[i] + ((p*ctx->Nts[i]*ctx->Nc) + (c*ctx->Nts[i]))*complexity_factor;
-          dpitch = ctx->Nts[i] * sizeof(float) * complexity_factor;
-          spitch = gpu_ctx->Nss[i] * dpitch;
-          height = ctx->Nbc;
+          src    = gpu_ctx->d_pwr_out[i] + (p*fft_outbuf_length)*complexity_factor;
+          if(ctx->complex_output) {
+            dst    = ctx->h_pwrbuf[i] + (c*ctx->Nts[i]*ctx->Nds[i]*abs(ctx->Npolout[i]) + p)*complexity_factor;
+          } else {
+            dst    = ctx->h_pwrbuf[i] + ((p*ctx->Nts[i]*ctx->Nc) + (c*ctx->Nts[i]))*complexity_factor;
+          }
 
           for(d=0; d < ctx->Nds[i]; d++) {
             
             if(ctx->complex_output) {
               // GUPPI RAW output, don't translate channels
-              width = dpitch;
-              cuda_rc = cudaMemcpy2DAsync(dst,
-                                          dpitch,
-                                          src,
-                                          spitch,
-                                          width,
-                                          height,
-                                          cudaMemcpyDeviceToHost,
-                                          gpu_ctx->compute_stream);
+              // h_pwrbuf shape: slowest[Channels, Spectra, Polarization]fastest
+              for(b=0; b < ctx->Nbc; b++) {
+                #if 0
+                for(f=0; f < ctx->Nts[i]; f++) {
+                  cuda_rc = cudaMemcpyAsync(
+                    dst + ((b * ctx->Nts[i] + f) * ctx->Nds[i] * abs(ctx->Npolout[i]) * complexity_factor),
+                    src + ((b*ctx->Nts[i]*gpu_ctx->Nss[i] + f) * complexity_factor),
+                    complexity_factor*sizeof(float),
+                    cudaMemcpyDeviceToHost,
+                    gpu_ctx->compute_stream
+                  );
+                  // cuda_rc = cudaMemsetAsync(
+                  //   dst + ((b * ctx->Nts[i] + f) * ctx->Nds[i] * abs(ctx->Npolout[i]) * complexity_factor),
+                  //   0,
+                  //   complexity_factor*sizeof(float),
+                  //   gpu_ctx->compute_stream
+                  // );
+                  // cuda_rc = cudaMemsetAsync(
+                  //   dst + ((b * ctx->Nts[i] + f) * ctx->Nds[i] * abs(ctx->Npolout[i]) * complexity_factor),
+                  //   b+p,
+                  //   1,
+                  //   gpu_ctx->compute_stream
+                  // );
 
-              if(cuda_rc != cudaSuccess) {
-                PRINT_CUDA_ERRMSG(cuda_rc);
-                rawspec_cleanup(ctx);
-                return 1;
+                  if(cuda_rc != cudaSuccess) {
+                    PRINT_CUDA_ERRMSG(cuda_rc);
+                    rawspec_cleanup(ctx);
+                    return 1;
+                  }
+                }
+                #else
+                cuda_rc = cudaMemcpy2DAsync(
+                  dst + (b * ctx->Nts[i] * ctx->Nds[i] * abs(ctx->Npolout[i]) * complexity_factor),
+                  dpitch,
+                  src + (b*gpu_ctx->Nss[i]*ctx->Nts[i]*complexity_factor),
+                  spitch,
+                  width,
+                  height,
+                  cudaMemcpyDeviceToHost,
+                  gpu_ctx->compute_stream
+                );
+
+                if(cuda_rc != cudaSuccess) {
+                  PRINT_CUDA_ERRMSG(cuda_rc);
+                  rawspec_cleanup(ctx);
+                  return 1;
+                }
+                #endif
               }
             }
             else {
+              // h_pwrbuf shape: slowest[Spectra, Polarization, Channels]fastest
               // Lo to hi
               width  = ((ctx->Nts[i]+1) / 2) * sizeof(float);
               cuda_rc = cudaMemcpy2DAsync(dst + ctx->Nts[i]/2,
@@ -1782,9 +1838,13 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
               }
             }
 
-            // Increment src and dst pointers
+            // Increment src and dst pointers, striding spectra
             src += ctx->Nts[i] * ctx->Nas[i] * complexity_factor;
-            dst += abs(ctx->Npolout[i]) * ctx->Nts[i] * ctx->Nc * complexity_factor;
+            if(ctx->complex_output) {
+              dst += abs(ctx->Npolout[i]) * complexity_factor;
+            } else {
+              dst += abs(ctx->Npolout[i]) * ctx->Nts[i] * ctx->Nc * complexity_factor;
+            }
           }
         }
 
@@ -1802,7 +1862,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
 
         // Add power buffer clearing cudaMemset call to stream
         cuda_rc = cudaMemsetAsync(gpu_ctx->d_pwr_out[i], 0,
-                                  abs(ctx->Npolout[i])*ctx->Nb*ctx->Ntpb*ctx->Nbc*sizeof(float),
+                                  abs(ctx->Npolout[i])*ctx->Nb*ctx->Ntpb*ctx->Nbc*sizeof(float)*complexity_factor,
                                   gpu_ctx->compute_stream);
 
         if(cuda_rc != cudaSuccess) {
@@ -1812,7 +1872,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
         if(is_last_channel_batch && ctx->incoherently_sum){
           // Add ics buffer clearing cudaMemset call to stream
           cuda_rc = cudaMemsetAsync(gpu_ctx->d_ics_out[i], 0,
-                                    abs(ctx->Npolout[i])*ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float)/ctx->Nant,
+                                    abs(ctx->Npolout[i])*ctx->Nb*ctx->Ntpb*ctx->Nc*sizeof(float)*complexity_factor/ctx->Nant,
                                     gpu_ctx->compute_stream);
     
           if(cuda_rc != cudaSuccess) {
@@ -1826,7 +1886,7 @@ int rawspec_start_processing(rawspec_context * ctx, int fft_dir)
         // Cache d_pwr_buf to d_prev_pwr_out_cache for later
         // mem2dAccumMoveFloat memset(0)s the source (d_pwr_buf)
         mem2dAccumMoveFloat<<<grid_full_pwr, 1, 0, gpu_ctx->compute_stream
-          >>>(gpu_ctx->d_prev_pwr_out_cache[i] + (c * abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb),
+          >>>(gpu_ctx->d_prev_pwr_out_cache[i] + (c * abs(ctx->Npolout[i]) * ctx->Nb*ctx->Ntpb)*complexity_factor,
               ctx->Nb*ctx->Ntpb*ctx->Nc,
               gpu_ctx->d_pwr_out[i],
               ctx->Nb*ctx->Ntpb*ctx->Nbc
