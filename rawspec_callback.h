@@ -4,6 +4,7 @@
 #include <pthread.h>
 #include "hdf5.h"
 #include "rawspec_fbutils.h"
+#include "guppirawc99/header.h"
 
 typedef struct {
     int active;                 // Still active? 1=yes, 0=no
@@ -19,6 +20,12 @@ typedef struct {
     unsigned long byte_count;   // Number of bytes output so far
     unsigned long dump_count;   // Number of dumps processed so far
 } fbh5_context_t;
+
+enum rawspec_callback_file_format_t {
+  FILE_FORMAT_FBSIGPROC = 0,
+  FILE_FORMAT_FBH5      = 1,
+  FILE_FORMAT_GUPPIRAW  = 2
+};
 
 typedef struct {
   int *fd; // Output file descriptors (one for each antenna) or socket (at most 1)
@@ -43,9 +50,9 @@ typedef struct {
   unsigned int Nf; // Number of fine channels (== Nc*Nts[i])
   // Filterbank header
   fb_hdr_t fb_hdr;
-  
+
+  enum rawspec_callback_file_format_t flag_file_output;
   // Added for FBH5 2021-11-15
-  int flag_fbh5_output;           // File output format: 1=FBH5, 0=SIGPROC
   fbh5_context_t fbh5_ctx_ics;    // Singleton fbh5 ctx for ics
   fbh5_context_t * fbh5_ctx_ant;  // Pointer to array of fbh5 ctx for individual antennas
 
@@ -54,6 +61,9 @@ typedef struct {
   // 1 : At least one output error has occured.
   unsigned int exit_soon;
 
+  // Added for GUPPI RAW output 2022-07
+  guppiraw_header_t guppiraw_header;
+  guppiraw_header_t guppiraw_header_ics;
 } callback_data_t;
 
 #endif // _RAWSPEC_CALLBACK_H_

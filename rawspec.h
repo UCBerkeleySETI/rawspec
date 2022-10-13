@@ -114,6 +114,9 @@ struct rawspec_context_s {
   // the next call to rawspec_initialize().
   int input_conjugated;
 
+  // Flag indicating that the output is complex, a direct output of the FFT.
+  int complex_output;
+
   // Flag indicating the concurrent output of the output data's incoherent-sum.
   int incoherently_sum;
   int Naws;

@@ -115,6 +115,7 @@ void usage(const char *argv0) {
     "  -i, --ics=W1[,W2...]   Output incoherent-sum (exclusively, unless with -S)\n"
     "                         specifying per antenna-weights or a singular, uniform weight\n"
     "  -j, --fbh5             Format output Filterbank files as FBH5 (.h5) instead of SIGPROC(.fil)\n"
+    "  -k, --guppi            Output GUPPI RAW files (.raw) instead of Filterbank files\n"
     "  -n, --nchan=N          Number of coarse channels to process [all]\n"
     "  -o, --outidx=N         First index number for output files [0]\n"
     "  -p  --pols={1|4}[,...] Number of output polarizations [1]\n"
@@ -200,6 +201,8 @@ int main(int argc, char *argv[])
   size_t total_bytes_read;
   off_t pos;
   rawspec_raw_hdr_t raw_hdr;
+  guppiraw_header_t guppiraw_header;
+  guppiraw_header.metadata.user_data = &raw_hdr;
   callback_data_t cb_data[MAX_OUTPUTS];
   rawspec_context ctx;
   int ant = -1;
@@ -213,7 +216,7 @@ int main(int argc, char *argv[])
   int flag_debugging = 0;
 
   // FBH5 fields
-  int flag_fbh5_output = 0;
+  enum rawspec_callback_file_format_t flag_file_output = FILE_FORMAT_FBSIGPROC;
 
   // For net data rate rate calculations
   double rate = 6.0;
@@ -230,14 +233,14 @@ int main(int argc, char *argv[])
 
   // Init rawspec context
   memset(&ctx, 0, sizeof(ctx));
-  ctx.Npolout[0] = 1; // others will be set later
+  ctx.Npolout[0] = 0; // others will be set later
 
   // Exit status after mallocs have occured.
   int exit_status = 0;
 
   // Parse command line.
   argv0 = argv[0];
-  while((opt=getopt_long(argc, argv, "a:b:d:f:g:HSjzs:i:n:o:p:r:t:hv", long_opts, NULL)) != -1) {
+  while((opt=getopt_long(argc, argv, "a:b:d:f:g:HSjkzs:i:n:o:p:r:t:hv", long_opts, NULL)) != -1) {
     switch (opt) {
       case 'h': // Help
         usage(argv0);
@@ -245,7 +248,11 @@ int main(int argc, char *argv[])
         break;
 
       case 'j': // FBH5 output format requested
-        flag_fbh5_output = 1;
+        flag_file_output = FILE_FORMAT_FBH5;
+        break;
+
+      case 'k': // GUPPI RAW output format requested
+        flag_file_output = FILE_FORMAT_GUPPIRAW;
         break;
 
       case 'z': // Selected dynamic debugging
@@ -403,10 +410,17 @@ int main(int argc, char *argv[])
 
   // If writing output files, show the format used
   if(output_mode == RAWSPEC_FILE) {
-      if(flag_fbh5_output)
-          printf("writing output files in FBH5 format\n");
-      else
-          printf("writing output files in SIGPROC Filterbank format\n");
+    switch(flag_file_output) {
+      case FILE_FORMAT_FBH5:
+        printf("writing output files in FBH5 format\n");
+        break;
+      case FILE_FORMAT_FBSIGPROC:
+        printf("writing output files in SIGPROC Filterbank format\n");
+        break;
+      case FILE_FORMAT_GUPPIRAW:
+        printf("writing GUPPI RAW output files\n");
+        break;
+    }
   }
 
   // If schan is non-zero, nchan must be too
@@ -451,21 +465,32 @@ int main(int argc, char *argv[])
     ctx.Nas[2] = 3072;
   }
 
+  if(ctx.Npolout[0] == 0) {
+    // default Npolout (-1 means match input, only for GUPPIRAW)
+    ctx.Npolout[0] = (flag_file_output == FILE_FORMAT_GUPPIRAW ? -1 : 1);
+  }
+
   // Validate polout values
   for(i=0; i<ctx.No; i++) {
     if(ctx.Npolout[i] == 0 && i > 0) {
       // Copy value from previous output product
       ctx.Npolout[i] = ctx.Npolout[i-1];
-    } else if(ctx.Npolout[i]!=1 && abs(ctx.Npolout[i])!=4) {
-      fprintf(stderr,
-          "error: number of output pols must be 1 or +/- 4\n");
-      return 1;
+    } else {
+      if(flag_file_output == FILE_FORMAT_GUPPIRAW && ctx.Npolout[i]!=-1) {
+        fprintf(stderr,
+            "error: GUPPI RAW output mode necessitates auto-output pols (-1)\n");
+        return 1;
+      } else if(abs(ctx.Npolout[i])!=1 && abs(ctx.Npolout[i])!=4) {
+        fprintf(stderr,
+            "error: number of output pols must be 1 or +/- 4\n");
+        return 1;
+      }
     }
 
     // Full-pol mode is not supported for network output
     if(ctx.Npolout[i] != 1 && output_mode != RAWSPEC_FILE) {
       fprintf(stderr,
-          "error: full-pol mode is not supported for network output\n");
+          "error: full mode is not supported for network output\n");
       return 1;
     }
   }
@@ -495,12 +520,13 @@ int main(int argc, char *argv[])
     // Init callback file descriptors to sentinal values
     cb_data[i].fd = malloc(sizeof(int));
     cb_data[i].fd[0] = -1;
-    if(flag_fbh5_output) {
-        cb_data[i].flag_fbh5_output = 1;
+
+    cb_data[i].flag_file_output = flag_file_output;
+    switch(flag_file_output) {
+      case FILE_FORMAT_FBH5:
         cb_data[i].fbh5_ctx_ant = malloc(sizeof(fbh5_context_t));
         cb_data[i].fbh5_ctx_ant[0].active = 0;
-    } else {
-        cb_data[i].flag_fbh5_output = 0;
+        break;
     }
   }
 
@@ -567,7 +593,7 @@ int main(int argc, char *argv[])
       posix_fadvise(fdin, 0, 0, POSIX_FADV_SEQUENTIAL);
 
       // Read obs params
-      pos = rawspec_raw_read_header(fdin, &raw_hdr);
+      pos = rawspec_raw_read_guppiraw_header(fdin, &guppiraw_header);
       if(pos <= 0) {
         if(pos == -1) {
           fprintf(stderr, "error getting obs params from %s\n", fname);
@@ -620,9 +646,18 @@ int main(int argc, char *argv[])
         fprintf(stderr, "OBSBW    = %g\n",  raw_hdr.obsbw);
         fprintf(stderr, "TBIN     = %g\n",  raw_hdr.tbin);
 #endif // VERBOSE
-        if(raw_hdr.nants > 1 && !(per_ant_out || ctx.incoherently_sum)){
+        if(raw_hdr.nants > 1 && !(per_ant_out || ctx.incoherently_sum) && flag_file_output != FILE_FORMAT_GUPPIRAW){
           printf("NANTS = %d >1: Enabling --split-ant in lieu of neither --split-ant nor --ics flags.\n", raw_hdr.nants);
           per_ant_out = 1;
+        }
+        if(flag_file_output == FILE_FORMAT_GUPPIRAW) {
+          // assume ctx.Npolout == -1 due to prior checks
+          for(i=0; i<ctx.No; i++) {
+            // map {2*N -> 2, {2*N + 1 -> 1}
+            // negative to indicate complex output (ctx.complex_output)
+            ctx.complex_output = 1;
+            ctx.Npolout[i] = - (2 - (raw_hdr.npol % 2));
+          }
         }
 
         // If splitting output per antenna, re-alloc the fd array.
@@ -639,12 +674,14 @@ int main(int argc, char *argv[])
                 // For each antenna .....
                 for(j=0; j<cb_data[i].Nant; j++) {
                   // If output file for antenna j is still open, close it.
-                  if(flag_fbh5_output) {
+                  switch(flag_file_output) {
+                    case FILE_FORMAT_FBH5:
                       if(cb_data[i].fbh5_ctx_ant[j].active) {
                         if(fbh5_close(&(cb_data[i].fbh5_ctx_ant[j]), cb_data[i].debug_callback) != 0)
                           exit_status = 1;
                       }
-                  } else {
+                      break;
+                    case FILE_FORMAT_FBSIGPROC:
                       if(cb_data[i].fd[j] != -1) {
                         if(close(cb_data[i].fd[j]) < 0) {
                           fprintf(stderr, "SIGPROC-CLOSE-ERROR\n");
@@ -652,10 +689,11 @@ int main(int argc, char *argv[])
                         }                      
                         cb_data[i].fd[j] = -1;
                       }
+                      break;
                   }
                 }
                 // Free all output file resources
-                if(flag_fbh5_output) {
+                if(flag_file_output == FILE_FORMAT_FBH5) {
                     free(cb_data[i].fbh5_ctx_ant);
                 }
                 free(cb_data[i].fd);
@@ -663,14 +701,14 @@ int main(int argc, char *argv[])
                 cb_data[i].per_ant_out = per_ant_out;
                 // Re-init callback file descriptors to sentinal values
                 // Memory is allocated by the output files are not yet open.
-                if(flag_fbh5_output) {
-                    cb_data[i].flag_fbh5_output = 1;
+                cb_data[i].flag_file_output = flag_file_output;
+                switch(flag_file_output) {
+                  case FILE_FORMAT_FBH5:
                     cb_data[i].fbh5_ctx_ant = malloc(sizeof(fbh5_context_t) * raw_hdr.nants);
                     for(j=0; j<raw_hdr.nants; j++) {
                         cb_data[i].fbh5_ctx_ant[j].active = 0;
                     }
-                } else {
-                    cb_data[i].flag_fbh5_output = 0;
+                    break;
                 }
                 cb_data[i].fd = malloc(sizeof(int)*raw_hdr.nants);
                 for(j=0; j<raw_hdr.nants; j++){
@@ -785,6 +823,41 @@ int main(int argc, char *argv[])
                 printf("output %d Nds = %u, Nf = %u\n", i, cb_data[i].Nds, cb_data[i].Nf);
               }
               cb_data[i].Nant = raw_hdr.nants;
+
+              if(flag_file_output == FILE_FORMAT_GUPPIRAW) {
+                if(ctx.incoherently_sum) {
+                  guppiraw_header_copy(&cb_data[i].guppiraw_header_ics, &guppiraw_header);
+                  cb_data[i].guppiraw_header_ics.metadata.user_data = malloc(sizeof(rawspec_raw_hdr_t));
+                  memcpy(cb_data[i].guppiraw_header_ics.metadata.user_data, &raw_hdr, sizeof(rawspec_raw_hdr_t));
+                  guppiraw_header_put_string(&cb_data[i].guppiraw_header_ics, "DATATYPE", "INTEGER");
+
+                  cb_data[i].guppiraw_header_ics.metadata.datashape.n_ant = 1;
+                  cb_data[i].guppiraw_header_ics.metadata.datashape.n_bit = sizeof(float)*8;
+                  cb_data[i].guppiraw_header_ics.metadata.datashape.n_time = ctx.Nds[i];
+                  cb_data[i].guppiraw_header_ics.metadata.datashape.n_aspectchan = ctx.Nts[i] * ctx.Nc/ctx.Nant;
+                  guppiraw_header_put_metadata(&cb_data[i].guppiraw_header);
+                }
+
+                guppiraw_header_copy(&cb_data[i].guppiraw_header, &guppiraw_header);
+                cb_data[i].guppiraw_header.metadata.user_data = malloc(sizeof(rawspec_raw_hdr_t));
+                memcpy(cb_data[i].guppiraw_header.metadata.user_data, &raw_hdr, sizeof(rawspec_raw_hdr_t));
+
+                if(cb_data[i].per_ant_out) {
+                  cb_data[i].guppiraw_header.metadata.datashape.n_ant = 1;
+                }
+                cb_data[i].guppiraw_header.metadata.datashape.n_bit = sizeof(float)*8;
+                cb_data[i].guppiraw_header.metadata.datashape.n_time = ctx.Nds[i];
+                cb_data[i].guppiraw_header.metadata.datashape.n_aspectchan = ctx.Nts[i] * ctx.Nc/ctx.Nant;
+                guppiraw_header_put_string(&cb_data[i].guppiraw_header, "DATATYPE", "INTEGER");
+                guppiraw_header_put_double(&cb_data[i].guppiraw_header, "CHAN_BW", raw_hdr.obsbw/cb_data[i].guppiraw_header.metadata.datashape.n_aspectchan);
+                guppiraw_header_put_metadata(&cb_data[i].guppiraw_header);
+                char* header_string = guppiraw_header_malloc_string(&guppiraw_header);
+                printf("```%s```\n", header_string);
+                free(header_string);
+                header_string = guppiraw_header_malloc_string(&cb_data[i].guppiraw_header);
+                printf("```%s```\n", header_string);
+                free(header_string);
+              }
             }
 #if 0
             if(output_mode == RAWSPEC_NET) {
@@ -860,9 +933,13 @@ int main(int argc, char *argv[])
               }
 
               // Write filterbank header to SIGPROC output ICS file.
-              // If FBH5, the header was already written by fbh5_open().
-              if(! flag_fbh5_output) {
-                fb_fd_write_header(cb_data[i].fd_ics, &cb_data[i].fb_hdr);
+              switch(flag_file_output) {
+                case FILE_FORMAT_FBH5:
+                  // the header was already written by fbh5_open().
+                  break;
+                case FILE_FORMAT_FBSIGPROC:
+                  fb_fd_write_header(cb_data[i].fd_ics, &cb_data[i].fb_hdr);
+                  break;
               }
             } // if(ctx.incoherently_sum)
           } // if(output_mode == RAWSPEC_FILE)
@@ -1019,7 +1096,7 @@ int main(int argc, char *argv[])
         bi++;
 
         // Read obs params of next block
-        pos = rawspec_raw_read_header(fdin, &raw_hdr);
+        pos = rawspec_raw_read_guppiraw_header(fdin, &guppiraw_header);
         if(pos <= 0) {
           if(pos == -1) {
             fprintf(stderr, "error getting obs params from %s [%s]\n",
@@ -1050,12 +1127,14 @@ int main(int argc, char *argv[])
       for(i=0; i<ctx.No; i++) {
         // Antennas
         for(j=0; j < (cb_data[i].per_ant_out ? cb_data[i].Nant : 1); j++) {
-          if(flag_fbh5_output) {
+          switch(flag_file_output) {
+            case FILE_FORMAT_FBH5:
               if(cb_data[i].fbh5_ctx_ant[j].active) {
                 if(fbh5_close(&(cb_data[i].fbh5_ctx_ant[j]), cb_data[i].debug_callback) != 0)
                   exit_status = 1;
               }
-          } else {
+              break;
+            case FILE_FORMAT_FBSIGPROC:
               if(cb_data[i].fd[j] != -1) {
                 if(close(cb_data[i].fd[j]) < 0) {
                   fprintf(stderr, "SIGPROC-CLOSE-ERROR ant %d\n", j);
@@ -1063,16 +1142,19 @@ int main(int argc, char *argv[])
                 }
                 cb_data[i].fd[j] = -1;
               }
-           }
+              break;
+          }
         }
         // ICS
         if(ctx.incoherently_sum) {
-          if(flag_fbh5_output) {
+          switch(flag_file_output) {
+            case FILE_FORMAT_FBH5:
               if(cb_data[i].fbh5_ctx_ics.active) {
                   if(fbh5_close(&(cb_data[i].fbh5_ctx_ics), cb_data[i].debug_callback) != 0)
                     exit_status = 1;
               }
-          } else {
+              break;
+            case FILE_FORMAT_FBSIGPROC:
               if(cb_data[i].fd_ics != -1) {
                 if(close(cb_data[i].fd_ics) < 0) {
                   fprintf(stderr, "SIGPROC-CLOSE-ERROR cb %d ics\n", i);
@@ -1080,6 +1162,7 @@ int main(int argc, char *argv[])
                 }
                 cb_data[i].fd_ics = -1;
               }
+              break;
           }
         } // ctx.incoherently_sum
       }
