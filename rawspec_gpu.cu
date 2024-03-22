@@ -790,9 +790,18 @@ int rawspec_initialize(rawspec_context * ctx)
   // to facilitate 2D texture lookups by treating the input buffer as a 2D array
   // that is 1<<LOAD_TEXTURE_WIDTH_POWER wide.
   buf_size = ctx->Nb*ctx->Nc*gpu_ctx->guppi_channel_stride;
+#ifdef VERBOSE_ALLOC
+  printf("Ntpb == %lu\n", ctx->Ntpb);
+  printf("Np == %lu\n", ctx->Np);
+  printf("Nbps == %lu\n", ctx->Nbps);
+  printf("Nb == %lu\n", ctx->Nb);
+  printf("Nc == %lu\n", ctx->Nc);
+  printf("guppi channel_stride == %lu\n", gpu_ctx->guppi_channel_stride);
+  printf("FFT input buffer size == %lu\n", buf_size);
+#endif
   if((buf_size & LOAD_TEXTURE_WIDTH_MASK) != 0) {
     // Round up to next multiple of 64KB
-    buf_size = (buf_size & ~LOAD_TEXTURE_WIDTH_MASK) + 1<<LOAD_TEXTURE_WIDTH_POWER;
+    buf_size = (buf_size & ~LOAD_TEXTURE_WIDTH_MASK) + (1<<LOAD_TEXTURE_WIDTH_POWER);
   }
 
 #ifdef VERBOSE_ALLOC
@@ -805,21 +814,20 @@ int rawspec_initialize(rawspec_context * ctx)
     return 1;
   }
 
-  
   cudaDeviceGetAttribute(&texture_attribute_maximum, cudaDevAttrMaxTexture2DLinearWidth, ctx->gpu_index);
-  if(texture_attribute_maximum < 1<<LOAD_TEXTURE_WIDTH_POWER){
+  if(texture_attribute_maximum < (1<<LOAD_TEXTURE_WIDTH_POWER)) {
     fprintf(stderr, "Maximum 2D texture width: %d.\n", texture_attribute_maximum);
     fprintf(stderr, "\tThe static load-texture-width of 1<<LOAD_TEXTURE_WIDTH_POWER exceeds this: %d\n", 1<<LOAD_TEXTURE_WIDTH_POWER);
     fprintf(stderr, "\tExpect a CUDA raised failure!\n");
   }
   cudaDeviceGetAttribute(&texture_attribute_maximum, cudaDevAttrMaxTexture2DLinearHeight, ctx->gpu_index);
-  if(texture_attribute_maximum < buf_size>>LOAD_TEXTURE_WIDTH_POWER){
+  if(texture_attribute_maximum < (buf_size>>LOAD_TEXTURE_WIDTH_POWER)) {
     fprintf(stderr, "Maximum 2D texture height: %d.\n", texture_attribute_maximum);
     fprintf(stderr, "\tThe load-texture-height of `buf_size (%lu)>>(%d) LOAD_TEXTURE_WIDTH_POWER` exceeds this: %lu\n", buf_size, LOAD_TEXTURE_WIDTH_POWER, buf_size>>LOAD_TEXTURE_WIDTH_POWER);
     fprintf(stderr, "\tExpect a CUDA raised failure!\n");
 
     cudaDeviceGetAttribute(&texture_attribute_maximum, cudaDevAttrMaxTexture2DLinearWidth, ctx->gpu_index);
-    if(texture_attribute_maximum > 1<<LOAD_TEXTURE_WIDTH_POWER){
+    if(texture_attribute_maximum > (1<<LOAD_TEXTURE_WIDTH_POWER)) {
       fprintf(stderr, "\tLOAD_TEXTURE_WIDTH_POWER could be increased to %d (at most) to possibly circumvent this issued\n", 31 - __builtin_clz(texture_attribute_maximum));
     }
   }
