@@ -485,12 +485,13 @@ int main(int argc, char *argv[])
     cb_data[i].fb_hdr.machine_id = 20;
     cb_data[i].fb_hdr.telescope_id = -1; // Unknown
     cb_data[i].fb_hdr.data_type = 1;
-    cb_data[i].fb_hdr.nbeams =  1;
-    cb_data[i].fb_hdr.ibeam  = -1; // Unknown or single pixel
-    cb_data[i].fb_hdr.nbits  = 32;
-    cb_data[i].fb_hdr.nifs   = abs(ctx.Npolout[i]);
-    cb_data[i].rate          = rate;
-    cb_data[i].Nant          = 1;
+    cb_data[i].fb_hdr.nbeams  =  1;
+    cb_data[i].fb_hdr.ibeam   = -1; // Unknown or single pixel
+    cb_data[i].fb_hdr.refbeam = -1; // Unknown or single pixel
+    cb_data[i].fb_hdr.nbits   = 32;
+    cb_data[i].fb_hdr.nifs    = abs(ctx.Npolout[i]);
+    cb_data[i].rate           = rate;
+    cb_data[i].Nant           = 1;
 
     // Init callback file descriptors to sentinal values
     cb_data[i].fd = malloc(sizeof(int));
@@ -807,6 +808,7 @@ int main(int argc, char *argv[])
           cb_data[i].fb_hdr.src_dej = raw_hdr.dec;
           cb_data[i].fb_hdr.tstart = raw_hdr.mjd;
           cb_data[i].fb_hdr.ibeam = raw_hdr.beam_id;
+          cb_data[i].fb_hdr.refbeam = raw_hdr.refbeam;
           strncpy(cb_data[i].fb_hdr.source_name, raw_hdr.src_name, 80);
           cb_data[i].fb_hdr.source_name[80] = '\0';
           strncpy(cb_data[i].fb_hdr.rawdatafile, bfname, 80);

@@ -35,6 +35,7 @@ void make_voyager_1_metadata(callback_data_t *cb_data) {
     cb_data->fb_hdr.fch1 = 8421.386717353016;       // MHz
     cb_data->fb_hdr.foff = -2.7939677238464355e-06; // MHz
     cb_data->fb_hdr.ibeam = 1;
+    cb_data->fb_hdr.refbeam = -1;
     cb_data->fb_hdr.machine_id = 42;
     cb_data->fb_hdr.nbeams = 1;
     cb_data->fb_hdr.nchans = NCHANS;            // # of fine channels

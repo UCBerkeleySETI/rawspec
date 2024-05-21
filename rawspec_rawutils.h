@@ -19,6 +19,7 @@ typedef struct {
   double mjd;
   int beam_id; // -1 is unknown or single beam receiver
   int nbeam;   // -1 is unknown or single beam receiver
+  int refbeam; // -1 if not present
   unsigned int nants;
   char src_name[81];
   char telescop[81];

@@ -173,6 +173,9 @@ void fbh5_write_metadata(hid_t dataset_id, fb_hdr_t *p_md, int debug_callback) {
     fbh5_set_dataset_int_attr(dataset_id, "nfpc", &(p_md->nfpc), debug_callback);
     fbh5_set_dataset_int_attr(dataset_id, "nbeams", &(p_md->nbeams), debug_callback);
     fbh5_set_dataset_int_attr(dataset_id, "ibeam", &(p_md->ibeam), debug_callback);
+    if (p_md->refbeam != -1) {
+        fbh5_set_dataset_int_attr(dataset_id, "refbeam", &(p_md->refbeam), debug_callback);
+    }
     fbh5_set_dataset_int_attr(dataset_id, "nbits", &(p_md->nbits), debug_callback);
     fbh5_set_dataset_int_attr(dataset_id, "nifs", &(p_md->nifs), debug_callback);
     fbh5_set_dataset_double_attr(dataset_id, "src_raj", &(p_md->src_raj), debug_callback);

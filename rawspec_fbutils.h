@@ -113,6 +113,8 @@ typedef struct {
   // Number of fine channels per coarse channel
   // E.g. turbo_seti will compute the number of coarse channels = nchans / nfpc
   int nfpc;
+  // Reference beam (i.e. the beam that was tracking the source)
+  int refbeam;
   
 } fb_hdr_t;
 
